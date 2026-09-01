@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
 
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
@@ -17,4 +17,10 @@ test('public repository metadata declares GPL-2.0-only and publication safeguard
   assert.match(workflow, /scripts\/bootstrap-zig\.ps1/);
   assert.match(workflow, /npm run check:publication/);
   assert.match(audit, /Public infrastructure IP detected/);
+
+  const scriptDirectory = new URL('../scripts/', import.meta.url);
+  const scriptNames = (await readdir(scriptDirectory)).filter((name) => name.endsWith('.ps1'));
+  const powershellSources = await Promise.all(scriptNames.map((name) => readFile(new URL(name, scriptDirectory), 'utf8')));
+  assert.doesNotMatch(powershellSources.join('\n'), /\bGet-FileHash\b/u);
+  assert.match(powershellSources.join('\n'), /Get-EawFileSha256/u);
 });

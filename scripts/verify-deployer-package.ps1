@@ -2,6 +2,7 @@
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $version = ([IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION'))).Trim()
 $packageRoot = Join-Path $projectRoot "dist\EaW-Hub-Deployer-$version"
 $archivePath = "$packageRoot.zip"
@@ -27,6 +28,6 @@ if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) { throw "Deployer
 if ((Get-Item -LiteralPath $archivePath).Length -lt 1MB) { throw 'Deployer archive is unexpectedly small.' }
 if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) { throw "Deployer checksum is missing: $checksumPath" }
 $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw) -split '\s+')[0]
-$actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
+$actualHash = Get-EawFileSha256 -LiteralPath $archivePath
 if ($expectedHash -ne $actualHash) { throw 'Deployer archive checksum does not match.' }
 Write-Output "[deployer-package-smoke] verified $($required.Count) required artifact(s)"

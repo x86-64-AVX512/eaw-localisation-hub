@@ -2,6 +2,7 @@
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $displayVersion = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw -Encoding utf8).Trim()
 $definitionPath = Join-Path $projectRoot 'installer\EaWLocalisationHub.iss'
 $definition = Get-Content -LiteralPath $definitionPath -Raw -Encoding utf8
@@ -36,7 +37,7 @@ if (Test-Path -LiteralPath $output -PathType Leaf) {
         throw "Installer checksum is missing: $checksumPath"
     }
     $expected = ((Get-Content -LiteralPath $checksumPath -Raw -Encoding ascii) -split '\s+')[0]
-    $actual = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actual = (Get-EawFileSha256 -LiteralPath $output).ToLowerInvariant()
     if ($expected -ne $actual) { throw 'Installer SHA-256 file does not match the built executable.' }
     Write-Output "[installer-smoke] $($item.Name), $([Math]::Round($item.Length / 1MB, 1)) MiB"
 } else {

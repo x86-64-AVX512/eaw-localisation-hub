@@ -2,6 +2,7 @@
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $displayVersion = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw -Encoding utf8).Trim()
 $packageMetadata = Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw -Encoding utf8 | ConvertFrom-Json
 $windowsFileVersion = [string]$packageMetadata.eawHub.windowsFileVersion
@@ -39,7 +40,7 @@ if (-not $compiler) {
     "/DPayloadDir=$payloadDirectory" $definition
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
 if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw "Installer output is missing: $output" }
-$checksum = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+$checksum = (Get-EawFileSha256 -LiteralPath $output).ToLowerInvariant()
 [System.IO.File]::WriteAllText(
     $checksumOutput,
     "$checksum  $([System.IO.Path]::GetFileName($output))`r`n",

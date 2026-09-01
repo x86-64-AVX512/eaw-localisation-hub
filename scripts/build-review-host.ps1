@@ -2,6 +2,7 @@
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $version = '1.0.4129.50'
 $expectedHash = 'D3934F482D484B89FB4825DF720C710664E1143A1E90F7B3A60794EF33F473D2'
 $toolsRoot = Join-Path $projectRoot '.tools\webview2'
@@ -19,7 +20,7 @@ if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
         -Uri "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/$version/microsoft.web.webview2.$version.nupkg" `
         -OutFile $packagePath
 }
-$actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $packagePath).Hash
+$actualHash = Get-EawFileSha256 -LiteralPath $packagePath
 if ($actualHash -ne $expectedHash) {
     throw "WebView2 SDK checksum mismatch: $actualHash"
 }

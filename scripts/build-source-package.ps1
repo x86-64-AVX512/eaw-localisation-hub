@@ -2,6 +2,7 @@
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $distRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
 $packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.6F4'))
 $archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.6F4.zip'))
@@ -94,7 +95,7 @@ if ($unexpectedNlohmann) {
 }
 
 Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal
-$archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$archiveHash = (Get-EawFileSha256 -LiteralPath $archivePath).ToLowerInvariant()
 [System.IO.File]::WriteAllText($checksumPath, "$archiveHash  $([System.IO.Path]::GetFileName($archivePath))`n", [System.Text.Encoding]::ASCII)
 Write-Output "[source-package] $packageRoot"
 Write-Output "[source-archive] $archivePath"

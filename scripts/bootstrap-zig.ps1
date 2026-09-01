@@ -2,6 +2,7 @@
 $ProgressPreference = 'SilentlyContinue'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $toolsDirectory = Join-Path $projectRoot '.tools'
 $version = '0.13.0'
 $expectedSha256 = 'd859994725ef9402381e557c60bb57497215682e355204d754ee3df75ee3c158'
@@ -21,7 +22,7 @@ if (-not (Test-Path -Path $archive)) {
         -Uri "https://ziglang.org/download/$version/zig-windows-x86_64-$version.zip" `
         -OutFile $archive
 }
-$actualSha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+$actualSha256 = (Get-EawFileSha256 -LiteralPath $archive).ToLowerInvariant()
 if ($actualSha256 -ne $expectedSha256) {
     throw "Zig archive checksum mismatch. Expected $expectedSha256, received $actualSha256. Delete the archive and retry."
 }

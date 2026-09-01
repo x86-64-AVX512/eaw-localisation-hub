@@ -2,6 +2,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $version = ([IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION'))).Trim()
 $packageRoot = Join-Path $projectRoot "dist\EaW-Localisation-Hub-Source-$version"
 $archivePath = "$packageRoot.zip"
@@ -31,6 +32,6 @@ foreach ($relative in @(
 if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) { throw "Source archive is missing: $archivePath" }
 if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) { throw "Source checksum is missing: $checksumPath" }
 $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw) -split '\s+')[0]
-$actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
+$actualHash = Get-EawFileSha256 -LiteralPath $archivePath
 if ($expectedHash -ne $actualHash) { throw 'Source archive checksum does not match.' }
 Write-Output '[source-package-smoke] source archive is clean and complete'

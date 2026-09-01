@@ -11,6 +11,7 @@
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'local-prototype-common.ps1')
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $paths = Get-LocalPrototypePaths
 
 if (Test-Path -LiteralPath $paths.StatePath) {
@@ -29,8 +30,8 @@ New-Item -ItemType Directory -Path $paths.LogsDirectory -Force | Out-Null
 
 $preflightFileA = Join-Path $paths.WorkspaceA 'localisation\russian\prototype_l_russian.yml'
 $preflightFileB = Join-Path $paths.WorkspaceB 'localisation\russian\prototype_l_russian.yml'
-$hashA = (Get-FileHash -LiteralPath $preflightFileA -Algorithm SHA256).Hash
-$hashB = (Get-FileHash -LiteralPath $preflightFileB -Algorithm SHA256).Hash
+$hashA = Get-EawFileSha256 -LiteralPath $preflightFileA
+$hashB = Get-EawFileSha256 -LiteralPath $preflightFileB
 if ($hashA -ne $hashB) {
     throw 'The two test files differ after the previous run. In the launcher, click "Reset test data" before starting a new laboratory session.'
 }

@@ -2,6 +2,7 @@
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $distRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
 $packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Hub-Client-0.8.6F4'))
 if (-not $packageRoot.StartsWith($distRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -67,7 +68,7 @@ if (-not $archivePath.StartsWith($distRoot + '\', [System.StringComparison]::Ord
     throw "Refusing to create an archive outside dist: $archivePath"
 }
 Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal -Force
-$archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$archiveHash = (Get-EawFileSha256 -LiteralPath $archivePath).ToLowerInvariant()
 [System.IO.File]::WriteAllText($checksumPath, "$archiveHash  $([System.IO.Path]::GetFileName($archivePath))`n", [System.Text.Encoding]::ASCII)
 Write-Output "[client-package] $packageRoot"
 Write-Output "[client-archive] $archivePath"

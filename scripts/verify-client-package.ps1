@@ -2,6 +2,7 @@
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $packageRoot = Join-Path $projectRoot 'dist\EaW-Hub-Client-0.8.6F4'
 $archivePath = Join-Path $projectRoot 'dist\EaW-Hub-Client-0.8.6F4.zip'
 $checksumPath = "$archivePath.sha256"
@@ -50,6 +51,6 @@ if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) { throw "Client a
 if ((Get-Item -LiteralPath $archivePath).Length -lt 1MB) { throw 'Client archive is unexpectedly small.' }
 if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) { throw "Client checksum is missing: $checksumPath" }
 $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw) -split '\s+')[0]
-$actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
+$actualHash = Get-EawFileSha256 -LiteralPath $archivePath
 if ($expectedHash -ne $actualHash) { throw 'Client archive checksum does not match.' }
 Write-Output "[client-package-smoke] verified $($required.Count) required artifact(s)"

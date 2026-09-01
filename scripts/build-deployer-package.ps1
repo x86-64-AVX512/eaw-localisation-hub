@@ -2,6 +2,7 @@
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
+. (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $distRoot = Join-Path $projectRoot 'dist'
 $version = ([IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION'))).Trim()
 $packageRoot = Join-Path $distRoot "EaW-Hub-Deployer-$version"
@@ -44,7 +45,7 @@ foreach ($moduleName in @('ssh2', 'asn1', 'bcrypt-pbkdf', 'safer-buffer', 'tweet
     if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $packageRoot 'node_modules') -Recurse }
 }
 Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal
-$archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$archiveHash = (Get-EawFileSha256 -LiteralPath $archivePath).ToLowerInvariant()
 [IO.File]::WriteAllText($checksumPath, "$archiveHash  $([IO.Path]::GetFileName($archivePath))`n", [Text.Encoding]::ASCII)
 Write-Output "[deployer-package] $packageRoot"
 Write-Output "[deployer-archive] $archivePath"
