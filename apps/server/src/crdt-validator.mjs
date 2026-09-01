@@ -16,6 +16,7 @@ export class CrdtUpdateValidator {
   constructor({ maximumStateBytes }) {
     this.maximumStateBytes = maximumStateBytes;
     this.worker = null;
+    this.workerReady = false;
     this.nextId = 1;
     this.queue = [];
     this.current = null;
@@ -46,12 +47,18 @@ export class CrdtUpdateValidator {
     }
     const worker = this.worker;
     this.worker = null;
+    this.workerReady = false;
     if (worker) await worker.terminate();
   }
 
   #ensureWorker() {
     if (this.worker) return;
     const worker = new Worker(new URL('./crdt-validator-worker.mjs', import.meta.url));
+    worker.once('online', () => {
+      if (this.closed || this.worker !== worker) return;
+      this.workerReady = true;
+      this.#dispatch();
+    });
     worker.on('message', (message) => this.#complete(message));
     worker.on('error', () => this.#restart('CRDT validation worker failed'));
     worker.on('exit', (code) => {
@@ -63,6 +70,10 @@ export class CrdtUpdateValidator {
   #dispatch() {
     if (this.closed || this.current || this.queue.length === 0) return;
     this.#ensureWorker();
+    // Worker startup can be delayed considerably on a busy Windows host. The
+    // validation budget protects update decoding, so it starts only after the
+    // isolated worker is actually online.
+    if (!this.workerReady) return;
     const job = this.queue.shift();
     const totalBytes = job.update.byteLength + (job.baseUpdate?.byteLength ?? 0);
     const timeoutMilliseconds = Math.min(
@@ -92,6 +103,7 @@ export class CrdtUpdateValidator {
   #restart(message, code = 'crdt-validation-worker-failed') {
     const worker = this.worker;
     this.worker = null;
+    this.workerReady = false;
     if (worker) worker.terminate().catch(() => {});
     if (this.current) {
       clearTimeout(this.current.timer);

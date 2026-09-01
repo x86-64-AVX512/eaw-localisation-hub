@@ -23,6 +23,14 @@ test('CRDT validator isolates decoding and reports the resulting state budget', 
   assert.ok(result.elapsedMilliseconds >= 0);
 });
 
+test('CRDT validator accepts work queued while its isolated worker starts', async (t) => {
+  const validator = new CrdtUpdateValidator({ maximumStateBytes: 1024 * 1024 });
+  t.after(() => validator.close());
+  const results = await Promise.all(Array.from({ length: 8 }, () => validator.validate(sampleUpdate())));
+  assert.equal(results.length, 8);
+  assert.ok(results.every(({ stateBytes }) => stateBytes > 0));
+});
+
 test('CRDT validator rejects malformed and expansion-limited updates', async (t) => {
   const validator = new CrdtUpdateValidator({ maximumStateBytes: 8 });
   t.after(() => validator.close());
