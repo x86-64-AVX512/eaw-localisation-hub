@@ -34,6 +34,15 @@ async function waitForOutput(process, marker) {
   }
   throw new Error(`Timed out waiting for server: ${output}`);
 }
+async function waitForRecordedMessage(messages, predicate, label, timeoutMilliseconds = 45_000) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const message = messages.find(predicate);
+    if (message) return message;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(messages, null, 2)}`);
+}
 async function connect(port, head, blob) {
   const document = encodeURIComponent('general-dev:localisation/replace/russian/test.yml');
   const socket = new WebSocket(`ws://127.0.0.1:${port}/?document=${document}&head=${head}&blob=${blob}`);
@@ -47,10 +56,8 @@ async function connect(port, head, blob) {
     socket.once('open', resolve);
     socket.once('error', reject);
   });
-  for (let attempt = 0; attempt < 200 && !messages.some(({ type }) => type === 'synced'); attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  return { socket, ydoc, messages, synced: messages.find(({ type }) => type === 'synced') };
+  const synced = await waitForRecordedMessage(messages, ({ type }) => type === 'synced', 'initial sync');
+  return { socket, ydoc, messages, synced };
 }
 
 test('server seeds rooms from Git and blocks only an outdated file blob', async () => {
@@ -91,10 +98,8 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     const update = new Y.Doc();
     update.getText('content').insert(0, 'stale overwrite');
     stale.socket.send(Y.encodeStateAsUpdate(update));
-    for (let attempt = 0; attempt < 100 && !stale.messages.some(({ type }) => type === 'error'); attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    assert.match(stale.messages.find(({ type }) => type === 'error').message, /Git version of this file/u);
+    const staleError = await waitForRecordedMessage(stale.messages, ({ type }) => type === 'error', 'stale update rejection');
+    assert.match(staleError.message, /Git version of this file/u);
     stale.socket.close();
     const branchOnly = await connect(port, '0'.repeat(40), blob);
     assert.equal(branchOnly.synced.git.status, 'branch-outdated');
@@ -110,22 +115,19 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     git(source, 'add', '.');
     git(source, 'commit', '-m', 'remote conflict');
     git(source, 'push', origin, 'general-dev');
-    for (let attempt = 0; attempt < 1000
-      && !current.messages.some(({ type, status }) => type === 'git-status' && status === 'conflict'); attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    const conflict = current.messages.find(({ type, status }) => type === 'git-status' && status === 'conflict');
+    const conflict = await waitForRecordedMessage(
+      current.messages,
+      ({ type, status }) => type === 'git-status' && status === 'conflict',
+      'canonical Git conflict',
+    );
     assert.deepEqual(conflict.conflicts.map(({ key }) => key), ['canonical']);
     current.socket.send(JSON.stringify({
       type: 'git-conflict-resolve', key: 'canonical', choice: 'external',
     }));
-    for (let attempt = 0; attempt < 500
-      && !current.messages.some(({ type, status }) => type === 'git-status' && status === 'file-outdated'); attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    assert.ok(
-      current.messages.some(({ type, status }) => type === 'git-status' && status === 'file-outdated'),
-      JSON.stringify(current.messages, null, 2),
+    await waitForRecordedMessage(
+      current.messages,
+      ({ type, status }) => type === 'git-status' && status === 'file-outdated',
+      'resolved file-outdated status',
     );
     for (let attempt = 0; attempt < 500
       && !current.ydoc.getText('content').toString().includes('"Remote"'); attempt += 1) {

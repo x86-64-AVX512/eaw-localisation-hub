@@ -13,6 +13,7 @@
   "scripts": {
     "server": "node apps/server/src/main.mjs",
     "agent": "node apps/agent/src/main.mjs",
+    "pretest": "node scripts/build-review-web.mjs",
     "test": "node --test \"test/*.test.mjs\"",
     "test:plugin": "node scripts/verify-plugin.mjs",
     "test:live-plugin": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-live-plugin.ps1",
