@@ -35,6 +35,10 @@ jobs:
       - name: Install exact dependencies
         run: npm ci
 
+      - name: Install pinned Zig toolchain
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-zig.ps1
+
       - name: Audit public repository contents
         run: npm run check:publication
 

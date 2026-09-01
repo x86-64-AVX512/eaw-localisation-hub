@@ -14,6 +14,7 @@ test('public repository metadata declares GPL-2.0-only and publication safeguard
   assert.match(dockerIgnore, /deploy\/\.env/);
   assert.match(license, /GNU GENERAL PUBLIC LICENSE\s+Version 2/);
   assert.match(workflow, /submodules: recursive/);
+  assert.match(workflow, /scripts\/bootstrap-zig\.ps1/);
   assert.match(workflow, /npm run check:publication/);
   assert.match(audit, /Public infrastructure IP detected/);
 });
