@@ -1,0 +1,6 @@
+[submodule "vendor/npp-plugin-template"]
+	path = vendor/npp-plugin-template
+	url = https://github.com/npp-plugins/plugintemplate.git
+[submodule "vendor/nlohmann-json"]
+	path = vendor/nlohmann-json
+	url = https://github.com/nlohmann/json.git

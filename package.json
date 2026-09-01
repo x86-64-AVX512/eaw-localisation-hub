@@ -1,0 +1,57 @@
+{
+  "name": "eaw-localisation-hub",
+  "private": true,
+  "version": "0.8.6-alpha.4",
+  "description": "EaW collaborative localisation prototype",
+  "license": "GPL-2.0-only",
+  "author": "EaW Localisation Hub contributors",
+  "keywords": ["equestria-at-war", "localisation", "notepad-plus-plus", "collaboration"],
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "server": "node apps/server/src/main.mjs",
+    "agent": "node apps/agent/src/main.mjs",
+    "test": "node --test \"test/*.test.mjs\"",
+    "test:plugin": "node scripts/verify-plugin.mjs",
+    "test:live-plugin": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-live-plugin.ps1",
+    "check": "npm run check:publication && npm test && npm run build:client && npm run build:installer && npm run build:deployer && npm run build:source && npm run test:plugin && npm run test:launcher && npm run test:credentials && npm run test:status && npm run test:client && npm run test:deployer && npm run test:source && npm run test:installer",
+    "check:publication": "node scripts/check-publication.mjs",
+    "test:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-powershell.ps1",
+    "test:client": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-package.ps1",
+    "test:deployer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-deployer-package.ps1",
+    "test:source": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-source-package.ps1",
+    "test:credentials": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-credential-store.ps1",
+    "test:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-agent-status.ps1",
+    "test:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installer.ps1 -RequireBuilt",
+    "local:prepare": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-local-prototype.ps1",
+    "local:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-prototype.ps1",
+    "local:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-local-prototype.ps1",
+    "local:reset": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/reset-local-prototype.ps1",
+    "diagnose:room": "node scripts/inspect-room.mjs",
+    "build:plugin": "node scripts/build-plugin.mjs",
+    "build:review": "node scripts/build-review-web.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-review-host.ps1",
+    "build:client": "npm run build:plugin && npm run build:review && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-client-package.ps1",
+    "build:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
+    "build:deployer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-deployer-package.ps1",
+    "build:source": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-source-package.ps1",
+    "build": "npm run build:client && npm run build:installer"
+  },
+  "dependencies": {
+    "monaco-editor": "0.56.0",
+    "ws": "^8.21.3",
+    "yjs": "^13.6.27"
+  },
+  "eawHub": {
+    "displayVersion": "0.8.6F4",
+    "windowsFileVersion": "0.8.6.4"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "ssh2": "^1.17.0"
+  },
+  "overrides": {
+    "dompurify": "3.4.14"
+  }
+}

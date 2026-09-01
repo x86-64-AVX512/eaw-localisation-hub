@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible EaW Localisation Hub defect
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include passwords, tokens, invitations, SSH keys, server backups or private localisation text.
+  - type: input
+    id: version
+    attributes:
+      label: Hub version
+      placeholder: 0.8.6F4
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [Review, Desktop Agent, Legacy Notepad++ plugin, Server, Deployer, Installer]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Describe the smallest reliable sequence.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Remove credentials, usernames, private paths and document contents.

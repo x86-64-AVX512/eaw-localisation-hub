@@ -1,0 +1,9 @@
+ARG PREVIOUS_IMAGE
+FROM ${PREVIOUS_IMAGE}
+
+USER root
+COPY apps/server ./apps/server
+COPY packages/shared ./packages/shared
+COPY scripts/manage-server.mjs ./scripts/manage-server.mjs
+RUN chown -R node:node /app
+USER node

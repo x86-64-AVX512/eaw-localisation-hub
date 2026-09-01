@@ -1,0 +1,18 @@
+{
+    auto_https disable_redirects
+}
+
+http://{$HUB_DOMAIN} {
+    redir https://{$HUB_DOMAIN}:{$HUB_HTTPS_PORT}{uri} permanent
+}
+
+{$HUB_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy server:3210
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+}

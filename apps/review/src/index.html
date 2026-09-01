@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>EaW Localisation Hub — Рецензирование</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="appbar">
+    <div class="brand">
+      <strong>EaW Localisation Hub</strong>
+      <span id="document-name">Режим рецензирования</span>
+      <div class="ticket-switcher">
+        <select id="ticket-select" aria-label="Рабочая версия"><option>Основная версия</option></select>
+        <select id="ticket-status" aria-label="Статус тикета" hidden>
+          <option value="draft">Черновик</option>
+          <option value="in_progress">В работе</option>
+          <option value="review">На проверке</option>
+          <option value="needs_changes">Нужны исправления</option>
+          <option value="ready">Готов к применению</option>
+          <option value="closed">Закрыт</option>
+        </select>
+        <button id="ticket-catalog">Все тикеты</button>
+        <button id="ticket-create" title="Создать совместный черновик от текущего Git-коммита">Новый тикет</button>
+      </div>
+    </div>
+    <div id="status" class="status">Подключение к Desktop Agent…</div>
+    <div class="actions">
+      <div class="mode-switch" aria-label="Режим редактирования">
+        <button id="mode-edit" aria-pressed="true">Редактирование</button>
+        <button id="mode-suggest" aria-pressed="false">Правки</button>
+      </div>
+      <button id="undo" title="Совместная отмена (Ctrl+Z)">↶ Отменить</button>
+      <button id="redo" title="Совместный повтор (Ctrl+Y)">↷ Повторить</button>
+      <button id="comment-create">Комментарий</button>
+      <button id="key-replace-open">Изменить по ключам</button>
+      <select id="document-view" aria-label="Представление документа" disabled>
+        <option value="shared">Совместная версия</option>
+        <option value="mine">Git + мои изменения</option>
+        <option value="git">Git HEAD</option>
+      </select>
+      <button id="personal-file-open" disabled>Локальный файл</button>
+      <button id="english-original" title="Показать английскую строку для ключа под курсором">Английский оригинал</button>
+      <button id="history-open" disabled>История</button>
+      <button id="git-history-open" disabled>Git diff</button>
+      <label id="scroll-sync-control" class="scroll-sync-control" hidden><input id="scroll-sync-enabled" type="checkbox" checked> Синхронизация прокрутки</label>
+    </div>
+  </header>
+  <div id="recovery-banner" class="recovery-banner" role="alert" hidden>
+    <strong>Нет действующего кода восстановления.</strong>
+    <span id="recovery-message"></span>
+    <button id="recovery-action">Получить и сохранить</button>
+  </div>
+  <div id="git-branch-notice" class="git-notice git-branch-notice" role="status" hidden></div>
+  <div id="git-files-notice" class="git-notice git-files-notice" role="status" hidden></div>
+  <div id="git-file-block" class="git-notice git-file-block" role="alert" hidden></div>
+  <main id="workspace" class="workspace">
+    <aside id="collaboration-lane" aria-label="Совместная работа">
+      <section class="side-section">
+        <div class="section-heading"><strong>Участники</strong><span id="presence-count">1</span></div>
+        <div id="presence-list" class="item-list"></div>
+        <div class="profile-actions">
+          <button id="avatar-change">Сменить аватар</button>
+          <button id="avatar-delete" class="danger" disabled>Удалить</button>
+          <input id="avatar-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+        </div>
+      </section>
+      <section class="side-section reservations-section">
+        <div class="section-heading"><strong>Брони</strong><span id="reservation-count">0</span></div>
+        <div id="reservation-list" class="item-list scroll-list"></div>
+        <label for="reservation-target">Бронь для</label>
+        <select id="reservation-target"></select>
+        <label for="reservation-comment">Примечание</label>
+        <input id="reservation-comment" maxlength="512" placeholder="Необязательно">
+        <div class="side-actions">
+          <button id="reservation-create" class="primary">Забронировать выделение</button>
+          <button id="reservation-delete-at">Удалить под курсором</button>
+          <button id="reservation-delete" class="danger" disabled>Удалить выбранную</button>
+        </div>
+      </section>
+      <section class="side-section conflicts-section">
+        <div class="section-heading"><strong>Конфликты Git</strong><span id="conflict-count">0</span></div>
+        <div id="conflict-list" class="item-list scroll-list"></div>
+        <div class="side-actions two-columns">
+          <button id="conflict-collaborative" disabled>Оставить совместный</button>
+          <button id="conflict-external" disabled>Принять из Git</button>
+        </div>
+      </section>
+    </aside>
+    <section id="editor" aria-label="Редактор локализации"></section>
+    <aside id="review-lane" aria-label="Комментарии и предложения">
+      <div class="lane-heading">
+        <strong>Обсуждения и правки</strong>
+        <label class="accepted-filter"><input id="show-accepted-suggestions" type="checkbox"> Принятые</label>
+        <span id="review-count">0</span>
+      </div>
+      <div id="cards"></div>
+      <div id="empty-review" class="empty-review">Для этого участка пока нет обсуждений.</div>
+    </aside>
+    <svg id="connectors" aria-hidden="true"></svg>
+  </main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="text-dialog">
+    <form method="dialog">
+      <h2 id="dialog-title">Новый текст</h2>
+      <label id="dialog-label" for="dialog-value"></label>
+      <textarea id="dialog-value" maxlength="16384"></textarea>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Отмена</button>
+        <button id="dialog-submit" class="primary" value="default">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="personal-file-dialog" class="personal-file-dialog">
+    <form method="dialog">
+      <h2>Локальный рабочий файл</h2>
+      <p id="personal-file-message">Состояние рабочего файла ещё не получено.</p>
+      <p class="dialog-hint">Эти действия меняют только файл в вашем Git-репозитории. Совместный документ останется без изменений.</p>
+      <div class="dialog-actions personal-file-actions">
+        <button value="cancel">Закрыть</button>
+        <button id="personal-file-git" type="button">Записать Git HEAD в файл</button>
+        <button id="personal-file-mine" type="button" class="primary">Пересобрать Git + мои</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="ticket-dialog">
+    <form method="dialog">
+      <h2>Новый тикет</h2>
+      <label for="ticket-title">Название</label>
+      <input id="ticket-title" maxlength="160" required>
+      <label for="ticket-description">Описание</label>
+      <textarea id="ticket-description" maxlength="4000" placeholder="Что нужно перевести или проверить"></textarea>
+      <label for="ticket-files">Файлы, по одному относительному пути в строке</label>
+      <textarea id="ticket-files" maxlength="16384"></textarea>
+      <p class="dialog-hint">Тикет будет создан от текущей Git-ветки и коммита. Открытый файл станет его первой вкладкой.</p>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Отмена</button>
+        <button id="ticket-submit" class="primary" value="default">Создать</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="ticket-catalog-dialog" class="ticket-catalog-dialog">
+    <div class="ticket-catalog-shell">
+      <aside class="ticket-catalog-list">
+        <div class="ticket-catalog-heading">
+          <h2>Тикеты</h2>
+          <button id="ticket-catalog-close">Закрыть</button>
+        </div>
+        <input id="ticket-search" type="search" placeholder="Поиск по названию, описанию или файлу">
+        <div class="ticket-catalog-filters">
+          <select id="ticket-filter-status"><option value="">Все статусы</option></select>
+          <label><input id="ticket-show-archived" type="checkbox"> Архив</label>
+        </div>
+        <div id="ticket-list"></div>
+      </aside>
+      <section class="ticket-details">
+        <div id="ticket-details-empty">Выберите тикет слева.</div>
+        <div id="ticket-details-content" hidden>
+          <div class="ticket-details-header">
+            <div><h2 id="ticket-details-title"></h2><p id="ticket-details-meta"></p></div>
+            <button id="ticket-open" class="primary">Открыть</button>
+          </div>
+          <label for="ticket-edit-title">Название</label>
+          <input id="ticket-edit-title" maxlength="160">
+          <label for="ticket-edit-description">Описание</label>
+          <textarea id="ticket-edit-description" maxlength="4000"></textarea>
+          <button id="ticket-save-metadata">Сохранить название и описание</button>
+          <label for="ticket-edit-files">Файлы, по одному пути в строке</label>
+          <textarea id="ticket-edit-files" maxlength="16384"></textarea>
+          <button id="ticket-save-files">Сохранить список файлов</button>
+          <div id="ticket-diff-summary" class="ticket-diff-summary"></div>
+          <div id="ticket-diff-files" class="ticket-diff-files"></div>
+          <div id="ticket-diff-editor" class="ticket-diff-editor"></div>
+          <div class="ticket-operation-actions">
+            <button id="ticket-rebase">Обновить базу (rebase)</button>
+            <button id="ticket-apply" class="primary">Применить к основной версии</button>
+            <button id="ticket-archive">Архивировать</button>
+            <button id="ticket-delete" class="danger">Удалить навсегда</button>
+          </div>
+          <h3>Журнал событий</h3>
+          <div id="ticket-events" class="ticket-events"></div>
+        </div>
+      </section>
+    </div>
+  </dialog>
+  <dialog id="english-dialog" class="english-dialog">
+    <form method="dialog">
+      <h2 id="english-heading">Английский оригинал</h2>
+      <div id="english-results"></div>
+      <div class="dialog-actions"><button value="cancel">Закрыть</button></div>
+    </form>
+  </dialog>
+  <dialog id="key-replace-dialog" class="key-replace-dialog">
+    <div class="key-replace-shell">
+      <h2>Изменить по ключам</h2>
+      <p class="dialog-hint">По одному значению в строке: <code>key:0 "текст"</code> или <code>key: "текст"</code>. Изменяется только текст внутри кавычек основной версии.</p>
+      <textarea id="key-replace-input" spellcheck="false" placeholder='example_key:0 "Новый текст"'></textarea>
+      <div class="dialog-actions">
+        <button id="key-replace-preview">Предпросмотр</button>
+        <button id="key-replace-apply" class="primary" disabled>Применить</button>
+        <button id="key-replace-close">Закрыть</button>
+      </div>
+      <div id="key-replace-results" class="key-replace-results"></div>
+    </div>
+  </dialog>
+  <dialog id="history-dialog" class="history-dialog">
+    <div class="history-shell">
+      <aside class="history-sidebar">
+        <h2>История изменений</h2>
+        <div id="history-list"></div>
+        <p id="history-empty">История пока пуста.</p>
+      </aside>
+      <section class="history-preview">
+        <div class="history-toolbar">
+          <strong id="history-selection">Выберите версию слева</strong>
+          <button id="history-restore" class="primary" disabled>Восстановить эту версию</button>
+          <button id="history-close">Закрыть</button>
+        </div>
+        <div id="history-diff"></div>
+      </section>
+    </div>
+  </dialog>
+  <dialog id="git-history-dialog" class="history-dialog">
+    <div class="history-shell">
+      <aside class="history-sidebar">
+        <h2>История файла в Git</h2>
+        <p class="dialog-hint">Загрузите нужный участок истории и независимо выберите две версии файла.</p>
+        <div class="git-history-points">
+          <label>Слева<select id="git-history-from"></select></label>
+          <label>Справа<select id="git-history-to"></select></label>
+        </div>
+        <div id="git-history-list"></div>
+        <p id="git-history-empty">Для этого файла коммиты не найдены.</p>
+        <button id="git-history-more" hidden>Загрузить более ранние</button>
+      </aside>
+      <section class="history-preview">
+        <div class="history-toolbar">
+          <strong id="git-history-selection">Выберите две версии для сравнения</strong>
+          <button id="git-history-close">Закрыть</button>
+        </div>
+        <div id="git-history-diff"></div>
+      </section>
+    </div>
+  </dialog>
+  <dialog id="git-conflict-dialog" class="git-conflict-dialog">
+    <div class="git-conflict-shell">
+      <div class="history-toolbar">
+        <strong id="git-conflict-heading">Конфликт Git</strong>
+        <span>Слева совместная версия, справа версия Git</span>
+        <button id="git-conflict-close">Закрыть</button>
+      </div>
+      <div id="git-conflict-diff"></div>
+      <div class="dialog-actions">
+        <button id="git-conflict-keep">Оставить совместную</button>
+        <button id="git-conflict-use" class="primary">Принять из Git</button>
+      </div>
+    </div>
+  </dialog>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

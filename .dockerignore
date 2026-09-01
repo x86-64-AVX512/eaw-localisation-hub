@@ -1,0 +1,13 @@
+node_modules
+dist
+.tools
+.playwright-cli
+output
+data
+.git
+deploy/.env
+deploy/backups
+deploy/rollbacks
+apps/agent/review-web
+*.eawhub.enc
+*.log

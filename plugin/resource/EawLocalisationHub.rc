@@ -1,0 +1,51 @@
+#include <windows.h>
+
+#define IDD_COLLABORATION_PANEL 101
+#define IDD_TEXT_INPUT 102
+
+IDD_COLLABORATION_PANEL DIALOGEX 0, 0, 360, 660
+STYLE DS_SETFONT | WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS
+CAPTION "Правки и комментарии"
+FONT 9, "Segoe UI"
+BEGIN
+END
+
+IDD_TEXT_INPUT DIALOGEX 0, 0, 280, 150
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "EaW Hub"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT           "Текст", 1201, 8, 8, 264, 12
+    EDITTEXT        1202, 8, 22, 264, 96, ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL | WS_TABSTOP
+    DEFPUSHBUTTON   "OK", IDOK, 144, 126, 60, 16
+    PUSHBUTTON      "Отмена", IDCANCEL, 212, 126, 60, 16
+END
+
+1 VERSIONINFO
+FILEVERSION 0,8,6,3
+PRODUCTVERSION 0,8,6,3
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS VS_FF_PRERELEASE | VS_FF_DEBUG
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_DLL
+FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "EaW Russian Translation Team\0"
+            VALUE "FileDescription", "EaW Localisation Hub Notepad++ plugin\0"
+            VALUE "FileVersion", "0.8.6F3\0"
+            VALUE "InternalName", "EawLocalisationHub\0"
+            VALUE "LegalCopyright", "Prototype\0"
+            VALUE "OriginalFilename", "EawLocalisationHub.dll\0"
+            VALUE "ProductName", "EaW Localisation Hub\0"
+            VALUE "ProductVersion", "0.8.6F3\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
