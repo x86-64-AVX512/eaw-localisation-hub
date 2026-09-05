@@ -136,9 +136,9 @@ function Open-AdminSession {
     $script:adminIssuedAt = [DateTime]::UtcNow
     $script:managerUser = $session.user
     $form.Text = if ($TeamManagement) {
-        'EaW Localisation Hub 0.8.6F4 — Управление командой'
+        'EaW Localisation Hub 0.8.7F1 – Управление командой'
     } else {
-        'EaW Localisation Hub 0.8.6F4 — Администратор'
+        'EaW Localisation Hub 0.8.7F1 – Администратор'
     }
 }
 
@@ -401,7 +401,7 @@ function Show-InvitationsDialog {
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = if ($TeamManagement) { 'EaW Localisation Hub 0.8.6F4 — Управление командой' } else { 'EaW Localisation Hub 0.8.6F4 — Администратор' }
+$form.Text = if ($TeamManagement) { 'EaW Localisation Hub 0.8.7F1 – Управление командой' } else { 'EaW Localisation Hub 0.8.7F1 – Администратор' }
 $form.Size = [System.Drawing.Size]::new(900, 790)
 $form.MinimumSize = [System.Drawing.Size]::new(900, 790)
 $form.StartPosition = 'CenterScreen'

@@ -19,7 +19,7 @@ export function applyDocumentStatus(message, state, editor, setStatus) {
   fileBlock.textContent = message.status === 'git-conflict'
     ? 'Новый Git-коммит конфликтует с совместными изменениями этого файла. Редактирование заблокировано до разрешения конфликта.'
     : blocked
-      ? 'На этот файл вышел новый коммит. Редактирование заблокировано — обновите репозиторий через GitHub Desktop.'
+      ? 'На этот файл вышел новый коммит. Редактирование заблокировано – обновите репозиторий через GitHub Desktop.'
       : '';
   if (blocked && reason) fileBlock.textContent += ` ${reason}`;
   if (blocked) editor.updateOptions({ readOnly: true });
@@ -32,7 +32,7 @@ export function applyDocumentStatus(message, state, editor, setStatus) {
       ? 'Доступен новый Git-коммит; текущий файл можно редактировать'
       : blocked ? 'Git-версия этого файла не актуальна; обновите её в GitHub Desktop'
         : message.status === 'file-unavailable' ? (message.message || 'Файл отсутствует в текущей ветке')
-          : message.status === 'offline' ? 'Сервер недоступен — Agent продолжит переподключение'
+          : message.status === 'offline' ? 'Сервер недоступен – Agent продолжит переподключение'
             : message.status === 'unauthorized' ? 'Сервер отклонил авторизацию'
               : 'Синхронизация…');
 }

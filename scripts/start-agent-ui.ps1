@@ -163,7 +163,7 @@ function Save-RecoveryCodeFile {
             return $false
         }
         $content = @"
-EaW Localisation Hub — код восстановления
+EaW Localisation Hub – код восстановления
 
 Пользователь: $DisplayName
 Код: $Code
@@ -307,7 +307,7 @@ function New-TextBox([int]$X, [int]$Y, [int]$Width) {
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = "EaW Localisation Hub $($clientStatusMetadata.Version) — Desktop Agent"
+$form.Text = "EaW Localisation Hub $($clientStatusMetadata.Version) – Desktop Agent"
 $form.Size = [System.Drawing.Size]::new(720, 811)
 $form.MinimumSize = [System.Drawing.Size]::new(720, 811)
 $form.StartPosition = 'CenterScreen'
@@ -373,6 +373,12 @@ $startupCheck.Text = 'Запускать Agent вместе с Windows'
 $startupCheck.AutoSize = $true
 $startupCheck.Location = [System.Drawing.Point]::new(27, 407)
 $form.Controls.Add($startupCheck)
+
+$trayModeCheck = [System.Windows.Forms.CheckBox]::new()
+$trayModeCheck.Text = 'После закрытия оставлять в области уведомлений'
+$trayModeCheck.AutoSize = $true
+$trayModeCheck.Location = [System.Drawing.Point]::new(300, 407)
+$form.Controls.Add($trayModeCheck)
 
 $startButton = [System.Windows.Forms.Button]::new()
 $startButton.Text = 'Запустить Agent'
@@ -455,6 +461,7 @@ $nameBox.Text = if ($saved.User) { [string]$saved.User } else { '' }
 $colorBox.Text = if ($saved.Color) { [string]$saved.Color } else { '#6aa9ff' }
 $startupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'EaW Localisation Hub Agent.lnk'
 $startupCheck.Checked = Test-Path -LiteralPath $startupShortcut
+$trayModeCheck.Checked = $saved.KeepInTray -eq $true
 
 function Current-Config {
     [pscustomobject]@{
@@ -462,6 +469,7 @@ function Current-Config {
         Repo = $repoBox.Text.Trim()
         User = $nameBox.Text.Trim()
         Color = $colorBox.Text.Trim()
+        KeepInTray = $trayModeCheck.Checked
     }
 }
 
@@ -536,7 +544,7 @@ function Update-AgentStateView {
                     Set-StateText $tokenState "Токен: действует ($($account.user.displayName))" ([System.Drawing.Color]::ForestGreen)
                 }
             } catch {
-                Set-StateText $tokenState 'Токен: истёк или отозван — войдите снова' ([System.Drawing.Color]::Firebrick)
+                Set-StateText $tokenState 'Токен: истёк или отозван – войдите снова' ([System.Drawing.Color]::Firebrick)
             }
         }
         $lastCheckState.Text = "Последняя проверка: $([DateTime]::Now.ToString('G'))"
@@ -757,6 +765,7 @@ $changePasswordButton.Add_Click({
 $startupCheck.Add_CheckedChanged({
     try { Set-StartupShortcut -Enabled $startupCheck.Checked } catch { $status.Text = "Не удалось изменить автозапуск: $($_.Exception.Message)" }
 })
+$trayModeCheck.Add_CheckedChanged({ Save-AgentConfig (Current-Config) })
 $checkStateButton.Add_Click({ Update-AgentStateView })
 
 $showTrayItem.Add_Click({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
@@ -771,10 +780,14 @@ $exitTrayItem.Add_Click({
 })
 $form.Add_FormClosing({
     param($sender, $eventArgs)
-    if (-not $script:allowExit) {
+    if (-not $script:allowExit -and $trayModeCheck.Checked) {
         $eventArgs.Cancel = $true
         $form.Hide()
         $tray.ShowBalloonTip(2500, 'EaW Hub', 'Desktop Agent продолжает работать в области уведомлений.', 'Info')
+    } elseif (-not $script:allowExit) {
+        $script:allowExit = $true
+        try { Stop-AgentProcess } catch {}
+        $tray.Visible = $false
     }
 })
 
@@ -798,7 +811,7 @@ Update-AgentStateView
 if ($StartMinimized) {
     $form.Add_Shown({
         $form.Hide()
-        try { Start-AgentProcess } catch { $tray.ShowBalloonTip(5000, 'EaW Hub — ошибка запуска', $_.Exception.Message, 'Error') }
+        try { Start-AgentProcess } catch { $tray.ShowBalloonTip(5000, 'EaW Hub – ошибка запуска', $_.Exception.Message, 'Error') }
     })
 }
 [void]$form.ShowDialog()

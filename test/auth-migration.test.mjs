@@ -49,7 +49,7 @@ test('schema 1 authentication migrates without retaining personal audit metadata
     assert.equal((await auth.authenticate(migratedLogin.token)).displayName, 'Legacy Admin');
     await assert.rejects(fs.access(path.join(directory, 'bootstrap-invite.txt')), { code: 'ENOENT' });
     const persisted = await fs.readFile(path.join(directory, 'auth.json'), 'utf8');
-    assert.equal(JSON.parse(persisted).schema, 5);
+    assert.equal(JSON.parse(persisted).schema, 6);
     for (const forbidden of [
       'createdAt', 'lastSeenAt', 'deviceName', 'displayNameKey', 'Personal PC',
       bootstrapCode, recovery.code, 'Legacy-admin-new-password-932!',

@@ -214,7 +214,7 @@ async function connectFakePlugin(pipe, filePath, initialText, ipcSecret) {
     type: 'hello',
     clientId: 'authenticated-agent-test',
     version: '0.6.5F1',
-    protocol: 14,
+    protocol: 15,
     proof: crypto.createHmac('sha256', ipcSecret)
       .update(`plugin:${challenge.nonce}`, 'utf8')
       .digest('hex'),
@@ -295,6 +295,19 @@ test('password auth supports multiple roles, private reset, identity enforcement
     });
     assert.equal(aliceLogin.status, 200);
     const aliceLoginToken = aliceLogin.value.token;
+
+    const training = await api(port, 'PUT', '/api/auth/training', {
+      token: aliceLoginToken, body: { segmentId: 'git-updates', revision: 2 },
+    });
+    assert.equal(training.status, 200);
+    assert.equal(training.value.user.trainingProgress['git-updates'], 2);
+    const trainingMe = await api(port, 'GET', '/api/auth/me', { token: aliceLoginToken });
+    assert.equal(trainingMe.value.user.trainingProgress['git-updates'], 2);
+    const persistedAuth = JSON.parse(await fs.readFile(path.join(dataDirectory, 'auth.json'), 'utf8'));
+    assert.equal(
+      persistedAuth.users.find(({ id }) => id === aliceRedeem.value.user.id).trainingProgress['git-updates'],
+      2,
+    );
 
     const logoutLogin = await api(port, 'POST', '/api/auth/login', {
       body: { displayName: 'Alice', password: 'Alice-original-password-371!' },

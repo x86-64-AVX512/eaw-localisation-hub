@@ -114,6 +114,9 @@ export class TicketStore {
       id: crypto.randomUUID(), type, ...actorSummary(actor), at: new Date().toISOString(), details,
     });
     if (ticket.events.length > MAX_EVENTS) ticket.events.splice(0, ticket.events.length - MAX_EVENTS);
+    if (ticket.creatorId) this.eventJournal?.append('ticket-state', actor, [ticket.creatorId], {
+      ticketId: ticket.id, ticketTitle: ticket.title, action: type, ...details,
+    });
   }
 
   touch(ticket, actor) {

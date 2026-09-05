@@ -21,6 +21,7 @@ import {
 import { expiredPresenceIds } from '../../../packages/shared/src/presence.mjs';
 import { parseSuggestionTrace } from '../../../packages/shared/src/suggestion-trace.mjs';
 import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mjs';
+import { textChangeSummary } from './notification-summary.mjs';
 import {
   DISPLAY_VERSION,
   MAX_CLIENTS_PER_ROOM,
@@ -101,8 +102,21 @@ export class DocumentRoom {
         : source?.identity
           ? this.authStore.findDirectoryUser(source.identity, source.identity.id) ?? source.identity
           : null);
+      const currentText = this.document.getText('content').toString();
+      const previousText = this.eventText ?? currentText;
+      this.eventText = currentText;
+      if (this.documentId.startsWith('ticket-') && account?.id && previousText !== currentText) {
+        const ticketId = this.documentId.slice('ticket-'.length, this.documentId.indexOf(':'));
+        try {
+          const ticket = this.registry.ticketStore?.mutable(ticketId);
+          this.registry.eventJournal?.append('ticket-edited', account, [ticket?.creatorId], {
+            ticketId, ticketTitle: ticket?.title ?? '', documentId: this.documentId,
+            ...textChangeSummary(previousText, currentText),
+          });
+        } catch { /* ticket may have been removed concurrently */ }
+      }
       const historyChanged = this.history.record(
-        this.document.getText('content').toString(), account, origin?.historyReason ?? 'edit',
+        currentText, account, origin?.historyReason ?? 'edit',
       );
       this.schedulePersist();
       for (const client of this.clients) {
@@ -132,6 +146,7 @@ export class DocumentRoom {
       if (error.code !== 'ENOENT') throw error;
     }
     await this.history.load();
+    this.eventText = this.document.getText('content').toString();
     this.history.ensureBaseline(this.document.getText('content').toString());
     try {
       const stats = await fs.stat(this.metadataPath);
@@ -392,6 +407,17 @@ export class DocumentRoom {
     if (!actor) throw new Error(`${label} author account is unavailable`);
     if (!this.authStore.required) socket.localActor = actor;
     return actor;
+  }
+
+  notifyTicketOwner(action, actor, details = {}) {
+    if (!this.documentId.startsWith('ticket-')) return;
+    const ticketId = this.documentId.slice('ticket-'.length, this.documentId.indexOf(':'));
+    try {
+      const ticket = this.registry.ticketStore?.mutable(ticketId);
+      this.registry.eventJournal?.append('ticket-activity', actor, [ticket?.creatorId], {
+        ticketId, ticketTitle: ticket?.title ?? '', documentId: this.documentId, action, ...details,
+      });
+    } catch { /* ticket may have been removed concurrently */ }
   }
 
   resolveRelativeRange(item) {
@@ -670,6 +696,7 @@ export class DocumentRoom {
           throw error;
         }
         this.schedulePersist();
+        this.notifyTicketOwner('comment-created', actor, { discussionId: thread.id });
       }
       this.broadcastReview();
       return;
@@ -680,7 +707,13 @@ export class DocumentRoom {
       const thread = this.commentThreads.find((item) => item.id === id);
       if (!thread) throw new Error('Comment thread no longer exists');
       const actor = this.actorFor(socket, message, 'Comment');
-      if (this.appendDiscussionMessage(thread, actor, message)) this.schedulePersist();
+      if (this.appendDiscussionMessage(thread, actor, message)) {
+        this.registry.eventJournal?.append('comment-reply', actor, [thread.authorId], {
+          documentId: this.documentId, discussionId: thread.id,
+        });
+        this.notifyTicketOwner('comment-replied', actor, { discussionId: thread.id });
+        this.schedulePersist();
+      }
       this.broadcastReview();
       return;
     }
@@ -691,7 +724,9 @@ export class DocumentRoom {
       if (!['open', 'resolved'].includes(status)) throw new ProtocolLimitError('Invalid comment status');
       const thread = this.commentThreads.find((item) => item.id === id);
       if (thread && thread.status !== status) {
+        const actor = this.actorFor(socket, message, 'Comment');
         thread.status = status;
+        this.notifyTicketOwner('comment-status', actor, { discussionId: thread.id, status });
         this.schedulePersist();
       }
       this.broadcastReview();
@@ -748,6 +783,7 @@ export class DocumentRoom {
           throw error;
         }
         this.schedulePersist();
+        this.notifyTicketOwner('suggestion-created', actor, { suggestionId: id });
       }
       this.broadcastReview();
       return;
@@ -758,7 +794,13 @@ export class DocumentRoom {
       const suggestion = this.suggestions.find((item) => item.id === id);
       if (!suggestion) throw new Error('Suggestion no longer exists');
       const actor = this.actorFor(socket, message, 'Suggestion');
-      if (this.appendDiscussionMessage(suggestion, actor, message)) this.schedulePersist();
+      if (this.appendDiscussionMessage(suggestion, actor, message)) {
+        this.registry.eventJournal?.append('comment-reply', actor, [suggestion.authorId], {
+          documentId: this.documentId, discussionId: suggestion.id,
+        });
+        this.notifyTicketOwner('suggestion-replied', actor, { suggestionId: suggestion.id });
+        this.schedulePersist();
+      }
       this.broadcastReview();
       return;
     }
@@ -840,6 +882,10 @@ export class DocumentRoom {
       suggestion.status = 'accepted';
       suggestion.decidedById = actor.id;
       suggestion.decidedBy = actor.displayName;
+      this.registry.eventJournal?.append('suggestion-decision', actor, [suggestion.authorId], {
+        documentId: this.documentId, suggestionId: suggestion.id, decision: 'accepted',
+      });
+      this.notifyTicketOwner('suggestion-accepted', actor, { suggestionId: suggestion.id });
       const textActor = suggestion.authorId && this.authStore.required
         ? this.authStore.findDirectoryUser(actor, suggestion.authorId) ?? actor
         : actor;
@@ -968,6 +1014,10 @@ export class DocumentRoom {
         suggestion.status = 'rejected';
         suggestion.decidedById = actor.id;
         suggestion.decidedBy = actor.displayName;
+        this.registry.eventJournal?.append('suggestion-decision', actor, [suggestion.authorId], {
+          documentId: this.documentId, suggestionId: suggestion.id, decision: 'rejected',
+        });
+        this.notifyTicketOwner('suggestion-rejected', actor, { suggestionId: suggestion.id });
         this.schedulePersist();
       }
       this.broadcastReview();

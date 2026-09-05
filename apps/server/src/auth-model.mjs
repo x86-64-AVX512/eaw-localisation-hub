@@ -85,6 +85,7 @@ export function publicUser(user) {
       ? user.recoveryStatus
       : 'setup_required',
     avatarBase64: String(user.avatarBase64 ?? ''),
+    trainingProgress: { ...(user.trainingProgress ?? {}) },
   };
 }
 

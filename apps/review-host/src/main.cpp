@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <string>
+#include <utility>
 
 #include "WebView2.h"
 
@@ -14,7 +15,10 @@ using Microsoft::WRL::ComPtr;
 namespace {
 
 constexpr wchar_t kWindowClass[] = L"EaWLocalisationHubReviewWindow";
-constexpr wchar_t kWindowTitle[] = L"EaW Localisation Hub — Рецензирование";
+constexpr wchar_t kWindowTitle[] = L"EaW Localisation Hub – Рецензирование";
+constexpr wchar_t kEnglishWindowTitle[] = L"EaW Localisation Hub – Английский оригинал";
+constexpr wchar_t kEnglishMutexName[] = L"Local\\EaWLocalisationHubEnglishOriginal";
+constexpr ULONG_PTR kNavigateCopyData = 0x45415745;
 
 HWND g_window = nullptr;
 ComPtr<ICoreWebView2Controller> g_controller;
@@ -57,6 +61,41 @@ bool AllowedNavigation(const std::wstring& uri) {
     if (uri == L"about:blank") return true;
     if (!uri.starts_with(g_origin)) return false;
     return uri.size() == g_origin.size() || uri[g_origin.size()] == L'/';
+}
+
+bool IsEnglishOriginalUrl(const std::wstring& url) {
+    // URLSearchParams preserves the camel-case option name emitted by Agent.
+    // Accept the older lower-case spelling as well so mixed local builds still
+    // converge on the same singleton window.
+    return url.find(L"readOnly=english") != std::wstring::npos
+        || url.find(L"readonly=english") != std::wstring::npos;
+}
+
+void ActivateWindow(HWND window) {
+    if (!window) return;
+    ShowWindow(window, SW_RESTORE);
+    // A short topmost toggle reliably surfaces a window that was launched by a
+    // click in another WebView2 process without leaving it permanently on top.
+    SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    BringWindowToTop(window);
+    SetForegroundWindow(window);
+    SetFocus(window);
+}
+
+bool NavigateExistingEnglishWindow(HWND window, const std::wstring& url) {
+    COPYDATASTRUCT message{};
+    message.dwData = kNavigateCopyData;
+    message.cbData = static_cast<DWORD>((url.size() + 1) * sizeof(wchar_t));
+    message.lpData = const_cast<wchar_t*>(url.c_str());
+    DWORD_PTR handled = 0;
+    const LRESULT sent = SendMessageTimeoutW(window, WM_COPYDATA, 0,
+        reinterpret_cast<LPARAM>(&message), SMTO_ABORTIFHUNG, 2000, &handled);
+    if (!sent || !handled) return false;
+    ActivateWindow(window);
+    return true;
 }
 
 void ResizeWebView() {
@@ -231,6 +270,24 @@ void CreateWebView() {
 
 LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
+        case WM_COPYDATA: {
+            const COPYDATASTRUCT* data = reinterpret_cast<const COPYDATASTRUCT*>(lParam);
+            if (!data || data->dwData != kNavigateCopyData || !data->lpData
+                || data->cbData < sizeof(wchar_t) || data->cbData > 131072
+                || data->cbData % sizeof(wchar_t) != 0) return FALSE;
+            const size_t length = data->cbData / sizeof(wchar_t);
+            const wchar_t* characters = static_cast<const wchar_t*>(data->lpData);
+            if (characters[length - 1] != L'\0') return FALSE;
+            std::wstring nextUrl(characters, length - 1);
+            const std::wstring nextOrigin = OriginFromUrl(nextUrl);
+            if (!IsEnglishOriginalUrl(nextUrl)
+                || !nextOrigin.starts_with(L"http://127.0.0.1:")) return FALSE;
+            g_url = std::move(nextUrl);
+            g_origin = nextOrigin;
+            if (g_webview) g_webview->Navigate(g_url.c_str());
+            ActivateWindow(window);
+            return TRUE;
+        }
         case WM_SIZE:
             ResizeWebView();
             return 0;
@@ -273,6 +330,38 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
         return 3;
     }
 
+    const bool englishOriginal = IsEnglishOriginalUrl(g_url);
+    HANDLE englishMutex = nullptr;
+    bool ownsEnglishMutex = false;
+    if (englishOriginal) {
+        englishMutex = CreateMutexW(nullptr, TRUE, kEnglishMutexName);
+        if (!englishMutex) {
+            CoUninitialize();
+            return 4;
+        }
+        ownsEnglishMutex = GetLastError() != ERROR_ALREADY_EXISTS;
+        if (!ownsEnglishMutex) {
+            // The first process may still be between creating the mutex and its
+            // HWND. Give it a brief chance to publish the reusable window.
+            for (int attempt = 0; attempt < 60; ++attempt) {
+                HWND existing = FindWindowW(kWindowClass, kEnglishWindowTitle);
+                if (existing && NavigateExistingEnglishWindow(existing, g_url)) {
+                    CloseHandle(englishMutex);
+                    CoUninitialize();
+                    return 0;
+                }
+                Sleep(50);
+            }
+            const DWORD acquired = WaitForSingleObject(englishMutex, 1000);
+            ownsEnglishMutex = acquired == WAIT_OBJECT_0 || acquired == WAIT_ABANDONED;
+            if (!ownsEnglishMutex) {
+                CloseHandle(englishMutex);
+                CoUninitialize();
+                return 4;
+            }
+        }
+    }
+
     WNDCLASSEXW windowClass{sizeof(WNDCLASSEXW)};
     windowClass.lpfnWndProc = WindowProcedure;
     windowClass.hInstance = instance;
@@ -280,12 +369,27 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     windowClass.lpszClassName = kWindowClass;
-    if (!RegisterClassExW(&windowClass)) return 4;
-    g_window = CreateWindowExW(0, kWindowClass, kWindowTitle, WS_OVERLAPPEDWINDOW,
+    if (!RegisterClassExW(&windowClass)) {
+        if (ownsEnglishMutex) ReleaseMutex(englishMutex);
+        if (englishMutex) CloseHandle(englishMutex);
+        CoUninitialize();
+        return 5;
+    }
+    const wchar_t* windowTitle = englishOriginal ? kEnglishWindowTitle : kWindowTitle;
+    g_window = CreateWindowExW(0, kWindowClass, windowTitle, WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 1500, 900, nullptr, nullptr, instance, nullptr);
-    if (!g_window) return 5;
+    if (!g_window) {
+        if (ownsEnglishMutex) ReleaseMutex(englishMutex);
+        if (englishMutex) CloseHandle(englishMutex);
+        CoUninitialize();
+        return 6;
+    }
     ShowWindow(g_window, showCommand);
     UpdateWindow(g_window);
+    // Review is commonly launched by a click inside another Review window. Make
+    // the newly opened original/diff visible immediately instead of leaving it
+    // behind the caller with no obvious feedback.
+    ActivateWindow(g_window);
     CreateWebView();
 
     MSG message{};
@@ -293,6 +397,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+    if (ownsEnglishMutex) ReleaseMutex(englishMutex);
+    if (englishMutex) CloseHandle(englishMutex);
     CoUninitialize();
     return static_cast<int>(message.wParam);
 }

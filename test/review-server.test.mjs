@@ -40,8 +40,11 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
   const repository = path.join(temporary, 'repository');
   const state = path.join(temporary, 'state');
   const tracked = path.join(repository, 'localisation', 'russian', 'review_l_russian.yml');
+  const replaceEnglish = path.join(repository, 'localisation', 'replace', 'english', 'review_l_english.yml');
   await fs.mkdir(path.dirname(tracked), { recursive: true });
+  await fs.mkdir(path.dirname(replaceEnglish), { recursive: true });
   await fs.writeFile(tracked, 'l_russian:\n REVIEW_KEY:0 "Review"\n', 'utf8');
+  await fs.writeFile(replaceEnglish, 'l_english:\n REVIEW_KEY:0 "Review original"\n', 'utf8');
   const received = [];
   let canonicalText = 'l_russian:\n REVIEW_KEY:0 "Review"\n';
   const hub = {
@@ -94,6 +97,14 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     const payload = await bootstrap.json();
     assert.equal(payload.path, tracked);
     assert.equal(Buffer.from(payload.textBase64, 'base64').toString('utf8').includes('REVIEW_KEY'), true);
+
+    const replaceOriginal = await fetch(`${discovery.origin}/api/bootstrap?readonly=english&path=${encodeURIComponent(replaceEnglish)}`, {
+      headers: { Authorization: `Bearer ${discovery.token}` },
+    });
+    assert.equal(replaceOriginal.status, 200);
+    const replacePayload = await replaceOriginal.json();
+    assert.equal(replacePayload.relativePath, 'localisation/replace/english/review_l_english.yml');
+    assert.equal(Buffer.from(replacePayload.textBase64, 'base64').toString('utf8').includes('Review original'), true);
 
     const tickets = await fetch(`${discovery.origin}/api/tickets`, {
       headers: { Authorization: `Bearer ${discovery.token}` },

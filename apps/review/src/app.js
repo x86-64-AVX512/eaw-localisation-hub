@@ -16,6 +16,8 @@ import { createAgentConnection } from './agent-connection.js';
 import { createGitConflictDiff } from './git-conflict-diff.js'; import { resetExternalConflicts, storeExternalConflict } from './git-conflict-state.js';
 import { createDocumentVariants } from './document-variants.js';
 import { createRemoteDocument } from './remote-document.js';
+import { createLocalisationAuditPanel } from './localisation-audit-panel.js'; import { createHelpPanel } from './help-panel.js';
+import { createNotificationCenter } from './notification-center.js';
 import {
   byteToUtf16, createDialogController, decodeBase64, encodeBase64, utf16ToByte,
 } from './review-utilities.js';
@@ -30,19 +32,13 @@ const state = {
   suggestionMessages: new Map(), commentMessages: new Map(),
   recoveryStatus: '', temporaryPassword: false,
   history: [], historyHeadId: '', editingSuggestionId: '', suggestionProjection: null,
-  documentView: 'shared', documentVariants: null,
+  documentView: 'shared', documentVariants: null, version: '', serverVersion: '', trainingProgress: {},
 };
 const statusElement = document.querySelector('#status'), toastElement = document.querySelector('#toast');
 const askText = createDialogController(); let toastTimer;
-function setStatus(text, error = false) {
-  statusElement.textContent = text;
-  statusElement.classList.toggle('error', error);
-}
-function showToast(text, error = false) {
-  clearTimeout(toastTimer);
-  toastElement.textContent = text;
-  toastElement.classList.toggle('error', error);
-  toastElement.classList.add('visible');
+function setStatus(text, error = false) { statusElement.textContent = text; statusElement.classList.toggle('error', error); }
+function showToast(text, error = false) { clearTimeout(toastTimer); toastElement.textContent = text;
+  toastElement.classList.toggle('error', error); toastElement.classList.add('visible');
   toastTimer = setTimeout(() => toastElement.classList.remove('visible'), 4200);
 }
 monaco.languages.register({ id: 'eaw-yaml' });
@@ -113,7 +109,8 @@ editingMode = createEditingModeController({
 const avatarProfile = createAvatarProfile({ state, send, showToast });
 const recoveryBanner = createRecoveryBanner({ state, send, showToast });
 const ticketPanel = createTicketPanel({ monaco, state, token, requestedPath, showToast });
-const keyReplacementPanel = createKeyReplacementPanel({ state, token, showToast });
+const keyReplacementPanel = createKeyReplacementPanel({ state, token, showToast }); const localisationAuditPanel = createLocalisationAuditPanel({ monaco, state, token, showToast });
+const helpPanel = createHelpPanel({ state, token, showToast }); const notificationCenter = createNotificationCenter({ token, showToast });
 const scrollSync = createScrollSync({ editor, initialPair: requestedPair });
 createEnglishOriginal({ state, editor, token, showToast, onOpened: (pair) => scrollSync.setPair(pair) });
 const historyPanel = createHistoryPanel({ monaco, state, editor, send, showToast }); const gitHistoryPanel = createGitHistoryPanel({ monaco, state, token, showToast });
@@ -142,11 +139,14 @@ function handleMessage(message) {
       recoveryStatus: message.recoveryStatus ?? '',
       temporaryPassword: message.temporaryPassword === true,
       workspace: message.workspace || state.workspace,
+      version: message.version || state.version, serverVersion: message.serverVersion || state.serverVersion,
+      trainingProgress: message.trainingProgress ?? state.trainingProgress,
     });
     setStatus(`${message.user} · ${message.workspace}`);
     collaborationPanel.refresh();
     avatarProfile.refresh();
     recoveryBanner.refresh();
+    helpPanel.refresh();
   } else if (message.type === 'documentStatus') {
     applyDocumentStatus(message, state, editor, setStatus);
   } else if (message.type === 'documentReady') {
@@ -277,14 +277,15 @@ async function start() {
     onWaiting: (_delay, error = '') => {
       state.ready = false;
       editor.updateOptions({ readOnly: true });
-      setStatus(error || 'Desktop Agent отключён — ожидается автоматическое переподключение…', true);
+      setStatus(error || 'Desktop Agent отключён – ожидается автоматическое переподключение…', true);
     },
   });
 }
 start().catch((error) => setStatus(error.message, true));
 window.addEventListener('beforeunload', () => {
   ticketPanel.dispose();
-  keyReplacementPanel.dispose();
+  keyReplacementPanel.dispose(); localisationAuditPanel.dispose(); helpPanel.dispose();
+  notificationCenter.dispose();
   editingMode.flushSuggestion();
   editingMode.dispose();
   presenceController.dispose();

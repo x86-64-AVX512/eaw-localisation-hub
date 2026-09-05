@@ -113,6 +113,7 @@ export function createCollaborationPanel({
   }
 
   function renderConflicts() {
+    const previousScrollTop = conflictList.scrollTop;
     conflictList.replaceChildren();
     const values = [...state.externalConflicts.values()];
     if (!values.length) emptyList(conflictList, 'Конфликтов нет.');
@@ -133,6 +134,7 @@ export function createCollaborationPanel({
       keepCollaborative.disabled = true;
       useExternal.disabled = true;
     }
+    conflictList.scrollTop = previousScrollTop;
   }
 
   function refresh() {

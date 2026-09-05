@@ -13,7 +13,7 @@ test('Review exposes version comparison and non-destructive restoration', () => 
   assert.match(html, /id="history-diff"/u);
   assert.match(html, /id="history-restore"/u);
   assert.match(app, /message\.type === 'historyVersion'/u);
-  assert.match(panel, /createDiffEditor/u);
+  assert.match(panel, /createStandardDiffView/u);
   assert.match(panel, /Текущее состояние останется в истории/u);
   assert.match(panel, /type: 'historyRestore'/u);
   assert.match(panel, /toLocaleString\(\)/u);

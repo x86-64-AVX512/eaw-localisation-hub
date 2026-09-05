@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>EaW Localisation Hub — Рецензирование</title>
+  <title>EaW Localisation Hub – Рецензирование</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/app.css">
 </head>
@@ -45,6 +45,9 @@
       <button id="english-original" title="Показать английскую строку для ключа под курсором">Английский оригинал</button>
       <button id="history-open" disabled>История</button>
       <button id="git-history-open" disabled>Git diff</button>
+      <button id="localisation-audit-open" title="Сравнить ключи, физические строки и их порядок в русском и английском файлах">Сверка</button>
+      <button id="help-open" title="Настройки уведомлений и повторное обучение">Настройки</button>
+      <button id="notifications-open" title="Локальные уведомления">Уведомления <span id="notifications-count">0</span></button>
       <label id="scroll-sync-control" class="scroll-sync-control" hidden><input id="scroll-sync-enabled" type="checkbox" checked> Синхронизация прокрутки</label>
     </div>
   </header>
@@ -56,6 +59,7 @@
   <div id="git-branch-notice" class="git-notice git-branch-notice" role="status" hidden></div>
   <div id="git-files-notice" class="git-notice git-files-notice" role="status" hidden></div>
   <div id="git-file-block" class="git-notice git-file-block" role="alert" hidden></div>
+  <div id="version-notice" class="git-notice version-notice" role="status" hidden></div>
   <main id="workspace" class="workspace">
     <aside id="collaboration-lane" aria-label="Совместная работа">
       <section class="side-section">
@@ -195,7 +199,12 @@
   <dialog id="key-replace-dialog" class="key-replace-dialog">
     <div class="key-replace-shell">
       <h2>Изменить по ключам</h2>
-      <p class="dialog-hint">По одному значению в строке: <code>key:0 "текст"</code> или <code>key: "текст"</code>. Изменяется только текст внутри кавычек основной версии.</p>
+      <p class="dialog-hint">По одному значению в строке: <code>key:0 "текст"</code> или <code>key: "текст"</code>. Внутренние кавычки можно вводить как обычно – Hub экранирует их при записи.</p>
+      <label for="key-replace-language">Где искать и изменять ключи</label>
+      <select id="key-replace-language">
+        <option value="russian">Русская локализация</option>
+        <option value="english">Английская локализация</option>
+      </select>
       <textarea id="key-replace-input" spellcheck="false" placeholder='example_key:0 "Новый текст"'></textarea>
       <div class="dialog-actions">
         <button id="key-replace-preview">Предпросмотр</button>
@@ -238,6 +247,7 @@
       <section class="history-preview">
         <div class="history-toolbar">
           <strong id="git-history-selection">Выберите две версии для сравнения</strong>
+          <button id="git-history-fullscreen">На весь экран</button>
           <button id="git-history-close">Закрыть</button>
         </div>
         <div id="git-history-diff"></div>
@@ -249,6 +259,7 @@
       <div class="history-toolbar">
         <strong id="git-conflict-heading">Конфликт Git</strong>
         <span>Слева совместная версия, справа версия Git</span>
+        <button id="git-conflict-fullscreen">На весь экран</button>
         <button id="git-conflict-close">Закрыть</button>
       </div>
       <div id="git-conflict-diff"></div>
@@ -256,6 +267,45 @@
         <button id="git-conflict-keep">Оставить совместную</button>
         <button id="git-conflict-use" class="primary">Принять из Git</button>
       </div>
+    </div>
+  </dialog>
+  <dialog id="localisation-audit-dialog" class="localisation-audit-dialog">
+    <div class="localisation-audit-shell">
+      <div class="history-toolbar">
+        <h2>Сверка локализации</h2>
+        <label>Режим <select id="localisation-audit-view"><option value="keys">Ключи</option><option value="structure">Строки и порядок</option></select></label>
+        <label id="localisation-audit-filter-label">Показывать <select id="localisation-audit-filter"><option value="problems">Только расхождения</option><option value="all">Все ключи</option><option value="missing">Пропущенные</option><option value="duplicates">Дубликаты</option></select></label>
+        <button id="localisation-audit-fullscreen">На весь экран</button>
+        <button id="localisation-audit-close">Закрыть</button>
+      </div>
+      <p id="localisation-audit-summary" class="dialog-hint audit-summary"></p>
+      <div class="audit-columns"><strong>Русский файл</strong><strong>Английский файл</strong></div>
+      <div id="localisation-audit-results" class="localisation-audit-results"></div>
+      <div id="localisation-structure-diff" hidden></div>
+    </div>
+  </dialog>
+  <dialog id="help-dialog" class="help-dialog">
+    <div class="simple-dialog-shell">
+      <div class="history-toolbar"><h2>Настройки</h2><button id="help-close">Закрыть</button></div>
+      <label><input id="notifications-enabled" type="checkbox" checked> Показывать уведомления</label>
+      <label><input id="notification-sound" type="checkbox" checked> Звуковые уведомления</label>
+      <hr>
+      <button id="tutorial-repeat">Повторить обучение…</button>
+      <p class="dialog-hint">Кнопка обучения намеренно спрятана в этом окне, чтобы её нельзя было нажать случайно.</p>
+    </div>
+  </dialog>
+  <dialog id="tutorial-dialog" class="tutorial-dialog">
+    <div class="simple-dialog-shell">
+      <div class="history-toolbar"><h2 id="tutorial-heading">Обучение</h2><span id="tutorial-progress"></span></div>
+      <div id="tutorial-content" class="tutorial-content"></div>
+      <div class="dialog-actions"><button id="tutorial-back">Назад</button><button id="tutorial-next" class="primary">Далее</button></div>
+    </div>
+  </dialog>
+  <dialog id="notifications-dialog" class="notifications-dialog">
+    <div class="simple-dialog-shell">
+      <div class="history-toolbar"><h2>Уведомления</h2><button id="notifications-clear">Очистить</button><button id="notifications-close">Закрыть</button></div>
+      <p class="dialog-hint">Уведомления и отметка прочтения хранятся только на этом компьютере.</p>
+      <div id="notifications-list" class="notifications-list"></div>
     </div>
   </dialog>
   <script type="module" src="/app.js"></script>

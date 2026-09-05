@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
     const auto getName = reinterpret_cast<GetName>(GetProcAddress(module, "getName"));
     const auto isUnicode = reinterpret_cast<IsUnicode>(GetProcAddress(module, "isUnicode"));
     const std::wstring actualName = getName();
-    const std::wstring expectedName = L"EaW Localisation Hub 0.8.6F4";
+    const std::wstring expectedName = L"EaW Localisation Hub 0.8.7F1";
     if (actualName != expectedName || !isUnicode()) {
         std::wcerr << L"unexpected ABI metadata: " << actualName << L"\n";
         FreeLibrary(module);

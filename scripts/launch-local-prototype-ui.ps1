@@ -23,7 +23,7 @@ if (Test-Path -LiteralPath $paths.ConfigPath) {
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = 'EaW Localisation Hub 0.8.6F4'
+$form.Text = 'EaW Localisation Hub 0.8.7F1'
 $form.Size = [System.Drawing.Size]::new(600, 585)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'

@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $distRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
-$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Hub-Client-0.8.6F4'))
+$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Hub-Client-0.8.7F1'))
 if (-not $packageRoot.StartsWith($distRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Refusing to rebuild a package outside dist: $packageRoot"
 }
@@ -62,7 +62,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'Launch EaW Hub Team Management.c
     "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0scripts\install-client.ps1`"`r`npause`r`n",
     [System.Text.Encoding]::ASCII)
 
-$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Hub-Client-0.8.6F4.zip'))
+$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Hub-Client-0.8.7F1.zip'))
 $checksumPath = "$archivePath.sha256"
 if (-not $archivePath.StartsWith($distRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Refusing to create an archive outside dist: $archivePath"

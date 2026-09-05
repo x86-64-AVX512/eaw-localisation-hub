@@ -364,3 +364,34 @@ test('Agent never treats an unavailable Git result as a branch switch', () => {
   assert.match(change, /if \(!workspace \|\| workspace === this\.options\.workspace\)/u);
   assert.match(change, /this\.workspaceObservationCount < 2/u);
 });
+
+test('Git history, document history, and localisation audit share the compact wrapped diff view', () => {
+  const history = source('apps/review/src/git-history-panel.js');
+  const documentHistory = source('apps/review/src/history-panel.js');
+  const audit = source('apps/review/src/localisation-audit-panel.js');
+  const standard = source('apps/review/src/standard-diff-view.js');
+  const style = source('apps/review/src/style.css');
+  for (const consumer of [history, documentHistory, audit]) {
+    assert.match(consumer, /createStandardDiffView/u);
+  }
+  assert.match(standard, /wordWrapOverride1: 'on'/u);
+  assert.match(standard, /wordWrapOverride2: 'on'/u);
+  assert.match(standard, /hideUnchangedRegions: \{ enabled: false \}/u);
+  assert.match(standard, /diff\.onDidUpdateDiff\(showChangedRegionsOnly\)/u);
+  assert.match(standard, /setHiddenAreas\(hiddenRanges/u);
+  assert.match(standard, /requestAnimationFrame\(\(\) => \{ diff\.layout\(\); enforceOptions\(\); showChangedRegionsOnly\(\); \}\)/u);
+  assert.match(style, /\.standard-diff \.diagonal-fill/u);
+  assert.match(style, /background-image: none !important/u);
+});
+
+test('English original uses one reusable foreground native window', () => {
+  const host = source('apps/review-host/src/main.cpp');
+  assert.match(host, /kEnglishWindowTitle/u);
+  assert.match(host, /readOnly=english/u);
+  assert.match(host, /kEnglishMutexName/u);
+  assert.match(host, /FindWindowW\(kWindowClass, kEnglishWindowTitle\)/u);
+  assert.match(host, /SendMessageTimeoutW\(window, WM_COPYDATA/u);
+  assert.match(host, /case WM_COPYDATA/u);
+  assert.match(host, /g_webview->Navigate\(g_url\.c_str\(\)\)/u);
+  assert.match(host, /SetWindowPos\(window, HWND_TOPMOST/u);
+});

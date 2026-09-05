@@ -1,4 +1,5 @@
 import { decodeBase64 } from './review-utilities.js';
+import { createStandardDiffView } from './standard-diff-view.js';
 
 export function createGitHistoryPanel({ monaco, state, token, showToast }) {
   const openButton = document.querySelector('#git-history-open');
@@ -9,14 +10,9 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
   const selection = document.querySelector('#git-history-selection');
   const fromSelect = document.querySelector('#git-history-from');
   const toSelect = document.querySelector('#git-history-to');
-  const original = monaco.editor.createModel('', 'eaw-yaml');
-  const modified = monaco.editor.createModel('', 'eaw-yaml');
-  const diff = monaco.editor.createDiffEditor(document.querySelector('#git-history-diff'), {
-    theme: 'vs-dark', readOnly: true, automaticLayout: true, minimap: { enabled: false },
-    renderSideBySide: true, originalEditable: false,
-    hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 4, revealLineCount: 10 },
+  const diffView = createStandardDiffView({
+    monaco, container: document.querySelector('#git-history-diff'),
   });
-  diff.setModel({ original, modified });
   let entries = [];
   let nextOffset = 0;
   let hasMore = false;
@@ -74,9 +70,11 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
       const to = entry.commit === toSelect.value;
       item.className = `history-item${from ? ' selected-from' : ''}${to ? ' selected-to' : ''}`;
       item.style.setProperty('--history-color', to ? '#71c995' : '#6aa9ff');
-      item.innerHTML = '<strong></strong><span></span><small></small>';
-      item.querySelector('strong').textContent = `${entry.shortCommit} · ${entry.author}`;
-      item.querySelector('span').textContent = entry.subject;
+      item.innerHTML = '<strong class="history-subject"></strong><span class="history-author"></span><small></small>';
+      item.querySelector('.history-subject').textContent = entry.subject;
+      item.querySelector('.history-subject').title = entry.subject;
+      item.querySelector('.history-author').textContent = `${entry.shortCommit} · ${entry.author}`;
+      item.querySelector('.history-author').title = entry.author;
       const date = new Date(entry.date);
       item.querySelector('small').textContent = Number.isNaN(date.valueOf()) ? '' : date.toLocaleString();
       item.title = 'Выбрать эту версию слева';
@@ -95,8 +93,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
       entries = [];
       nextOffset = 0;
       hasMore = false;
-      original.setValue('');
-      modified.setValue('');
+      diffView.clear();
       selection.textContent = 'Загрузка истории Git…';
     }
     render();
@@ -126,8 +123,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
     if (!from || !to) return;
     const requestId = ++comparisonId;
     selection.textContent = `${shortLabel(from)} → ${shortLabel(to)} · загрузка…`;
-    original.setValue('');
-    modified.setValue('');
+    diffView.clear();
     render();
     try {
       const fromEntry = entryFor(from);
@@ -141,10 +137,8 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
       });
       const payload = await request(`/api/git-history/diff?${query}`);
       if (requestId !== comparisonId) return;
-      original.setValue(decodeBase64(payload.baseBase64));
-      modified.setValue(decodeBase64(payload.headBase64));
+      diffView.setTexts(decodeBase64(payload.baseBase64), decodeBase64(payload.headBase64));
       selection.textContent = `${String(payload.fromCommit).slice(0, 10)} → ${String(payload.toCommit).slice(0, 10)}`;
-      diff.layout();
     } catch (error) {
       if (requestId === comparisonId) selection.textContent = error.message;
       showToast(error.message, true);
@@ -153,15 +147,21 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
 
   openButton.addEventListener('click', () => {
     dialog.showModal();
+    diffView.layout();
     load(true);
   });
   fromSelect.addEventListener('change', compare);
   toSelect.addEventListener('change', compare);
   more.addEventListener('click', () => load(false));
   document.querySelector('#git-history-close').addEventListener('click', () => dialog.close());
+  document.querySelector('#git-history-fullscreen').addEventListener('click', (event) => {
+    dialog.classList.toggle('fullscreen');
+    event.currentTarget.textContent = dialog.classList.contains('fullscreen') ? 'Обычный размер' : 'На весь экран';
+    requestAnimationFrame(diffView.layout);
+  });
 
   return {
     setAvailable(available) { openButton.disabled = !available; },
-    dispose() { diff.dispose(); original.dispose(); modified.dispose(); },
+    dispose() { diffView.dispose(); },
   };
 }

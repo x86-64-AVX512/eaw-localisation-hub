@@ -1,6 +1,6 @@
 ﻿param(
     [string]$NotepadInstallDirectory = (Join-Path $env:ProgramFiles 'Notepad++'),
-    [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA 'EaWLocalisationHub\Client-0.8.6F4'),
+    [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA 'EaWLocalisationHub\Client-0.8.7F1'),
     [switch]$DoNotLaunch,
     [switch]$Elevated
 )
@@ -47,7 +47,7 @@ $pluginTarget = Join-Path $NotepadInstallDirectory 'plugins\EawLocalisationHub'
 New-Item -ItemType Directory -Path $pluginTarget -Force | Out-Null
 $installedDll = Join-Path $pluginTarget 'EawLocalisationHub.dll'
 if (Test-Path -LiteralPath $installedDll) {
-    $backup = "$installedDll.before-0.8.6F4-" + [DateTime]::Now.ToString('yyyyMMdd-HHmmss') + '.bak'
+    $backup = "$installedDll.before-0.8.7F1-" + [DateTime]::Now.ToString('yyyyMMdd-HHmmss') + '.bak'
     Copy-Item -LiteralPath $installedDll -Destination $backup -Force
 }
 Copy-Item -LiteralPath $pluginSource -Destination $installedDll -Force
@@ -70,7 +70,7 @@ foreach ($shortcutDefinition in $shortcutTargets) {
 }
 
 $record = [pscustomobject]@{
-    Version = '0.8.6F4'
+    Version = '0.8.7F1'
     InstalledAt = [DateTime]::UtcNow.ToString('o')
     InstallDirectory = $InstallDirectory
     NotepadInstallDirectory = $NotepadInstallDirectory

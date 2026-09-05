@@ -158,6 +158,8 @@ button.primary { border-color: #517bdc; background: #315db8; }
 .list-item.selected { border-color: var(--item-color, #6aa9ff); background: #28303e; }
 .list-item .item-title { display: flex; align-items: center; gap: 7px; }
 .list-item small { display: block; margin: 3px 0 0 31px; overflow: hidden; color: #8f9bad; text-overflow: ellipsis; }
+#conflict-list .list-item .item-title span:last-child { min-width: 0; overflow-wrap: anywhere; }
+#conflict-list .list-item small { margin-left: 0; overflow: visible; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
 .avatar {
   display: inline-flex; width: 30px; height: 30px; flex: 0 0 auto; align-items: center; justify-content: center;
   overflow: hidden; border: 1px solid color-mix(in srgb, var(--avatar-color) 70%, white 10%);
@@ -195,6 +197,10 @@ dialog input {
 .key-result { border: 1px solid #394253; border-radius: 7px; padding: 8px; background: #151a22; }
 .key-result strong, .key-result div { display: block; }
 .key-result div { margin-top: 4px; color: #aeb8c8; font-family: Consolas, monospace; white-space: pre-wrap; }
+.key-result-diff { display: grid !important; gap: 3px; overflow-wrap: anywhere; }
+.key-result-diff code { display: block; white-space: pre-wrap; }
+.key-result-diff .before { color: #ff9ca8; }
+.key-result-diff .after { color: #9be4b5; }
 .key-result.error { border-color: #75414a; color: #ffadb3; }
 .history-dialog { width: min(1280px, 94vw); height: min(820px, 90vh); padding: 0; overflow: hidden; }
 .history-shell { display: grid; grid-template-columns: 280px 1fr; width: 100%; height: 100%; }
@@ -204,12 +210,46 @@ dialog input {
 .git-history-points { display: grid; gap: 7px; margin: 10px 0; }
 .git-history-points label { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 6px; color: #aeb8c8; font-size: 12px; }
 .git-history-points select { min-width: 0; width: 100%; }
-.history-item { display: grid; width: 100%; grid-template-columns: 1fr auto; border-left: 4px solid var(--history-color); text-align: left; }
-.history-item strong { overflow: hidden; text-overflow: ellipsis; }
-.history-item span { color: #aeb8c8; font-size: 12px; }
+.history-item { display: grid; width: 100%; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; border-left: 4px solid var(--history-color); text-align: left; }
+.history-item strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-item span { min-width: 0; overflow: hidden; color: #aeb8c8; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.history-item .history-author { grid-row: 2; grid-column: 1 / -1; }
 .history-item small { grid-column: 1 / -1; margin-top: 3px; color: #7f8998; }
 .history-item.selected, .history-item.selected-from, .history-item.selected-to { border-color: var(--history-color); background: #303848; }
 .history-item.selected-from::after { content: "слева"; color: #8db7ff; font-size: 10px; }
+.version-notice { background: #143b2b; border-color: #2d9e67; color: #c7f7df; }
+.simple-dialog-shell { display: grid; gap: 14px; width: min(900px, 88vw); max-height: 82vh; padding: 18px; overflow: auto; }
+.localisation-audit-dialog { width: min(1320px, calc(100vw - 32px)); height: min(860px, calc(100vh - 32px)); max-width: none; max-height: none; }
+.localisation-audit-shell { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); width: 100%; height: 100%; overflow: hidden; }
+.localisation-audit-shell .history-toolbar { flex-wrap: wrap; }
+.localisation-audit-shell .history-toolbar h2 { flex: 1 1 260px; margin: 0; }
+.localisation-audit-shell .history-toolbar label { display: flex; align-items: center; gap: 6px; margin: 0; }
+.localisation-audit-shell .audit-summary { max-width: none; margin: 0; padding: 9px 14px; overflow-wrap: anywhere; }
+.localisation-audit-shell .audit-summary.error { border-left: 4px solid #ff6878; background: #3a2027; color: #ffd2d7; }
+.localisation-audit-shell .audit-summary.ok { border-left: 4px solid #55c98a; background: #173326; color: #c8f5db; }
+.audit-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; padding-left: min(30%, 360px); border-block: 1px solid #344155; background: #344155; }
+.audit-columns strong { padding: 7px 10px; background: #171d27; }
+.localisation-audit-results { grid-row: 4; min-height: 0; overflow: auto; background: #111720; }
+#localisation-structure-diff { grid-row: 4; min-width: 0; min-height: 0; }
+.audit-row { display: grid; grid-template-columns: minmax(180px, 30%) minmax(0, 1fr) minmax(0, 1fr); border-bottom: 1px solid #30394a; }
+.audit-row.missing-russian, .audit-row.missing-english { background: #3a2318; }
+.audit-row.duplicate { background: #38202a; }
+.audit-key { padding: 9px 10px; overflow-wrap: anywhere; color: #50d6c1; background: #171d27; }
+.audit-side { min-width: 0; padding: 6px 8px; border-left: 1px solid #30394a; }
+.audit-side.missing { display: flex; align-items: center; color: #ffad91; font-style: italic; }
+.audit-occurrence { display: grid; grid-template-columns: 3.2em minmax(0, 1fr); gap: 7px; padding: 3px 0; }
+.audit-line-number { color: #7e8b9e; text-align: right; user-select: none; }
+.audit-value { white-space: pre-wrap; overflow-wrap: anywhere; color: #e7a37e; }
+.tutorial-dialog { width: min(1240px, calc(100vw - 32px)); height: min(860px, calc(100vh - 32px)); max-width: none; max-height: none; }
+.tutorial-dialog .simple-dialog-shell { grid-template-rows: auto minmax(0, 1fr) auto; width: 100%; height: 100%; max-height: none; overflow: hidden; }
+.tutorial-dialog .history-toolbar h2 { flex: 1; margin: 0; }
+.tutorial-content { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; line-height: 1.55; }
+dialog.fullscreen { width: calc(100vw - 20px); height: calc(100vh - 20px); max-width: none; max-height: none; margin: 10px; }
+dialog.fullscreen .history-shell, dialog.fullscreen .git-conflict-shell, dialog.fullscreen .localisation-audit-shell { width: 100%; height: 100%; max-width: none; max-height: none; }
+.notifications-list { display: grid; gap: 8px; }
+.notification { display: grid; gap: 4px; padding: 10px; border: 1px solid #344155; border-radius: 7px; background: #171e29; }
+.notification.unread { border-color: #5790e6; background: #1b2b43; }
+.notification time { color: #8794a8; font-size: 12px; }
 .history-item.selected-to::after { content: "справа"; color: #8ddeb0; font-size: 10px; }
 .history-preview { display: flex; min-width: 0; flex-direction: column; }
 .history-toolbar { display: flex; align-items: center; gap: 8px; padding: 9px; border-bottom: 1px solid #303746; }
@@ -400,3 +440,10 @@ dialog textarea {
   .status { display: none; }
   #toast { left: 258px; max-width: calc(100vw - 540px); }
 }
+/* Monaco marks lines missing on one side of a diff with a striped filler.
+   Collapsed Git history is easier to scan when those placeholders stay plain. */
+.standard-diff .diagonal-fill {
+  background-image: none !important;
+  background-color: transparent !important;
+}
+.audit-inline-comment { color: #6a9955 !important; font-style: italic; }

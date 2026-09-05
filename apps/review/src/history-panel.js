@@ -1,3 +1,5 @@
+import { createStandardDiffView } from './standard-diff-view.js';
+
 const reasonLabels = {
   baseline: 'Исходное состояние', edit: 'Редактирование', suggestion: 'Принята правка', restore: 'Восстановление',
 };
@@ -10,14 +12,9 @@ export function createHistoryPanel({ monaco, state, editor, send, showToast }) {
   const empty = document.querySelector('#history-empty');
   const restore = document.querySelector('#history-restore');
   const selectionLabel = document.querySelector('#history-selection');
-  const originalModel = monaco.editor.createModel('', 'eaw-yaml');
-  const modifiedModel = monaco.editor.createModel('', 'eaw-yaml');
-  const diff = monaco.editor.createDiffEditor(document.querySelector('#history-diff'), {
-    theme: 'vs-dark', readOnly: true, automaticLayout: true, minimap: { enabled: false },
-    renderSideBySide: true, originalEditable: false,
-    hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 4, revealLineCount: 10 },
+  const diffView = createStandardDiffView({
+    monaco, container: document.querySelector('#history-diff'),
   });
-  diff.setModel({ original: originalModel, modified: modifiedModel });
   let selectedId = '';
   let previousId = '';
 
@@ -43,8 +40,7 @@ export function createHistoryPanel({ monaco, state, editor, send, showToast }) {
     selectedId = entry.id;
     const index = state.history.findIndex((item) => item.id === entry.id);
     previousId = state.history[index + 1]?.id ?? '';
-    originalModel.setValue('');
-    modifiedModel.setValue('');
+    diffView.clear();
     restore.disabled = entry.id === state.historyHeadId || ['applied', 'closed'].includes(state.ticket?.status);
     selectionLabel.textContent = `${entry.author} · ${reasonLabels[entry.reason] ?? entry.reason}`;
     send({ type: 'historyRequest', path: state.path, id: entry.id });
@@ -58,20 +54,19 @@ export function createHistoryPanel({ monaco, state, editor, send, showToast }) {
     const value = new TextDecoder().decode(
       Uint8Array.from(binary, (character) => character.charCodeAt(0)),
     );
-    if (message.id === selectedId) modifiedModel.setValue(value);
-    else originalModel.setValue(value);
-    diff.layout();
+    if (message.id === selectedId) diffView.setModified(value);
+    else diffView.setOriginal(value);
   }
 
   button.addEventListener('click', () => {
     selectedId = '';
     previousId = '';
-    originalModel.setValue('');
-    modifiedModel.setValue('');
+    diffView.clear();
     selectionLabel.textContent = 'Выберите версию слева';
     restore.disabled = true;
     render();
     dialog.showModal();
+    diffView.layout();
   });
   restore.addEventListener('click', () => {
     if (!selectedId) return;
@@ -91,11 +86,11 @@ export function createHistoryPanel({ monaco, state, editor, send, showToast }) {
       if (selectedId && !entries.some((entry) => entry.id === selectedId)) {
         selectedId = '';
         restore.disabled = true;
-        selectionLabel.textContent = 'Документ изменился — выберите версию заново';
+        selectionLabel.textContent = 'Документ изменился – выберите версию заново';
       }
       render();
     },
     receiveVersion,
-    dispose() { diff.dispose(); originalModel.dispose(); modifiedModel.dispose(); },
+    dispose() { diffView.dispose(); },
   };
 }

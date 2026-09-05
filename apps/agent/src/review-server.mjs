@@ -20,6 +20,7 @@ import { handleTicketReviewApi } from './ticket-review-api.mjs';
 import { persistentReviewEndpoint } from './review-endpoint.mjs';
 import { fileHistoryDiff, listFileHistory } from './git-file-history.mjs';
 import { runGitSync } from './git-executable.mjs';
+import { auditLocalisation } from './localisation-audit.mjs';
 
 const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -45,8 +46,9 @@ function normaliseEnglishPath(repository, absolutePath) {
   const root = path.resolve(repository);
   const file = path.resolve(absolutePath);
   const relative = path.relative(root, file).replaceAll('\\', '/');
-  if (!/^localisation\/english\/.+\.ya?ml$/iu.test(relative) || relative.startsWith('../') || path.isAbsolute(relative)) {
-    throw new Error('English file is outside localisation/english');
+  if (!/^localisation\/(?:english|replace\/english)\/.+\.ya?ml$/iu.test(relative)
+    || relative.startsWith('../') || path.isAbsolute(relative)) {
+    throw new Error('English file is outside the supported English localisation folders');
   }
   const canonicalRoot = fs.realpathSync.native(root);
   const canonicalFile = fs.realpathSync.native(file);
@@ -294,6 +296,47 @@ export async function startReviewServer(hub, options) {
       }
       return;
     }
+    if (requestUrl.pathname === '/api/localisation-audit' && request.method === 'GET') {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      try {
+        const payload = await auditLocalisation(options.repo, requestUrl.searchParams.get('path') ?? '');
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify(payload));
+      } catch (error) {
+        response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+    if (requestUrl.pathname === '/api/training' && request.method === 'PUT') {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      try {
+        const body = await readJsonBody(request);
+        const payload = await hub.authRequest('/api/auth/training', {
+          method: 'PUT', body: JSON.stringify(body),
+        });
+        hub.updateIdentity(payload.user);
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify(payload));
+      } catch (error) {
+        response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+    if (requestUrl.pathname === '/api/events' && request.method === 'GET') {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      try {
+        const after = encodeURIComponent(requestUrl.searchParams.get('after') ?? '0');
+        const payload = await hub.authRequest(`/api/events?after=${after}&limit=500`, { method: 'GET' });
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify(payload));
+      } catch (error) {
+        response.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
     if (await handleTicketReviewApi({
       request, requestUrl, response,
       authorised: () => tokenMatches(bearerToken(request), token),
@@ -321,7 +364,7 @@ export async function startReviewServer(hub, options) {
       if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
       try {
         const body = await readJsonBody(request);
-        const payload = await hub.keyReplacementWorkflow.preview(body.input ?? '');
+        const payload = await hub.keyReplacementWorkflow.preview(body.input ?? '', body.language ?? 'russian');
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify(payload));
       } catch (error) {
@@ -334,7 +377,9 @@ export async function startReviewServer(hub, options) {
       if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
       try {
         const body = await readJsonBody(request);
-        const payload = await hub.keyReplacementWorkflow.apply(body.input ?? '', body.files);
+        const payload = await hub.keyReplacementWorkflow.apply(
+          body.input ?? '', body.files, body.language ?? 'russian',
+        );
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify(payload));
       } catch (error) {

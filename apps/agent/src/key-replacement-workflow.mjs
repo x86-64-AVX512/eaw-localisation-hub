@@ -10,7 +10,19 @@ import {
 
 const MAX_BATCH_ENTRIES = 500;
 
-async function localisationFiles(root) {
+function replacementRoots(root, language) {
+  if (language === 'english') return [
+    path.join(root, 'localisation', 'english'),
+    path.join(root, 'localisation', 'replace', 'english'),
+  ];
+  if (language === 'russian') return [
+    path.join(root, 'localisation', 'russian'),
+    path.join(root, 'localisation', 'replace', 'russian'),
+  ];
+  throw new Error('Выберите русские или английские файлы локализации.');
+}
+
+async function localisationFiles(root, language) {
   const result = [];
   async function visit(directory) {
     for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
@@ -19,10 +31,7 @@ async function localisationFiles(root) {
       else if (entry.isFile() && /\.ya?ml$/iu.test(entry.name)) result.push(absolute);
     }
   }
-  for (const base of [
-    path.join(root, 'localisation', 'russian'),
-    path.join(root, 'localisation', 'replace', 'russian'),
-  ]) {
+  for (const base of replacementRoots(root, language)) {
     try {
       await visit(base);
     } catch (error) {
@@ -39,7 +48,7 @@ function digest(text) {
 export class KeyReplacementWorkflow {
   constructor(hub) { this.hub = hub; }
 
-  async preview(input) {
+  async preview(input, language = 'russian') {
     if (this.hub.assertCanonicalGitHead) await this.hub.assertCanonicalGitHead();
     const parsed = parseKeyReplacementBatch(input);
     if (parsed.entries.length > MAX_BATCH_ENTRIES) {
@@ -51,7 +60,7 @@ export class KeyReplacementWorkflow {
     const wanted = new Map(parsed.entries.map((entry) => [entry.key, entry.text]));
     const found = new Map(parsed.entries.map((entry) => [entry.key, []]));
     const fileValues = [];
-    for (const absolutePath of await localisationFiles(this.hub.options.repo)) {
+    for (const absolutePath of await localisationFiles(this.hub.options.repo, language)) {
       const text = withoutUtf8Bom(await readTrackedTextFile(this.hub.options.repo, absolutePath));
       const relativePath = path.relative(this.hub.options.repo, absolutePath).replaceAll('\\', '/');
       const matches = localisationEntries(text).filter((entry) => wanted.has(entry.key));
@@ -73,12 +82,12 @@ export class KeyReplacementWorkflow {
       .map(({ path: filePath, hash }) => ({ path: filePath, hash }));
     return {
       entries: parsed.entries, errors: [], duplicateKeys: [], missingKeys,
-      duplicateMatches, changes, files,
+      duplicateMatches, changes, files, language,
     };
   }
 
-  async apply(input, expectedFiles) {
-    const preview = await this.preview(input);
+  async apply(input, expectedFiles, language = 'russian') {
+    const preview = await this.preview(input, language);
     if (preview.errors.length || preview.duplicateKeys.length || preview.missingKeys.length
       || preview.duplicateMatches.length) throw new Error('Предпросмотр содержит ошибки; применение остановлено.');
     const expected = new Map((Array.isArray(expectedFiles) ? expectedFiles : [])

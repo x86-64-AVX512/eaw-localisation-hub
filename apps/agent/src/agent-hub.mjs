@@ -165,6 +165,10 @@ export class AgentHub {
   updateIdentity(identity) {
     const displayName = String(identity?.displayName ?? '').trim();
     if (!displayName) return;
+    const trainingProgress = { ...(this.identity?.trainingProgress ?? {}) };
+    for (const [segmentId, revision] of Object.entries(identity.trainingProgress ?? {})) {
+      trainingProgress[segmentId] = Math.max(Number(trainingProgress[segmentId] ?? 0), Number(revision ?? 0));
+    }
     this.identity = {
       id: String(identity.id ?? ''),
       displayName,
@@ -174,6 +178,8 @@ export class AgentHub {
       // An empty value means that the server has not confirmed the account state yet.
       // Never turn a delayed/failed /api/auth/me request into a false recovery warning.
       recoveryStatus: String(identity.recoveryStatus ?? ''),
+      // A delayed account refresh must never roll back progress saved by a newer request.
+      trainingProgress,
     };
     this.options.user = displayName;
     for (const client of this.clients) {
@@ -198,6 +204,8 @@ export class AgentHub {
       avatarBase64: this.identity?.avatarBase64 ?? '',
       temporaryPassword: this.identity?.temporaryPassword === true,
       recoveryStatus: this.identity?.recoveryStatus ?? '',
+      trainingProgress: this.identity?.trainingProgress ?? {},
+      serverVersion: this.serverVersion ?? '',
     });
   }
 
@@ -661,7 +669,11 @@ export class AgentHub {
   }
 
   async refreshAccountStatus() {
-    const payload = await this.authRequest('/api/auth/me', { method: 'GET' });
+    const [payload, health] = await Promise.all([
+      this.authRequest('/api/auth/me', { method: 'GET' }),
+      this.authRequest('/health', { method: 'GET' }),
+    ]);
+    this.serverVersion = String(health.version ?? '');
     this.updateIdentity(payload.user);
   }
 

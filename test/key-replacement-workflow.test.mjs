@@ -42,3 +42,44 @@ test('key replacement workflow blocks missing and duplicate repository keys', as
     await fs.rm(repository, { recursive: true, force: true });
   }
 });
+
+test('key replacement workflow scopes changes to the selected localisation language', async () => {
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-key-language-'));
+  try {
+    for (const language of ['russian', 'english']) {
+      const directory = path.join(repository, 'localisation', language);
+      await fs.mkdir(directory, { recursive: true });
+      await fs.writeFile(path.join(directory, `same_l_${language}.yml`), `l_${language}:\n same:0 "${language}"\n`, 'utf8');
+    }
+    const workflow = new KeyReplacementWorkflow({ options: { repo: repository } });
+    const preview = await workflow.preview('same:0 "updated"', 'english');
+    assert.deepEqual(preview.changes.map(({ file }) => file), ['localisation/english/same_l_english.yml']);
+    await workflow.apply('same:0 "updated"', preview.files, 'english');
+    assert.match(await fs.readFile(path.join(repository, 'localisation', 'english', 'same_l_english.yml'), 'utf8'), /"updated"/u);
+    assert.match(await fs.readFile(path.join(repository, 'localisation', 'russian', 'same_l_russian.yml'), 'utf8'), /"russian"/u);
+  } finally {
+    await fs.rm(repository, { recursive: true, force: true });
+  }
+});
+
+test('key replacement workflow replaces the whole legacy value with inner quotes', async () => {
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-key-legacy-quotes-'));
+  try {
+    const directory = path.join(repository, 'localisation', 'russian');
+    const file = path.join(directory, 'country_EYE_l_russian.yml');
+    await fs.mkdir(directory, { recursive: true });
+    const input = 'EYE_all_well_take_back_desc:0 ""Доброжелательность" чужеземцев – их обещания "свободы"."';
+    await fs.writeFile(file, `\uFEFFl_russian:\n ${input}\n`, 'utf8');
+    const workflow = new KeyReplacementWorkflow({ options: { repo: repository } });
+    const preview = await workflow.preview(input);
+    assert.equal(preview.changes.length, 1);
+    assert.equal(preview.changes[0].oldText, '"Доброжелательность" чужеземцев – их обещания "свободы".');
+    await workflow.apply(input, preview.files);
+    const result = await fs.readFile(file, 'utf8');
+    assert.equal(result.match(/Доброжелательность/gu)?.length, 1);
+    assert.equal(result.match(/свободы/gu)?.length, 1);
+    assert.match(result, /EYE_all_well_take_back_desc:0 "\\"Доброжелательность\\" чужеземцев – их обещания \\"свободы\\"\."/u);
+  } finally {
+    await fs.rm(repository, { recursive: true, force: true });
+  }
+});

@@ -124,7 +124,7 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
     binding.emitExternalConflicts(client, absolutePath, state, merge.conflicts);
     client.send({
       type: 'notice',
-      message: `GitHub Desktop изменил файл: требуется разрешить конфликтов — ${merge.conflicts.length}.`,
+      message: `GitHub Desktop изменил файл: требуется разрешить конфликтов – ${merge.conflicts.length}.`,
     });
     return;
   }

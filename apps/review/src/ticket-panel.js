@@ -82,6 +82,7 @@ export function createTicketPanel(options) {
       theme: 'vs-dark', readOnly: true, automaticLayout: true, minimap: { enabled: false },
       renderSideBySide: true, originalEditable: false,
       hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 4, revealLineCount: 10 },
+      wordWrap: 'on', diffWordWrap: 'on', wrappingStrategy: 'advanced',
     });
     diffEditor.setModel({ original, modified });
   }

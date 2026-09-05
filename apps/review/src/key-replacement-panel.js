@@ -2,6 +2,7 @@ export function createKeyReplacementPanel({ token, state, showToast }) {
   const open = document.querySelector('#key-replace-open');
   const dialog = document.querySelector('#key-replace-dialog');
   const input = document.querySelector('#key-replace-input');
+  const language = document.querySelector('#key-replace-language');
   const previewButton = document.querySelector('#key-replace-preview');
   const applyButton = document.querySelector('#key-replace-apply');
   const results = document.querySelector('#key-replace-results');
@@ -33,7 +34,12 @@ export function createKeyReplacementPanel({ token, state, showToast }) {
     for (const change of payload.changes) {
       const item = document.createElement('div'); item.className = 'key-result';
       const title = document.createElement('strong'); title.textContent = `${change.key} · ${change.file}`;
-      const values = document.createElement('div'); values.textContent = `«${change.oldText}» → «${change.newText}»`;
+      const values = document.createElement('div'); values.className = 'key-result-diff';
+      const before = document.createElement('code'); before.className = 'before';
+      before.textContent = `- ${change.key}:0 "${change.oldText}"`;
+      const after = document.createElement('code'); after.className = 'after';
+      after.textContent = `+ ${change.key}:0 "${change.newText}"`;
+      values.append(before, after);
       item.append(title, values); results.append(item);
     }
     if (!problems.length && !payload.changes.length) results.textContent = 'Фактических изменений нет.';
@@ -49,9 +55,10 @@ export function createKeyReplacementPanel({ token, state, showToast }) {
     applyButton.disabled = true; dialog.showModal(); input.focus();
   });
   input.addEventListener('input', () => { preview = null; applyButton.disabled = true; });
+  language.addEventListener('change', () => { preview = null; applyButton.disabled = true; results.textContent = 'Область поиска изменена. Выполните предпросмотр заново.'; });
   previewButton.addEventListener('click', async () => {
     previewButton.disabled = true;
-    try { preview = await request('/api/key-replacements/preview', { input: input.value }); render(preview); }
+    try { preview = await request('/api/key-replacements/preview', { input: input.value, language: language.value }); render(preview); }
     catch (error) { showToast(`Предпросмотр не выполнен: ${error.message}`, true); }
     finally { previewButton.disabled = false; }
   });
@@ -59,7 +66,9 @@ export function createKeyReplacementPanel({ token, state, showToast }) {
     if (!preview || !confirm(`Применить ${preview.changes.length} замен в ${preview.files.length} файлах?`)) return;
     applyButton.disabled = true;
     try {
-      const result = await request('/api/key-replacements/apply', { input: input.value, files: preview.files });
+      const result = await request('/api/key-replacements/apply', {
+        input: input.value, files: preview.files, language: language.value,
+      });
       dialog.close(); showToast(`Изменено ключей: ${result.changedKeys}; файлов: ${result.changedFiles}.`);
     } catch (error) { showToast(`Замена не применена: ${error.message}`, true); }
   });

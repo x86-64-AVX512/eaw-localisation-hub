@@ -76,7 +76,7 @@ if (exitCode !== 0) process.exit(exitCode);
 await fs.writeFile(
   path.join(outputDirectory, 'README.txt'),
   [
-    'EaW Localisation Hub 0.8.6F4',
+    'EaW Localisation Hub 0.8.7F1',
     '',
     'Prototype build. Copy this entire EawLocalisationHub directory into the Notepad++ plugins directory.',
     'The Desktop Agent must be running before Notepad++ connects.',

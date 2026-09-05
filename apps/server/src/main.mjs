@@ -21,6 +21,7 @@ import { RoomRegistry } from './room-registry.mjs';
 import { TicketStore } from './ticket-store.mjs'; import { handleTicketHttp } from './ticket-http.mjs';
 import { TicketService } from './ticket-service.mjs'; import { GitCommitVerifier } from './git-commit-verifier.mjs';
 import { GitBranchCache } from './git-branch-cache.mjs';
+import { EventJournal } from './event-journal.mjs';
 import {
   DISPLAY_VERSION,
   MAX_CONNECTIONS_PER_USER,
@@ -77,6 +78,8 @@ await fs.mkdir(options.data, { recursive: true });
 await minimisePersistedDocumentMetadata(options.data, atomicWrite);
 const authStore = new AuthStore(options.data, atomicWrite, options.auth);
 const bootstrapInvite = await authStore.initialise();
+const eventJournal = new EventJournal(options.data, atomicWrite);
+await eventJournal.initialise();
 const adminSessions = new AdminSessionStore(authStore);
 const configuredGitRefresh = Number(process.env.EAW_HUB_GIT_REFRESH_MILLISECONDS ?? 60_000);
 const gitRefreshMilliseconds = Number.isFinite(configuredGitRefresh) && configuredGitRefresh >= 250
@@ -96,8 +99,11 @@ const roomRegistry = new RoomRegistry(
   canonicalSource,
 );
 await roomRegistry.initialise();
+roomRegistry.eventJournal = eventJournal;
 const rooms = roomRegistry.rooms;
 const ticketStore = new TicketStore(options.data, atomicWrite, new GitCommitVerifier(process.env.EAW_HUB_GITHUB_REPOSITORY));
+ticketStore.eventJournal = eventJournal;
+roomRegistry.ticketStore = ticketStore;
 await ticketStore.initialise();
 const ticketService = new TicketService(ticketStore, roomRegistry);
 
@@ -174,6 +180,7 @@ async function flushRooms() {
   const loadedRooms = await Promise.all([...rooms.values()]);
   await Promise.all(loadedRooms.map((room) => room.flush()));
   await authStore.flush();
+  await eventJournal.flush();
 }
 
 async function disconnectAuthenticatedSockets(predicate, reason) {
@@ -211,6 +218,11 @@ async function handleHttp(request, response) {
     sendJson(response, 200, await canonicalSource.head(branch));
     return;
   }
+  if (request.method === 'GET' && url.pathname === '/api/events') {
+    const actor = await authenticatedUser(request);
+    sendJson(response, 200, eventJournal.list(actor.id, url.searchParams.get('after'), url.searchParams.get('limit')));
+    return;
+  }
   if (await handleTicketHttp({
     request, response, url,
     readJsonBody: (incoming) => readJsonBody(incoming, 12 * 1024 * 1024),
@@ -238,6 +250,12 @@ async function handleHttp(request, response) {
   }
   if (request.method === 'GET' && url.pathname === '/api/auth/me') {
     sendJson(response, 200, { user: await authenticatedUser(request, { allowTemporaryPassword: true }) });
+    return;
+  }
+  if (request.method === 'PUT' && url.pathname === '/api/auth/training') {
+    const actor = await authenticatedUser(request);
+    const body = await readJsonBody(request);
+    sendJson(response, 200, { user: await authStore.updateTrainingProgress(actor, body.segmentId, body.revision) });
     return;
   }
   if (request.method === 'GET' && url.pathname === '/api/users/directory') {

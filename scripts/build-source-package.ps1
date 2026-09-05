@@ -4,8 +4,8 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $distRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
-$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.6F4'))
-$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.6F4.zip'))
+$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.7F1'))
+$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.7F1.zip'))
 $checksumPath = "$archivePath.sha256"
 if (-not $packageRoot.StartsWith($distRoot + '\', [StringComparison]::OrdinalIgnoreCase) `
     -or -not $archivePath.StartsWith($distRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {

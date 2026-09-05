@@ -5,7 +5,7 @@ function safeFileName(value) {
 
 function recoveryFile(user, code) {
   return [
-    'EaW Localisation Hub — код восстановления', '',
+    'EaW Localisation Hub – код восстановления', '',
     `Пользователь: ${user}`, `Код: ${code}`, '',
     'Храните этот файл отдельно и не отправляйте его другим людям.',
     'Код одноразовый: после восстановления пароля потребуется новый.',

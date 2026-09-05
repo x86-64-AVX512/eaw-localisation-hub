@@ -40,6 +40,7 @@ import {
   assertCanManageUser,
   requireManager,
 } from './management-policy.mjs';
+import { updateTrainingProgress } from './training-progress.mjs';
 
 export { ACCOUNT_ROLES, AuthError };
 const scryptAsync = promisify(crypto.scrypt);
@@ -63,7 +64,7 @@ export class AuthStore {
     this.atomicWrite = atomicWrite;
     this.statePath = path.join(dataDirectory, 'auth.json');
     this.bootstrapPath = path.join(dataDirectory, 'bootstrap-invite.txt');
-    this.state = { schema: 5, users: [], invites: [], sessions: [], backupTokens: [] };
+    this.state = { schema: 6, users: [], invites: [], sessions: [], backupTokens: [] };
     this.recoveryCodes = new RecoveryCodeHasher(dataDirectory, atomicWrite);
     this.persistPromise = Promise.resolve();
     this.passwordWorkPromise = Promise.resolve();
@@ -419,6 +420,8 @@ export class AuthStore {
     await this.persist();
     return publicUser(user);
   }
+
+  async updateTrainingProgress(actor, segmentId, revision) { return updateTrainingProgress(this, actor, segmentId, revision); }
 
   async issueRecoveryCode(actor) { return issueRecoveryCode(this, actor); }
   async confirmRecoveryCode(actor, code) { return confirmRecoveryCode(this, actor, code); }

@@ -11,7 +11,7 @@ function safeAvatar(value) {
 export function migrateAuthState(loaded, {
   now, adminSessionTtl, userSessionTtl,
 }) {
-  if (![1, 2, 3, 4, 5].includes(loaded.schema)) throw new Error(`Unsupported auth schema: ${loaded.schema}`);
+  if (![1, 2, 3, 4, 5, 6].includes(loaded.schema)) throw new Error(`Unsupported auth schema: ${loaded.schema}`);
   const users = (Array.isArray(loaded.users) ? loaded.users : [])
     .filter((user) => !user.revokedAt)
     .map((user) => ({
@@ -29,6 +29,10 @@ export function migrateAuthState(loaded, {
         ? String(user.recoveryCodeHash) : null,
       recoveryIssueKind: loaded.schema >= 3 && user.recoveryIssueKind === 'replacement'
         ? 'replacement' : 'setup',
+      trainingProgress: Object.fromEntries(Object.entries(user.trainingProgress ?? {})
+        .filter(([id, revision]) => /^[a-z0-9-]{1,64}$/u.test(id)
+          && Number.isInteger(Number(revision)) && Number(revision) > 0)
+        .map(([id, revision]) => [id, Number(revision)])),
     })).filter((user) => user.displayName && (loaded.schema !== 1 || user.id));
   const assignedUsers = [];
   for (const user of users) {
@@ -46,7 +50,7 @@ export function migrateAuthState(loaded, {
   }
   const userIds = new Set(users.map(({ id }) => id));
   return {
-    schema: 5,
+    schema: 6,
     users,
     invites: (Array.isArray(loaded.invites) ? loaded.invites : [])
       .filter((invite) => /^[0-9a-f]{64}$/u.test(String(invite.codeHash ?? '')))

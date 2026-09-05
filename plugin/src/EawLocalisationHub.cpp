@@ -23,7 +23,7 @@
 #include "VisualStyle.h"
 namespace {
 
-constexpr wchar_t kPluginName[] = L"EaW Localisation Hub 0.8.6F4";
+constexpr wchar_t kPluginName[] = L"EaW Localisation Hub 0.8.7F1";
 constexpr std::int64_t kProtocolVersion = EAW_HUB_PROTOCOL_VERSION;
 constexpr size_t kMaximumIpcMessageBytes = 12 * 1024 * 1024;
 constexpr ULONGLONG kPresenceHeartbeatMilliseconds = 10 * 1000;
@@ -369,7 +369,7 @@ void RefreshParticipantsList() {
         std::wstring label = Utf8ToWide(presence.user.empty() ? presence.clientId : presence.user);
         if (scintilla) {
             const LRESULT line = SendMessage(scintilla, SCI_LINEFROMPOSITION, presence.position, 0);
-            label += L" — строка " + std::to_wstring(line + 1);
+            label += L" – строка " + std::to_wstring(line + 1);
         }
         AddPanelListItem(g_participantsList, label, ColorFromString(presence.color, RGB(255, 145, 55)));
     }
@@ -394,7 +394,7 @@ void RefreshReservationsList() {
     for (size_t index = 0; index < g_reservations.size(); ++index) {
         const ReservationEntry& reservation = g_reservations[index];
         std::wstring label = Utf8ToWide(reservation.assignee.empty() ? "Неизвестно" : reservation.assignee);
-        label += L" — " + std::to_wstring(reservation.keyCount) + L" ключей · ";
+        label += L" – " + std::to_wstring(reservation.keyCount) + L" ключей · ";
         label += ReservationStatusLabel(reservation.status);
         if (!reservation.comment.empty()) label += L" · " + Utf8ToWide(reservation.comment);
         if (!reservation.createdBy.empty() && reservation.createdBy != reservation.assignee) {
@@ -509,7 +509,7 @@ void RefreshConflictsList() {
     for (size_t index = 0; index < g_externalConflicts.size(); ++index) {
         const ExternalConflictEntry& conflict = g_externalConflicts[index];
         std::wstring label = Utf8ToWide(conflict.label.empty() ? conflict.key : conflict.label);
-        if (!conflict.detail.empty()) label += L" — " + Utf8ToWide(conflict.detail);
+        if (!conflict.detail.empty()) label += L" – " + Utf8ToWide(conflict.detail);
         SendMessageW(g_conflictsList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
         if (conflict.key == selectedKey) restoredSelection = static_cast<LRESULT>(index);
     }
@@ -531,14 +531,14 @@ void UpdatePanel() {
     SetWindowTextW(g_statusControl, status.c_str());
 
     std::wstring identity = L"Пользователь: ";
-    identity += g_agentUser.empty() ? L"—" : Utf8ToWide(g_agentUser);
+    identity += g_agentUser.empty() ? L"–" : Utf8ToWide(g_agentUser);
     identity += L" · Workspace: ";
-    identity += g_workspace.empty() ? L"—" : Utf8ToWide(g_workspace);
+    identity += g_workspace.empty() ? L"–" : Utf8ToWide(g_workspace);
     SetWindowTextW(g_identityControl, identity.c_str());
 
     std::wstring file = L"Файл: ";
     const std::wstring currentFileName = CurrentFileName();
-    file += currentFileName.empty() ? L"—" : currentFileName;
+    file += currentFileName.empty() ? L"–" : currentFileName;
     SetWindowTextW(g_fileControl, file.c_str());
 
     RefreshParticipantsList();
@@ -1094,7 +1094,7 @@ void EnsurePanel(bool show) {
         g_panelDockData.pszName = L"Правки и комментарии";
         g_panelDockData.dlgID = g_functions[1]._cmdID;
         g_panelDockData.uMask = DWS_DF_CONT_LEFT;
-        g_panelDockData.pszAddInfo = L"EaW Hub 0.8.6F4";
+        g_panelDockData.pszAddInfo = L"EaW Hub 0.8.7F1";
         g_panelDockData.pszModuleName = L"EawLocalisationHub.dll";
         SendMessageW(
             g_nppData._nppHandle,
