@@ -24,20 +24,6 @@ export class EventJournal {
     const recipientIds = [...new Set((recipients ?? []).map(String).filter(Boolean))]
       .filter((id) => id !== String(actor?.id ?? ''));
     if (!recipientIds.length) return null;
-    const previous = this.events.at(-1);
-    if (type === 'ticket-edited' && previous?.type === type
-      && previous.actorId === String(actor?.id ?? '')
-      && previous.details?.ticketId === details.ticketId
-      && previous.recipientIds.join(',') === recipientIds.join(',')
-      && Date.now() - Date.parse(previous.at) < 10_000) {
-      previous.at = new Date().toISOString();
-      for (const field of ['lines', 'words', 'characters']) {
-        previous.details[field] = Number(previous.details[field] ?? 0) + Number(details[field] ?? 0);
-      }
-      const snapshot = `${JSON.stringify({ schema: 1, events: this.events })}\n`;
-      this.persistence = this.persistence.catch(() => {}).then(() => this.atomicWrite(this.target, snapshot));
-      return previous;
-    }
     const event = {
       id: crypto.randomUUID(), sequence: this.nextSequence++, type,
       at: new Date().toISOString(), actorId: String(actor?.id ?? ''),

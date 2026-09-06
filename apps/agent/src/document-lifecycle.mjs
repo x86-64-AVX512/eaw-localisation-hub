@@ -1,5 +1,8 @@
+import { resetPersonalRequest } from './personal-document.mjs';
+
 export async function closeDocument(binding) {
   binding.closing = true;
+  resetPersonalRequest(binding);
   if (binding.reconnectTimer) clearTimeout(binding.reconnectTimer);
   binding.socket?.close();
   binding.localPresences.clear();

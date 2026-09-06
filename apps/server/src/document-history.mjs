@@ -9,6 +9,7 @@ import {
   localisationChangedKeys,
   projectLocalisationVariant,
   projectLocalisationOwnership,
+  mergeLocalisationThreeWay,
 } from '../../../packages/shared/src/merge.mjs';
 
 const MAX_ENTRIES = 100;
@@ -40,12 +41,19 @@ export class DocumentHistory {
     this.ownership = new Map();
     this.ownerNames = new Map();
     this.authorVariants = new Map();
+    this.gitBaseText = null;
+    this.rebaseConflicts = new Map();
   }
 
   async load() {
     try {
       if ((await fs.stat(this.target)).size > MAX_STORED_BYTES) throw new Error('Persisted history exceeds its limit');
       const value = JSON.parse(await fs.readFile(this.target, 'utf8'));
+      this.gitBaseText = typeof value.gitBaseGzipBase64 === 'string'
+        ? unpackText({ textGzipBase64: value.gitBaseGzipBase64 }) : null;
+      this.rebaseConflicts = new Map((value.rebaseConflicts ?? []).map(({ authorId, conflicts }) => [
+        String(authorId), new Map(conflicts.map((conflict) => [conflict.key, conflict])),
+      ]));
       this.entries = (Array.isArray(value.entries) ? value.entries : [])
         .filter((entry) => entry?.id && entry?.textGzipBase64)
         .slice(-MAX_ENTRIES);
@@ -79,6 +87,7 @@ export class DocumentHistory {
 
   ensureBaseline(text) {
     if (this.entries.length) return false;
+    this.gitBaseText = text;
     return this.record(text, null, 'baseline', { coalesce: false });
   }
 
@@ -90,6 +99,7 @@ export class DocumentHistory {
     const previousText = previous ? (previous._text ?? unpackText(previous)) : text;
     if (previous && previousText === text) return false;
     if (this.entries.length === 1 && previous?.reason === 'baseline' && !previousText && text) {
+      if (this.gitBaseText === previousText) this.gitBaseText = text;
       Object.assign(previous, { id: crypto.randomUUID(), updatedAt: now, _text: text });
       delete previous.textGzipBase64;
       return true;
@@ -99,6 +109,7 @@ export class DocumentHistory {
       for (const [key, line] of captureLocalisationVariant(previousText, text)) {
         this.ownership.set(key, identity.authorId);
         variant.set(key, line);
+        this.rebaseConflicts.get(identity.authorId)?.delete(key);
       }
       this.authorVariants.set(identity.authorId, variant);
       this.ownerNames.set(identity.authorId, identity.author);
@@ -124,6 +135,7 @@ export class DocumentHistory {
   }
 
   personalProjection(userId, gitText) {
+    this.updateGitBase(String(gitText ?? ''));
     const identity = String(userId ?? '');
     if (!identity || !this.entries.length) return String(gitText ?? '');
     const variant = this.authorVariants.get(identity);
@@ -138,7 +150,51 @@ export class DocumentHistory {
   }
 
   conflicts(gitText) {
+    this.updateGitBase(String(gitText ?? ''));
     return localisationVariantConflicts(String(gitText ?? ''), this.authorVariants, this.ownerNames);
+  }
+
+  updateGitBase(nextGitText) {
+    if (this.gitBaseText === nextGitText) return false;
+    for (const [authorId, variant] of this.authorVariants) {
+      const previousGit = this.gitBaseText ?? nextGitText;
+      const personal = projectLocalisationVariant(previousGit, variant);
+      const merged = mergeLocalisationThreeWay(previousGit, personal, nextGitText);
+      const rebased = captureLocalisationVariant(nextGitText, merged.text);
+      const pending = this.rebaseConflicts.get(authorId) ?? new Map();
+      for (const key of pending.keys()) if (!rebased.has(key)) pending.delete(key);
+      for (const conflict of merged.conflicts) pending.set(conflict.key, conflict);
+      if (this.gitBaseText === null) {
+        // Older histories stored no Git ancestry. Preserve their variants, but
+        // require a choice before an unproven old line can overwrite today's HEAD.
+        for (const key of rebased.keys()) pending.set(key, {
+          key, label: key === '__file_structure__' ? 'Структура файла' : key,
+          baseLine: null, collaborativeLine: key === '__file_structure__' ? null : rebased.get(key),
+          externalLine: null, reason: 'legacy-base-unknown',
+        });
+      }
+      this.authorVariants.set(authorId, rebased);
+      this.rebaseConflicts.set(authorId, pending);
+    }
+    this.gitBaseText = nextGitText;
+    return true;
+  }
+
+  personalGitConflicts(userId) {
+    return [...(this.rebaseConflicts.get(String(userId))?.values() ?? [])].map((conflict) => ({
+      ...conflict,
+      id: crypto.createHash('sha256').update(JSON.stringify([this.gitBaseText, conflict])).digest('hex'),
+    }));
+  }
+
+  resolvePersonalGitConflict(userId, key, choice, conflictId) {
+    const identity = String(userId);
+    const pending = this.rebaseConflicts.get(identity);
+    if (!pending?.has(key) || !['mine', 'git'].includes(choice)) return false;
+    if (this.personalGitConflicts(identity).find((item) => item.key === key)?.id !== conflictId) return false;
+    if (choice === 'git') this.authorVariants.get(identity)?.delete(key);
+    pending.delete(key);
+    return true;
   }
 
   rebuildOwnership() {
@@ -181,6 +237,10 @@ export class DocumentHistory {
       }
     }
     this.ownerNames.delete(userId);
+    if (this.rebaseConflicts.has(userId)) {
+      this.rebaseConflicts.set('__deleted__', this.rebaseConflicts.get(userId));
+      this.rebaseConflicts.delete(userId);
+    }
     this.ownerNames.set('__deleted__', 'Deleted user');
     if (this.authorVariants.has(userId)) {
       this.authorVariants.set('__deleted__', this.authorVariants.get(userId));
@@ -207,11 +267,14 @@ export class DocumentHistory {
       authorId, authorName: this.ownerNames.get(authorId) ?? 'Unknown',
       values: [...variant].map(([key, line]) => ({ key, line })),
     }));
-    let value = `${JSON.stringify({ schema: 3, entries: persisted, ownership, authorVariants }, null, 2)}\n`;
+    const gitBaseGzipBase64 = this.gitBaseText === null ? null : packedText(this.gitBaseText);
+    const rebaseConflicts = [...this.rebaseConflicts].map(([authorId, conflicts]) => ({ authorId, conflicts: [...conflicts.values()] }));
+    const serialise = () => `${JSON.stringify({ schema: 4, entries: persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts }, null, 2)}\n`;
+    let value = serialise();
     while (this.entries.length > 2 && byteLength(value) > MAX_STORED_BYTES) {
       this.entries.shift();
       persisted.shift();
-      value = `${JSON.stringify({ schema: 3, entries: persisted, ownership, authorVariants }, null, 2)}\n`;
+      value = serialise();
     }
     return value;
   }

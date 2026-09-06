@@ -8,6 +8,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { WebSocket } from 'ws';
+import { createReviewDocument } from '../apps/review/src/review-document.js';
 import { DISPLAY_VERSION, PROTOCOL_VERSION } from '../packages/shared/src/constants.mjs';
 import { applyUtf8ByteEdit } from '../packages/shared/src/text.mjs';
 
@@ -138,6 +140,85 @@ async function stopProcess(child) {
   await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 2000))]);
   if (child.exitCode === null) child.kill('SIGKILL');
 }
+
+async function connectReview(stateDirectory, filePath, initialText) {
+  const discovery = JSON.parse(await fs.readFile(path.join(stateDirectory, 'review-session.json'), 'utf8'));
+  const socket = new WebSocket(`${discovery.origin.replace('http:', 'ws:')}/review-socket?token=${discovery.token}`, {
+    origin: discovery.origin,
+  });
+  const client = { socket, held: [], holding: false, ready: false, messages: [] };
+  client.document = createReviewDocument({
+    send(message) {
+      if (client.holding) client.held.push(message);
+      else socket.send(JSON.stringify(message));
+    },
+    onText() {},
+  });
+  socket.on('message', (data) => {
+    const message = JSON.parse(data.toString('utf8'));
+    client.messages.push(message);
+    if (message.type === 'documentSync') client.document.receive(message);
+    if (message.type === 'documentReady') { client.ready = true; client.document.replay(); }
+  });
+  await once(socket, 'open');
+  socket.send(JSON.stringify({ type: 'open', path: filePath, crdt: 'yjs-v1',
+    textBase64: Buffer.from(initialText).toString('base64') }));
+  await waitUntil(() => client.ready, 'Review ready');
+  client.close = () => { socket.terminate(); client.document.dispose(); };
+  return client;
+}
+
+test('real Review–Agent–server transport preserves in-flight typing and writes only personal variants',
+  { timeout: 40000 }, async () => {
+    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-review-crdt-integration-'));
+    const relative = path.join('localisation', 'russian', 'review.yml');
+    const original = 'l_russian:\n first:0 "One"\n second:0 "Two"\n';
+    const repoAlice = path.join(temporary, 'alice'); const repoBob = path.join(temporary, 'bob');
+    const fileAlice = path.join(repoAlice, relative); const fileBob = path.join(repoBob, relative);
+    const stateAlice = path.join(temporary, 'state-alice'); const stateBob = path.join(temporary, 'state-bob');
+    const port = await freePort();
+    let server; let aliceAgent; let bobAgent; let alice; let bob;
+    try {
+      for (const file of [fileAlice, fileBob]) {
+        await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, original);
+      }
+      server = spawnNode(['apps/server/src/main.mjs', '--port', String(port),
+        '--data', path.join(temporary, 'data'), '--auth', 'disabled']);
+      await waitForHealth(port);
+      const suffix = crypto.randomUUID();
+      const startAgent = (repo, state, user) => spawnNode(['apps/agent/src/main.mjs',
+        '--repo', repo, '--workspace', 'general-dev', '--pipe', `eaw-review-${user}-${suffix}`,
+        '--user', user, '--state', state, '--server', `ws://127.0.0.1:${port}`],
+      { EAW_HUB_IPC_SECRET: crypto.randomBytes(24).toString('hex') });
+      aliceAgent = startAgent(repoAlice, stateAlice, 'Alice');
+      bobAgent = startAgent(repoBob, stateBob, 'Bob');
+      await Promise.all([
+        waitUntil(async () => { try { await fs.access(path.join(stateAlice, 'review-session.json')); return true; } catch { return false; } }, 'Alice Review endpoint'),
+        waitUntil(async () => { try { await fs.access(path.join(stateBob, 'review-session.json')); return true; } catch { return false; } }, 'Bob Review endpoint'),
+      ]);
+      alice = await connectReview(stateAlice, fileAlice, original);
+      bob = await connectReview(stateBob, fileBob, original);
+      alice.holding = true;
+      alice.document.commit(original.replace('"One"', '"Alice One"'));
+      bob.document.commit(original.replace('"Two"', '"Bob Two"'));
+      await waitUntil(() => alice.document.text().includes('"Bob Two"'), 'remote update while Alice typing is in flight');
+      assert.match(alice.document.text(), /"Alice One"/u);
+      alice.holding = false;
+      for (const message of alice.held.splice(0)) alice.socket.send(JSON.stringify(message));
+      await waitUntil(() => bob.document.text().includes('"Alice One"'), 'Alice CRDT update at Bob');
+      assert.equal(alice.document.text(), bob.document.text());
+      await waitUntil(async () => (await fs.readFile(fileAlice, 'utf8')).includes('"Alice One"'), 'Alice personal materialisation');
+      await waitUntil(async () => (await fs.readFile(fileBob, 'utf8')).includes('"Bob Two"'), 'Bob personal materialisation');
+      assert.equal(await fs.readFile(fileAlice, 'utf8'), `\uFEFF${original.replace('"One"', '"Alice One"')}`);
+      assert.equal(await fs.readFile(fileBob, 'utf8'), `\uFEFF${original.replace('"Two"', '"Bob Two"')}`);
+      assert.equal(alice.messages.some(({ type }) => type === 'error'), false);
+      assert.equal(bob.messages.some(({ type }) => type === 'error'), false);
+    } finally {
+      alice?.close(); bob?.close();
+      await stopProcess(aliceAgent); await stopProcess(bobAgent); await stopProcess(server);
+      await fs.rm(temporary, { recursive: true, force: true });
+    }
+  });
 
 test('two agents keep personal worktrees isolated while sharing metadata and server text',
   { timeout: 40000 }, async () => {

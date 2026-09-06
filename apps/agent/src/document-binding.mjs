@@ -12,6 +12,7 @@ import * as disk from './disk-reconciliation.mjs';
 import * as view from './document-view.mjs';
 import * as gitState from './git-document-state.mjs';
 import * as personalDocument from './personal-document.mjs';
+import { broadcastReviewUpdate, applyReviewUpdate } from './review-document.mjs';
 import { closeDocument } from './document-lifecycle.mjs';
 const REMOTE_ORIGIN = Symbol('remote-server-update');
 function encodeRelativePosition(position) {
@@ -54,10 +55,12 @@ export class DocumentBinding {
     this.personalMaterialisationMode = this.ticketId ? 'mine' : this.hub.loadPersonalMode(this.relativePath);
 
     this.document.on('update', (update, origin) => {
+      broadcastReviewUpdate(this, update, origin);
       if (origin !== REMOTE_ORIGIN && this.synced && this.gitWritable
         && this.socket?.readyState === WebSocket.OPEN) {
         this.socket.send(update);
       }
+      if (this.synced) this.requestPersonalDocument();
       if (this.synced) this.initialiseAttachedClients();
       this.scheduleRefresh();
     });
@@ -91,6 +94,7 @@ export class DocumentBinding {
     });
     this.socket.on('close', (code, reason) => {
       this.synced = false;
+      personalDocument.resetPersonalRequest(this);
       console.warn('[agent] document disconnected');
       if (code === 1008) {
         this.paused = true;
@@ -256,11 +260,8 @@ export class DocumentBinding {
     if (!this.gitWritable) return;
     const state = client.documents.get(absolutePath);
     if (!state || state.binding !== this || state.initialised) return;
+    if (personalDocument.seedAttachedDocument(this)) this.requestPersonalDocument();
     if (!this.ticketId && client.kind !== 'review' && !this.personalReady) return;
-    if (this.text.length === 0 && state.mirror.length > 0) {
-      if (!this.canSeed) return;
-      this.document.transact(() => this.text.insert(0, state.mirror), state.origin);
-    }
     state.initialised = true;
     if (!this.undoManagers.has(client.clientId)) {
       this.undoManagers.set(client.clientId, new Y.UndoManager(this.text, {
@@ -391,6 +392,10 @@ export class DocumentBinding {
 
   snapshot(client, absolutePath, message) {
     return personalDocument.snapshot(this, client, absolutePath, message);
+  }
+
+  reviewUpdate(client, absolutePath, message) {
+    return applyReviewUpdate(this, client, absolutePath, message);
   }
 
   undo(client) {

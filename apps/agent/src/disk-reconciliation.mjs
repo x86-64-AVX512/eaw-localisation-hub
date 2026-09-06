@@ -82,8 +82,9 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
   const externalText = await binding.readDiskText(absolutePath);
   const canonical = binding.text.toString();
   const personal = binding.localFileText();
+  if (personal === null || !binding.synced || !binding.gitWritable) return;
 
-  if (state.materialisationExpected) {
+  if (state.materialisationExpected !== null) {
     if (externalText === state.materialisationExpected) {
       state.diskBase = externalText;
       state.materialisationExpected = null;
@@ -149,9 +150,10 @@ export function reconcileInitialDisk(binding, client, absolutePath, state) {
     return;
   }
   if (state.initialReconciled) return;
-  state.initialReconciled = true;
   const canonical = binding.text.toString();
   const personal = binding.localFileText();
+  if (personal === null) return;
+  state.initialReconciled = true;
   const localText = state.mirror;
 
   if (!state.hasPersistedBase) {

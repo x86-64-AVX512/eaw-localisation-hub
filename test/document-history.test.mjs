@@ -5,6 +5,94 @@ import os from 'node:os';
 import path from 'node:path';
 import { DocumentHistory } from '../apps/server/src/document-history.mjs';
 
+const alice = { id: 'alice', displayName: 'Alice' };
+const bob = { id: 'bob', displayName: 'Bob' };
+const baseline = 'l_russian:\n key:0 "Git"\n other:0 "Keep"\n';
+
+test('an incorporated personal edit cannot overwrite a later Git version after reload', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-history-retire-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const target = path.join(directory, 'history.json');
+  const history = new DocumentHistory(target);
+  history.ensureBaseline(baseline);
+  const own = baseline.replace('"Git"', '"Alice"');
+  history.record(own, alice);
+  history.updateGitBase(own);
+  assert.equal(history.authorVariants.get('alice').size, 0);
+  await fs.writeFile(target, history.serialise());
+  const restored = new DocumentHistory(target); await restored.load();
+  const upstream = baseline.replace('"Git"', '"Upstream"');
+  assert.equal(restored.personalProjection('alice', upstream), upstream);
+  assert.deepEqual(restored.personalGitConflicts('alice'), []);
+});
+
+test('Git rebases an independent personal edit but preserves a hidden author conflict for explicit resolution', () => {
+  const history = new DocumentHistory('unused'); history.ensureBaseline(baseline);
+  history.record(baseline.replace('"Git"', '"Alice"'), alice);
+  history.record(baseline.replace('"Git"', '"Bob"'), bob);
+  const git = baseline.replace('"Git"', '"Bob"').replace('"Keep"', '"Upstream"');
+  const personal = history.personalProjection('alice', git);
+  assert.match(personal, /"Alice"/u); assert.match(personal, /"Upstream"/u);
+  const [conflict] = history.personalGitConflicts('alice');
+  assert.equal(conflict.key, 'key');
+  assert.equal(history.personalProjection('bob', git), git);
+  assert.equal(history.resolvePersonalGitConflict('alice', 'key', 'git', 'stale'), false);
+  assert.equal(history.resolvePersonalGitConflict('alice', 'key', 'git', conflict.id), true);
+  assert.equal(history.personalProjection('alice', git), git);
+  assert.deepEqual(history.personalGitConflicts('alice'), []);
+});
+
+test('unresolved personal conflicts survive another Git update and a restart', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-history-conflict-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const target = path.join(directory, 'history.json');
+  const history = new DocumentHistory(target); history.ensureBaseline(baseline);
+  history.record(baseline.replace('"Git"', '"Alice"'), alice);
+  const firstGit = baseline.replace('"Git"', '"Server"');
+  history.updateGitBase(firstGit);
+  const firstId = history.personalGitConflicts('alice')[0].id;
+  const nextGit = firstGit.replace('"Keep"', '"Next"');
+  history.updateGitBase(nextGit);
+  await fs.writeFile(target, history.serialise());
+  const restored = new DocumentHistory(target); await restored.load();
+  const [conflict] = restored.personalGitConflicts('alice');
+  assert.notEqual(conflict.id, firstId);
+  assert.equal(restored.resolvePersonalGitConflict('alice', 'key', 'mine', firstId), false);
+  assert.equal(restored.resolvePersonalGitConflict('alice', 'key', 'mine', conflict.id), true);
+  assert.match(restored.personalProjection('alice', nextGit), /"Alice"/u);
+  assert.deepEqual(restored.personalGitConflicts('alice'), []);
+});
+
+test('schema-3 histories retain unproven variants but require a choice before writing them', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-history-migrate-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const target = path.join(directory, 'history.json');
+  const history = new DocumentHistory(target); history.ensureBaseline(baseline);
+  history.record(baseline.replace('"Git"', '"Old"'), alice);
+  const legacy = JSON.parse(history.serialise());
+  legacy.schema = 3; delete legacy.gitBaseGzipBase64; delete legacy.rebaseConflicts;
+  await fs.writeFile(target, JSON.stringify(legacy));
+  const restored = new DocumentHistory(target); await restored.load();
+  const currentGit = baseline.replace('"Git"', '"New"');
+  assert.match(restored.personalProjection('alice', currentGit), /"Old"/u);
+  assert.equal(restored.personalGitConflicts('alice')[0].reason, 'legacy-base-unknown');
+  assert.equal(JSON.parse(restored.serialise()).schema, 4);
+});
+
+test('personal projections retain moved blank lines, comments, key order, and an empty file', () => {
+  const git = 'l_russian:\n\n a:0 "A"\n # comment\n b:0 "B"\n';
+  for (const edited of [
+    'l_russian:\n a:0 "A"\n\n # comment\n b:0 "B"\n',
+    'l_russian:\n\n # comment\n a:0 "A"\n b:0 "B"\n',
+    'l_russian:\n\n b:0 "B"\n # comment\n a:0 "A"\n',
+    '',
+  ]) {
+    const history = new DocumentHistory('unused'); history.ensureBaseline(git);
+    history.record(edited, alice);
+    assert.equal(history.personalProjection('alice', git), edited);
+  }
+});
+
 test('document history persists, coalesces edits, restores text, and anonymises authors', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-history-'));
   const target = path.join(directory, 'room.history.json');

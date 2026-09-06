@@ -36,12 +36,12 @@ test('plugin protocol schema rejects field confusion and unknown commands', () =
 
 test('every dispatched plugin command has an explicit schema', () => {
   assert.deepEqual(pluginMessageTypes, [
-    'hello', 'open', 'activate', 'deactivate', 'close', 'edit', 'snapshot', 'cursor', 'undo', 'redo',
+    'hello', 'open', 'activate', 'deactivate', 'close', 'edit', 'snapshot', 'reviewUpdate', 'cursor', 'undo', 'redo',
     'reviewOpen', 'reservationCreate', 'reservationDeleteAt', 'reservationDelete', 'commentCreate', 'commentReply',
     'commentStatus', 'commentDelete', 'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
     'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'avatarSet', 'avatarDelete',
     'recoveryIssue', 'recoveryConfirm', 'recoveryDiscard', 'externalConflictResolve',
-    'historyRequest', 'historyRestore', 'personalFileMaterialize', 'documentVariantRequest',
+    'historyRequest', 'historyRestore', 'personalFileMaterialize', 'personalConflictResolve', 'documentVariantRequest',
   ]);
 });
 

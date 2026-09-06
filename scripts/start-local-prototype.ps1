@@ -192,7 +192,7 @@ try {
     }
 
     $state = [pscustomobject]@{
-        Version = '0.8.7F1'
+        Version = '0.8.7F2'
         Status = 'running'
         SessionId = $sessionId
         StartedAt = [DateTime]::UtcNow.ToString('o')

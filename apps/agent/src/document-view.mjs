@@ -61,8 +61,18 @@ export function refreshAllViews(binding) {
 export function syncClientView(binding, client, absolutePath) {
   const state = binding.requireState(client, absolutePath);
   const canonical = binding.text.toString();
+  if (client.kind === 'review' && client.reviewCrdt) {
+    if (!state.reviewSynced) client.send({
+      type: 'documentSync', path: absolutePath, documentId: binding.documentId,
+      updateBase64: Buffer.from(Y.encodeStateAsUpdate(binding.document)).toString('base64'),
+    });
+    state.reviewSynced = true;
+    state.mirror = canonical;
+    return;
+  }
   const visible = !binding.ticketId && client.kind !== 'review'
     ? binding.localFileText() : canonical;
+  if (visible === null) return;
   const replacement = computeSingleReplace(state.mirror, visible);
   if (replacement) {
     client.send({

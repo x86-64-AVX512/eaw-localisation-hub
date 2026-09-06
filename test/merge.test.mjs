@@ -76,3 +76,30 @@ test('duplicate keys require choosing one complete side', () => {
   assert.deepEqual(accepted.conflicts, []);
   assert.equal(accepted.text, external);
 });
+
+test('moving a blank or comment relative to keys survives an independent Git value edit', () => {
+  const original = 'l_russian:\n\n a:0 "A"\n # anchored\n b:0 "B"\n';
+  const moved = 'l_russian:\n a:0 "A"\n\n # anchored\n b:0 "B"\n';
+  const external = original.replace('"B"', '"Git"');
+  const merged = mergeLocalisationThreeWay(original, moved, external);
+  assert.deepEqual(merged.conflicts, []);
+  assert.equal(merged.text, moved.replace('"B"', '"Git"'));
+});
+
+test('a pure key reorder is structural and competing reorders require a choice', () => {
+  const original = 'l_russian:\n a:0 "A"\n b:0 "B"\n c:0 "C"\n';
+  const moved = 'l_russian:\n b:0 "B"\n a:0 "A"\n c:0 "C"\n';
+  const git = 'l_russian:\n a:0 "A"\n c:0 "C"\n b:0 "B"\n';
+  assert.equal(mergeLocalisationThreeWay(original, original, moved).text, moved);
+  assert.equal(mergeLocalisationThreeWay(original, moved, git).conflicts[0].key, '__file_structure__');
+  assert.equal(mergeLocalisationThreeWay(original, moved, git, { __file_structure__: 'external' }).text, git);
+});
+
+test('independent key additions do not create artificial layout conflicts', () => {
+  const original = 'l_russian:\n a:0 "A"\n';
+  const merged = mergeLocalisationThreeWay(original,
+    `${original} mine:0 "Mine"\n`, `${original} git:0 "Git"\n`);
+  assert.deepEqual(merged.conflicts, []);
+  assert.match(merged.text, /mine:0 "Mine"/u);
+  assert.match(merged.text, /git:0 "Git"/u);
+});

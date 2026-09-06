@@ -7,6 +7,9 @@ export function createDocumentVariants({
   const openButton = document.querySelector('#personal-file-open');
   const dialog = document.querySelector('#personal-file-dialog');
   const message = document.querySelector('#personal-file-message');
+  const conflictsElement = document.createElement('div');
+  conflictsElement.className = 'personal-git-conflicts';
+  message.after(conflictsElement);
 
   function applyText(text) {
     beforeChange();
@@ -39,7 +42,7 @@ export function createDocumentVariants({
     }
     applyText(textFor(state.documentView));
     editor.updateOptions({
-      readOnly: state.documentView !== 'shared'
+      readOnly: !state.ready || state.documentView !== 'shared'
         || ['applied', 'closed'].includes(state.ticket?.status),
     });
     showToast(state.documentView === 'shared'
@@ -64,11 +67,12 @@ export function createDocumentVariants({
 
   function update(payload) {
     state.documentVariants = {
-      shared: decodeBase64(payload.sharedBase64),
+      shared: state.reviewDocument?.text() ?? decodeBase64(payload.sharedBase64),
       mine: decodeBase64(payload.mineBase64),
       git: decodeBase64(payload.gitBase64),
       contributors: payload.contributors ?? [],
       conflicts: payload.conflicts ?? [],
+      gitConflicts: payload.gitConflicts ?? [],
       authors: new Map(),
     };
     for (const option of [...selector.querySelectorAll('[data-author]')]) option.remove();
@@ -84,12 +88,38 @@ export function createDocumentVariants({
     else if (state.documentView !== 'shared') applyText(textFor(state.documentView));
     selector.disabled = false;
     const conflictCount = state.documentVariants.conflicts.length;
+    const gitConflicts = state.documentVariants.gitConflicts;
+    conflictsElement.replaceChildren();
+    for (const conflict of gitConflicts) {
+      const row = document.createElement('section');
+      const label = document.createElement('h3');
+      label.textContent = conflict.label;
+      const detail = document.createElement('pre');
+      detail.textContent = conflict.reason === 'legacy-base-unknown'
+        ? 'У сохранённой версии нет надёжной базы Git. Проверьте версии «Моя» и «Git» перед выбором.'
+        : `База: ${conflict.baseLine ?? '(структура или удаление)'}\nМоя: ${conflict.collaborativeLine ?? '(структура или удаление)'}\nGit: ${conflict.externalLine ?? '(структура или удаление)'}`;
+      row.append(label, detail);
+      for (const [choice, title] of [['mine', 'Оставить мою правку'], ['git', 'Взять Git']]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = title;
+        button.addEventListener('click', () => {
+          send({ type: 'personalConflictResolve', path: state.path, key: conflict.key,
+            choice, conflictId: conflict.id });
+          for (const control of row.querySelectorAll('button')) control.disabled = true;
+        });
+        row.append(button);
+      }
+      conflictsElement.append(row);
+    }
     openButton.disabled = false;
-    message.textContent = conflictCount
+    message.textContent = gitConflicts.length
+      ? `Запись личной версии приостановлена: конфликтов с Git – ${gitConflicts.length}. Выберите вариант для каждого конфликта.`
+      : conflictCount
       ? `Рабочий файл изолирован от чужих изменений. Конфликтующих ключей: ${conflictCount}.`
       : 'Рабочий файл содержит только Git и ваши изменения; совместная версия хранится отдельно.';
-    dialog.classList.toggle('has-conflicts', conflictCount > 0);
-    openButton.classList.toggle('has-conflicts', conflictCount > 0);
+    dialog.classList.toggle('has-conflicts', conflictCount > 0 || gitConflicts.length > 0);
+    openButton.classList.toggle('has-conflicts', conflictCount > 0 || gitConflicts.length > 0);
   }
 
   function updateAuthor(payload) {

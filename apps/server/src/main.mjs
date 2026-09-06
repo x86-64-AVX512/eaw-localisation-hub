@@ -387,12 +387,12 @@ websocketServer.on('connection', async (socket, request) => {
       try {
         const control = isBinary ? null : JSON.parse(data.toString('utf8'));
         if (!ticketStore.documentWritable(documentId)
-          && (isBinary || !['presence', 'history-get'].includes(control?.type))) {
+          && (isBinary || !['presence', 'history-get', 'personal-projection-get'].includes(control?.type))) {
           sendWithBackpressure(socket, JSON.stringify({ type: 'error', message: 'Ticket is read-only' }));
           return;
         }
         if (!room.clientWritable(socket)
-          && (isBinary || !['presence', 'history-get', 'git-conflict-resolve'].includes(control?.type))) {
+          && (isBinary || !['presence', 'history-get', 'personal-projection-get', 'git-conflict-resolve'].includes(control?.type))) {
           sendWithBackpressure(socket, JSON.stringify({
             type: 'error', message: 'The local Git version of this file is not canonical',
           }));

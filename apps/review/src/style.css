@@ -51,6 +51,11 @@ button.primary { border-color: #517bdc; background: #315db8; }
 .personal-file-dialog.has-conflicts { border-color: #d78b37; }
 .personal-file-dialog.has-conflicts #personal-file-message { color: #ffd59b; }
 .personal-file-actions { flex-wrap: wrap; }
+.personal-git-conflicts { max-height: 55vh; overflow: auto; }
+.personal-git-conflicts section { border-top: 1px solid #485368; padding: 10px 0; }
+.personal-git-conflicts h3 { margin: 0 0 8px; overflow-wrap: anywhere; }
+.personal-git-conflicts pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px Consolas, monospace; }
+.personal-git-conflicts button { margin: 0 8px 8px 0; }
 .local-version-dialog { width: min(620px, 90vw); }
 .local-version-dialog label { display: block; margin: 10px 0; color: #d9e0ec; }
 .local-version-dialog .local-only-check { margin-top: 20px; padding: 12px; border: 1px solid #3f536b; border-radius: 6px; background: #172131; }

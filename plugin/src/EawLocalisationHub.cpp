@@ -23,7 +23,7 @@
 #include "VisualStyle.h"
 namespace {
 
-constexpr wchar_t kPluginName[] = L"EaW Localisation Hub 0.8.7F1";
+constexpr wchar_t kPluginName[] = L"EaW Localisation Hub 0.8.7F2";
 constexpr std::int64_t kProtocolVersion = EAW_HUB_PROTOCOL_VERSION;
 constexpr size_t kMaximumIpcMessageBytes = 12 * 1024 * 1024;
 constexpr ULONGLONG kPresenceHeartbeatMilliseconds = 10 * 1000;
@@ -1094,7 +1094,7 @@ void EnsurePanel(bool show) {
         g_panelDockData.pszName = L"Правки и комментарии";
         g_panelDockData.dlgID = g_functions[1]._cmdID;
         g_panelDockData.uMask = DWS_DF_CONT_LEFT;
-        g_panelDockData.pszAddInfo = L"EaW Hub 0.8.7F1";
+        g_panelDockData.pszAddInfo = L"EaW Hub 0.8.7F2";
         g_panelDockData.pszModuleName = L"EawLocalisationHub.dll";
         SendMessageW(
             g_nppData._nppHandle,

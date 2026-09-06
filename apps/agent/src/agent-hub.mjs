@@ -15,6 +15,7 @@ import { DocumentBinding } from './document-binding.mjs';
 import * as ticketContext from './git-ticket-context.mjs';
 import { TicketWorkflow } from './ticket-workflow.mjs';
 import { KeyReplacementWorkflow } from './key-replacement-workflow.mjs';
+import { resolveReviewAnchors } from './review-document.mjs';
 import { serverHttpUrl } from './server-http-url.mjs';
 import { transitionWorkspace } from './workspace-transition.mjs';
 import { runGitSync } from './git-executable.mjs';
@@ -559,12 +560,21 @@ export class AgentHub {
     }
     if (!state && ['activate', 'deactivate', 'cursor', 'close', 'edit', 'snapshot'].includes(message.type)) return;
     if (!state) throw new Error(`The plugin has not opened ${absolutePath}`);
+    if (message.reviewAnchors) {
+      message = resolveReviewAnchors(state.binding, client, message);
+      if (!message) {
+        client.send({ type: 'notice', path: absolutePath,
+          message: 'Выделенный текст изменился. Повторите действие на актуальной версии.' });
+        return;
+      }
+      state.mirror = state.binding.text.toString();
+    }
     const gitMutations = new Set([
-      'edit', 'snapshot', 'undo', 'redo', 'reservationCreate', 'reservationDeleteAt',
+      'edit', 'snapshot', 'reviewUpdate', 'undo', 'redo', 'reservationCreate', 'reservationDeleteAt',
       'reservationDelete', 'commentCreate', 'commentReply', 'commentStatus', 'commentDelete',
       'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
       'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'historyRestore',
-      'externalConflictResolve', 'personalFileMaterialize',
+      'externalConflictResolve', 'personalFileMaterialize', 'personalConflictResolve',
       'documentVariantRequest',
     ]);
     if (!state.binding.gitWritable && gitMutations.has(message.type)
@@ -600,6 +610,7 @@ export class AgentHub {
       }
     } else if (message.type === 'edit') state.binding.edit(client, absolutePath, message);
     else if (message.type === 'snapshot') state.binding.snapshot(client, absolutePath, message);
+    else if (message.type === 'reviewUpdate') state.binding.reviewUpdate(client, absolutePath, message);
     else if (message.type === 'cursor') {
       if (client.activeDocumentPath !== absolutePath) {
         throw new Error('Cursor update does not belong to the active document');
@@ -631,6 +642,14 @@ export class AgentHub {
     }));
     else if (message.type === 'personalFileMaterialize') {
       state.binding.setPersonalMaterialisation(String(message.mode), absolutePath);
+    }
+    else if (message.type === 'personalConflictResolve') {
+      state.binding.personalReady = false;
+      state.binding.socket?.send(JSON.stringify({
+        type: 'personal-projection-resolve', key: message.key, choice: message.choice,
+        conflictId: message.conflictId, author: this.options.user, color: this.options.color,
+      }));
+      state.binding.requestPersonalDocument();
     }
     else if (message.type === 'documentVariantRequest') {
       state.binding.requestDocumentVariant(client, absolutePath, String(message.authorId));

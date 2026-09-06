@@ -10,12 +10,13 @@ const positionField = integer(0x7fffffff);
 
 const pluginSchemas = Object.freeze({
   hello: { clientId: idField, version: text(64), protocol: integer(1000), proof: text(128) },
-  open: { path: pathField, textBase64: base64Field, ticketId: text(64, false) },
+  open: { path: pathField, textBase64: base64Field, ticketId: text(64, false), crdt: text(32, false) },
   activate: { path: pathField, positionByte: positionField, anchorByte: positionField },
   deactivate: { path: pathField },
   close: { path: pathField },
   edit: { path: pathField, positionByte: positionField, deleteBytes: positionField, insertBase64: base64Field },
   snapshot: { path: pathField, textBase64: base64Field },
+  reviewUpdate: { path: pathField, documentId: text(1024), updateBase64: base64Field },
   cursor: { path: pathField, positionByte: positionField, anchorByte: positionField },
   undo: { path: pathField },
   redo: { path: pathField },
@@ -55,6 +56,7 @@ const pluginSchemas = Object.freeze({
   historyRequest: { path: pathField, id: idField },
   historyRestore: { path: pathField, id: idField, headId: idField },
   personalFileMaterialize: { path: pathField, mode: text(32) },
+  personalConflictResolve: { path: pathField, key: text(4096), choice: text(32), conflictId: idField },
   documentVariantRequest: { path: pathField, authorId: idField },
 });
 
@@ -83,8 +85,10 @@ export function validatePluginMessage(message) {
   if (typeof message.type !== 'string' || !message.type || Buffer.byteLength(message.type, 'utf8') > 64) {
     throw new TypeError("Protocol field 'type' must be a short non-empty string");
   }
-  const schema = pluginSchemas[message.type];
-  if (!schema) throw new TypeError(`Unknown plugin message type: ${message.type}`);
+  const originalSchema = pluginSchemas[message.type];
+  if (!originalSchema) throw new TypeError(`Unknown plugin message type: ${message.type}`);
+  const schema = ['startByte', 'endByte', 'positionByte', 'anchorByte'].some((field) => field in originalSchema)
+    && message.type !== 'edit' ? { ...originalSchema, reviewAnchors: text(64 * 1024, false) } : originalSchema;
   if (Object.keys(message).length > Object.keys(schema).length + 1) {
     const known = new Set(['type', ...Object.keys(schema)]);
     const unknown = Object.keys(message).filter((key) => !known.has(key));
@@ -289,6 +293,15 @@ export function validateServerMessage(message) {
     serverString(message.requestId, 'Projection request id', 128);
     serverString(message.subjectAuthorId, 'Projection author id', 256);
     serverString(message.textBase64, 'Projection text', 12 * 1024 * 1024);
+    for (const value of serverArray(message.gitConflicts ?? [], 'Personal Git conflicts', 1000)) {
+      const conflict = serverRecord(value, 'Personal Git conflict');
+      serverString(conflict.id, 'Personal Git conflict id', 256);
+      serverString(conflict.key, 'Personal Git conflict key', 4096);
+      serverString(conflict.label, 'Personal Git conflict label', 4096);
+      for (const field of ['baseLine', 'collaborativeLine', 'externalLine']) {
+        serverString(conflict[field] ?? '', 'Personal Git conflict text', 64 * 1024);
+      }
+    }
     for (const value of serverArray(message.contributors ?? [], 'Projection contributors', 256)) {
       const contributor = serverRecord(value, 'Projection contributor');
       serverString(contributor.id, 'Projection contributor id', 256);

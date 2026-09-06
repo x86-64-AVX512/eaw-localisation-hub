@@ -209,10 +209,11 @@ export function createEditingModeController({
     acceptedRedo.length = 0;
   }
 
-  function sendSnapshot() {
+  function sendSnapshot(changes = null) {
     clearTimeout(snapshotTimer);
     snapshotTimer = undefined;
     if (!state.ready || mode !== 'edit') return;
+    if (state.reviewDocument?.commit(editor.getValue(), changes)) return;
     send({ type: 'snapshot', path: state.path, textBase64: encodeBase64(editor.getValue()) });
   }
 
@@ -374,8 +375,11 @@ export function createEditingModeController({
     acceptedUndo.length = 0;
     acceptedRedo.length = 0;
     if (mode === 'edit') {
-      clearTimeout(snapshotTimer);
-      snapshotTimer = setTimeout(sendSnapshot, SNAPSHOT_DELAY_MILLISECONDS);
+      if (state.reviewDocument) sendSnapshot(event?.changes);
+      else {
+        clearTimeout(snapshotTimer);
+        snapshotTimer = setTimeout(sendSnapshot, SNAPSHOT_DELAY_MILLISECONDS);
+      }
     } else {
       const changes = Array.isArray(event?.changes) ? [...event.changes] : [];
       const version = editor.getModel().getAlternativeVersionId?.();

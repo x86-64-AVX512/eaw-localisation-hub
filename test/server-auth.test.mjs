@@ -214,7 +214,7 @@ async function connectFakePlugin(pipe, filePath, initialText, ipcSecret) {
     type: 'hello',
     clientId: 'authenticated-agent-test',
     version: '0.6.5F1',
-    protocol: 15,
+    protocol: PROTOCOL_VERSION,
     proof: crypto.createHmac('sha256', ipcSecret)
       .update(`plugin:${challenge.nonce}`, 'utf8')
       .digest('hex'),
@@ -644,3 +644,4 @@ test('password auth supports multiple roles, private reset, identity enforcement
     await fs.rm(temporary, { recursive: true, force: true });
   }
 });
+import { PROTOCOL_VERSION } from '../packages/shared/src/constants.mjs';

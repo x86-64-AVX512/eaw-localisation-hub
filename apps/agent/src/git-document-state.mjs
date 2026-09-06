@@ -2,6 +2,7 @@ import { WebSocket } from 'ws';
 import * as Y from 'yjs';
 import { currentGitFileBlob } from './git-ticket-context.mjs';
 import { preserveChangedFile } from './git-recovery.mjs';
+import { resetPersonalRequest, seedAttachedDocument } from './personal-document.mjs';
 
 export function appendGitHead(binding, url) {
   if (binding.ticketId) return;
@@ -41,6 +42,7 @@ export function applySyncedMessage(binding, message) {
   if (message.identity?.displayName) binding.hub.updateIdentity(message.identity);
   binding.hub.updateDirectory(message.directory ?? []);
   binding.synced = true;
+  seedAttachedDocument(binding);
   if (binding.gitWritable) binding.socket.send(Y.encodeStateAsUpdate(binding.document));
   binding.requestPersonalDocument();
   binding.localPresences.replay();
@@ -58,6 +60,7 @@ export function applySyncedMessage(binding, message) {
 export function applyGitStatus(binding, message) {
   binding.gitState = message;
   binding.gitWritable = ['current', 'branch-outdated'].includes(message.status);
+  binding.requestPersonalDocument();
   if (binding.gitWritable) binding.initialiseAttachedClients();
   binding.emitDocumentStatus(documentStatus(binding.gitState));
   for (const client of binding.clients) {
@@ -87,6 +90,7 @@ export function applyGitStatus(binding, message) {
 export function reconnectForGitHead(binding) {
   if (binding.ticketId || binding.closing || binding.paused) return;
   binding.synced = false;
+  resetPersonalRequest(binding);
   binding.gitWritable = false;
   binding.emitDocumentStatus('syncing');
   if (binding.socket?.readyState === WebSocket.OPEN || binding.socket?.readyState === WebSocket.CONNECTING) {

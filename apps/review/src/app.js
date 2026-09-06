@@ -1,7 +1,8 @@
 import * as monaco from 'monaco-editor'; import './style.css';
 import { createAvatarProfile } from './avatar-profile.js'; import { createCollaborationPanel } from './collaboration-panel.js';
 import { createDecorationRenderer } from './editor-decorations.js'; import { applyDocumentStatus } from './document-status.js';
-import { baseToProjectedOffset, createEditingModeController, projectedToBaseOffset } from './editing-mode.js';
+import { createEditingModeController } from './editing-mode.js';
+import { createEditorCoordinates } from './editor-coordinates.js';
 import { createEnglishOriginal } from './english-original.js';
 import { createGitHistoryPanel, createHistoryPanel } from './history-panel.js';
 import { createKeyReplacementPanel } from './key-replacement-panel.js';
@@ -19,7 +20,7 @@ import { createRemoteDocument } from './remote-document.js';
 import { createLocalisationAuditPanel } from './localisation-audit-panel.js'; import { createHelpPanel } from './help-panel.js';
 import { createNotificationCenter } from './notification-center.js';
 import {
-  byteToUtf16, createDialogController, decodeBase64, encodeBase64, utf16ToByte,
+  createDialogController, decodeBase64, encodeBase64, utf16ToByte,
 } from './review-utilities.js';
 self.MonacoEnvironment = { getWorker: () => new Worker('/editor.worker.js', { type: 'module' }) };
 const hash = new URLSearchParams(location.hash.slice(1)), token = hash.get('token') ?? '';
@@ -52,36 +53,8 @@ const editor = monaco.editor.create(document.querySelector('#editor'), {
   wordWrap: 'on', glyphMargin: true, padding: { top: 12, bottom: 40 }, scrollBeyondLastLine: false,
   renderWhitespace: 'selection', roundedSelection: false,
 }); let agentConnection;
-function send(message) { agentConnection?.send(message); }
-function rangeFromBytes(startByte, endByte) {
-  const model = editor.getModel();
-  const projection = state.suggestionProjection;
-  const text = projection?.baseText ?? model.getValue();
-  const baseStart = byteToUtf16(text, Number(startByte));
-  const baseEnd = byteToUtf16(text, Number(endByte));
-  const startOffset = baseToProjectedOffset(projection, baseStart, 'before');
-  const endOffset = baseToProjectedOffset(
-    projection, baseEnd, startByte === endByte ? 'before' : 'after',
-  );
-  const start = model.getPositionAt(startOffset);
-  const end = model.getPositionAt(endOffset);
-  return new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
-}
-function selectionBytes() {
-  const model = editor.getModel();
-  const selection = editor.getSelection();
-  const projection = state.suggestionProjection;
-  const source = projection?.baseText ?? model.getValue();
-  const start = projectedToBaseOffset(projection, model.getOffsetAt(selection.getStartPosition()));
-  const end = projectedToBaseOffset(projection, model.getOffsetAt(selection.getEndPosition()));
-  return { start: utf16ToByte(source, start), end: utf16ToByte(source, end) };
-}
-function jumpToBytes(startByte, endByte = startByte) {
-  const range = rangeFromBytes(startByte, endByte);
-  editor.revealRangeInCenter(range);
-  editor.setSelection(range);
-  editor.focus();
-}
+function send(message) { agentConnection?.send(state.reviewDocument?.anchor(message) ?? message); }
+const { rangeFromBytes, selectionBytes, jumpToBytes } = createEditorCoordinates({ monaco, state, editor });
 let editingMode;
 const reviewCards = createReviewCards({
   state, editor, rangeFromBytes, send, askText,
@@ -125,7 +98,7 @@ function refreshCollaboration() {
   collaborationPanel.refresh();
 }
 const applyRemoteReplace = createRemoteDocument({
-  state, editor, editingMode,
+  state, editor, editingMode, send,
   onChanged: () => { reviewRefresh.schedule(); collaborationPanel.refresh(); },
 });
 function handleMessage(message) {
@@ -151,11 +124,13 @@ function handleMessage(message) {
     applyDocumentStatus(message, state, editor, setStatus);
   } else if (message.type === 'documentReady') {
     state.ready = true;
+    state.reviewDocument.replay();
     editor.updateOptions({ readOnly: state.documentView !== 'shared'
       || ['applied', 'closed'].includes(state.ticket?.status) });
     setStatus('Совместный документ подключён');
     presenceController.publish();
-  } else if (message.type === 'replace') applyRemoteReplace(message);
+  } else if (message.type === 'documentSync') state.reviewDocument.receive(message);
+  else if (message.type === 'replace') applyRemoteReplace(message);
   else if (message.type === 'documentVariants') documentVariants.update(message);
   else if (message.type === 'documentVariant') documentVariants.updateAuthor(message);
   else if (message.type === 'personalFileStatus') documentVariants.status(message);
@@ -269,7 +244,7 @@ async function start() {
     onMessage: handleMessage,
     onOpen: () => {
       send({
-        type: 'open', path: state.path, textBase64: encodeBase64(editor.getValue()),
+        type: 'open', path: state.path, textBase64: encodeBase64(editor.getValue()), crdt: 'yjs-v1',
         ...(state.ticket ? { ticketId: state.ticket.id } : {}),
       });
       send({ type: 'activate', path: state.path, positionByte: 0, anchorByte: 0 });
@@ -288,6 +263,7 @@ window.addEventListener('beforeunload', () => {
   notificationCenter.dispose();
   editingMode.flushSuggestion();
   editingMode.dispose();
+  state.reviewDocument.dispose();
   presenceController.dispose();
   historyPanel.dispose(); gitHistoryPanel.dispose();
   scrollSync.dispose();

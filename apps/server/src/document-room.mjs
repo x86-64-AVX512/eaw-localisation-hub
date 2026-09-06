@@ -273,6 +273,7 @@ export class DocumentRoom {
   }
 
   finishCanonicalSnapshot(snapshot, merged) {
+    this.history.updateGitBase(snapshot.text);
     this.gitConflict = false;
     this.pendingGitSnapshot = null;
     this.gitConflictResolutions = {};
@@ -283,13 +284,17 @@ export class DocumentRoom {
       if (client.readyState === WebSocket.OPEN) sendWithBackpressure(client, JSON.stringify(status));
     }
     if (merged.changed) this.replaceText(merged.text, null, 'git-refresh');
-    else this.schedulePersist();
+    else {
+      this.schedulePersist();
+      this.broadcastHistory();
+    }
   }
 
   async applyCanonicalSnapshot(snapshot) {
     if (!snapshot) return;
     const current = this.document.getText('content').toString();
     if (!this.gitBase) {
+      this.history.updateGitBase(snapshot.text);
       this.gitBase = { ...snapshot };
       if (!current && snapshot.text) this.replaceText(snapshot.text, null, 'git-base');
       this.schedulePersist();
@@ -945,6 +950,18 @@ export class DocumentRoom {
       return;
     }
 
+    if (message.type === 'personal-projection-resolve') {
+      const actor = this.actorFor(socket, message, 'Personal projection resolution');
+      const key = controlledString(message.key, 'Personal conflict key', 4096, { required: true });
+      if (!this.clientWritable(socket)) throw new ProtocolLimitError('Refresh Git before resolving personal conflicts');
+      if (!this.history.resolvePersonalGitConflict(actor.id, key, message.choice, message.conflictId)) {
+        throw new ProtocolLimitError('Personal conflict changed or choice is invalid');
+      }
+      this.schedulePersist();
+      this.broadcastHistory();
+      return;
+    }
+
     if (message.type === 'personal-projection-get') {
       const requestId = controlledString(message.requestId, 'Projection request id', 128, { required: true });
       const actor = this.actorFor(socket, message, 'Personal projection');
@@ -953,12 +970,14 @@ export class DocumentRoom {
       );
       const baseText = String(this.gitBase?.text ?? this.history.text(this.history.entries[0]?.id) ?? '');
       const text = this.history.personalProjection(subjectAuthorId, baseText);
+      this.schedulePersist();
       sendWithBackpressure(socket, JSON.stringify({
         type: 'personal-projection', documentId: this.documentId, requestId,
         subjectAuthorId,
         textBase64: Buffer.from(text, 'utf8').toString('base64'),
         contributors: this.history.contributors(),
         conflicts: this.history.conflicts(baseText),
+        gitConflicts: this.history.personalGitConflicts(subjectAuthorId),
       }));
       return;
     }

@@ -16,6 +16,11 @@ function splitLines(text) {
   return records;
 }
 
+function structureSignature(records, keys = null) {
+  return JSON.stringify(records.filter(({ key }) => !key || !keys || keys.has(key))
+    .map(({ key, content, eol }) => key ? ['key', key, Boolean(eol)] : ['text', content, Boolean(eol)]));
+}
+
 function analyse(text) {
   const records = splitLines(text);
   const lines = new Map();
@@ -32,7 +37,7 @@ function analyse(text) {
     lines,
     order,
     duplicates,
-    nonKeySignature: records.filter(({ key }) => !key).map(({ content }) => content).join('\n'),
+    nonKeySignature: structureSignature(records),
   };
 }
 
@@ -124,9 +129,12 @@ export function mergeLocalisationThreeWay(baseText, collaborativeText, externalT
     });
   }
 
-  const baseStructure = base.nonKeySignature;
-  const collaborativeStructure = collaborative.nonKeySignature;
-  const externalStructure = external.nonKeySignature;
+  // Additions/deletions are merged per key. Compare layout around the surviving
+  // anchors so independent new keys do not create spurious structure conflicts.
+  const commonKeys = new Set(base.order.filter((key) => collaborative.lines.has(key) && external.lines.has(key)));
+  const baseStructure = structureSignature(base.records, commonKeys);
+  const collaborativeStructure = structureSignature(collaborative.records, commonKeys);
+  const externalStructure = structureSignature(external.records, commonKeys);
   const collaborativeStructureChanged = collaborativeStructure !== baseStructure;
   const externalStructureChanged = externalStructure !== baseStructure;
   let templateText = collaborativeText;

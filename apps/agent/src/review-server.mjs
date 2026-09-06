@@ -21,6 +21,7 @@ import { persistentReviewEndpoint } from './review-endpoint.mjs';
 import { fileHistoryDiff, listFileHistory } from './git-file-history.mjs';
 import { runGitSync } from './git-executable.mjs';
 import { auditLocalisation } from './localisation-audit.mjs';
+import { currentGitFileBlob } from './git-ticket-context.mjs';
 
 const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -115,8 +116,9 @@ class ReviewClient {
     }
     try {
       const message = validatePluginMessage(JSON.parse(data.toString('utf8')));
+      if (message.type === 'open') this.reviewCrdt = message.crdt === 'yjs-v1';
       this.hub.receivePluginMessage(this, message);
-      if (['edit', 'snapshot', 'undo', 'redo', 'suggestionAccept', 'suggestionRevert', 'historyRestore', 'externalConflictResolve'].includes(message.type)) {
+      if (['edit', 'snapshot', 'reviewUpdate', 'undo', 'redo', 'suggestionAccept', 'suggestionRevert', 'historyRestore', 'externalConflictResolve'].includes(message.type)) {
         this.scheduleMaterialisation(message.path);
       }
     } catch {
@@ -144,11 +146,19 @@ class ReviewClient {
         || state.binding.ticketId || this.hub.workspaceBlocked) return;
       const materialised = typeof state.binding.localFileText === 'function'
         ? state.binding.localFileText() : state.binding.text.toString();
+      if (materialised === null || !state.binding.synced) return;
       state.materialisationExpected = materialised;
       state.materialisationDeadline = Date.now() + 5000;
       state.materialisationMismatch = null;
       try {
-        await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(materialised));
+        await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(materialised), {
+          isCurrent: () => !this.closed && state.binding.synced && state.binding.gitWritable !== false
+            && !this.hub.workspaceBlocked && !state.pendingExternal && !this.hub.gitOperationInProgress?.()
+            && (!state.binding.gitState || currentGitFileBlob(this.hub.options.repo, state.binding.relativePath)
+              === state.binding.gitState.localBlob)
+            && (typeof state.binding.localFileText === 'function'
+              ? state.binding.localFileText() : state.binding.text.toString()) === materialised,
+        });
       } catch {
         this.send({ type: 'error', message: 'Не удалось безопасно сохранить локальный файл.' });
       }

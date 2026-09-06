@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { Buffer } from 'node:buffer';
 import { execFile } from 'node:child_process';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { TRACKED_PATH_PATTERN } from './constants.mjs';
 
@@ -259,9 +260,11 @@ export async function readTrackedTextFile(repositoryRoot, absolutePath) {
   }
 }
 
-export async function writeTrackedTextFile(repositoryRoot, absolutePath, text) {
+export async function writeTrackedTextFile(repositoryRoot, absolutePath, text, { isCurrent = () => true } = {}) {
   const { resolvedRoot, resolvedFile } = resolveTrackedPath(repositoryRoot, absolutePath);
   let handle;
+  let temporary;
+  let staged;
   try {
     handle = await fs.promises.open(resolvedFile, 'r+');
     const [canonicalRoot, canonicalFile, openedStat] = await Promise.all([
@@ -283,17 +286,35 @@ export async function writeTrackedTextFile(repositoryRoot, absolutePath, text) {
     const materialised = preserveLineEndings(text, current, preferredEnding);
     if (materialised === current) return false;
     const output = Buffer.from(materialised, 'utf8');
-    await handle.truncate(0);
+    temporary = path.join(path.dirname(canonicalFile), `.${path.basename(canonicalFile)}.${crypto.randomUUID()}.tmp`);
+    staged = await fs.promises.open(temporary, 'wx', Number(openedStat.mode & 0o777n));
     let offset = 0;
     while (offset < output.length) {
-      const { bytesWritten } = await handle.write(output, offset, output.length - offset, offset);
+      const { bytesWritten } = await staged.write(output, offset, output.length - offset, offset);
       if (bytesWritten <= 0) throw new Error(`Could not write tracked file: ${absolutePath}`);
       offset += bytesWritten;
     }
-    await handle.sync();
+    await staged.sync();
+    await staged.close();
+    staged = null;
+    const latestPath = await fs.promises.realpath(resolvedFile);
+    const latestStat = await fs.promises.stat(latestPath, { bigint: true });
+    assertCanonicalContainment(await fs.promises.realpath(resolvedRoot), latestPath, absolutePath);
+    if (latestPath !== canonicalFile || latestStat.dev !== openedStat.dev
+      || latestStat.ino !== openedStat.ino || latestStat.mtimeNs !== openedStat.mtimeNs
+      || latestStat.ctimeNs !== openedStat.ctimeNs
+      || latestStat.size !== openedStat.size) throw new Error(`File changed during atomic write: ${absolutePath}`);
+    if (!isCurrent()) return false;
+    await handle.close();
+    handle = null;
+    // Never unlink the destination as a fallback: failed replacement keeps the old file intact.
+    await fs.promises.rename(temporary, canonicalFile);
+    temporary = null;
     return true;
   } finally {
     await handle?.close();
+    await staged?.close();
+    if (temporary) await fs.promises.unlink(temporary).catch(() => {});
   }
 }
 

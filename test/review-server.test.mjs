@@ -61,7 +61,7 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
         client.documents.set(path.resolve(message.path), {
           initialised: true,
           pendingExternal: null,
-          binding: { text: { toString: () => canonicalText } },
+          binding: { synced: true, localFileText: () => canonicalText, text: { toString: () => canonicalText } },
         });
       } else if (message.type === 'snapshot') {
         canonicalText = Buffer.from(message.textBase64, 'base64').toString('utf8');

@@ -1,6 +1,17 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F1` form; package metadata uses `0.8.7-alpha.1`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F2` form; package metadata uses `0.8.7-alpha.2`.
+
+## 0.8.7F2 – 2026-09-06
+
+- Review now exchanges Yjs updates directly with Agent. In-flight typing, multi-cursor edits, reconnect replay and anchored selections no longer depend on stale byte offsets or debounced text snapshots.
+- Personal variants retain their Git base and rebase onto new HEAD versions. Incorporated edits are retired; unresolved personal Git conflicts stop file writes and offer an explicit choice in Review.
+- History schema 4 persists the rebase base and pending conflicts. Older variants without provable Git ancestry remain available for inspection and require confirmation before materialisation.
+- Personal projection requests recover after disconnects and timeouts, ignore stale replies, and preserve valid empty documents without falling back to another user's shared text.
+- Personal variants and three-way merges preserve blank-line positions, comment anchors, key order and final-line structure.
+- Ticket editing events are immutable and have distinct cursors, so ten-minute notification digests receive every increment.
+- Local files are written to a synced sibling temporary file and atomically replaced, with identity, Git freshness and save-generation checks before replacement. Failures leave the original intact.
+- Protocol 16 requires updating both the server and Desktop Agent. Review and Agent are distributed together; legacy snapshot IPC remains available to the opt-in Notepad++ integration.
 
 ## 0.8.7F1 – 2026-09-05
 

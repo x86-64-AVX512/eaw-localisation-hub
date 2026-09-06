@@ -3,13 +3,43 @@ import { WebSocket } from 'ws';
 import { applyUtf8ByteEdit, computeSingleReplace, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mjs';
 import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mjs';
 
+export function resetPersonalRequest(binding) {
+  clearTimeout(binding.personalRequestTimer);
+  binding.personalRequestTimer = null;
+  binding.personalRequestId = '';
+  binding.personalRefreshPending = false;
+  binding.personalReady = Boolean(binding.ticketId);
+  binding.variantRequests.clear();
+}
+
+export function seedAttachedDocument(binding) {
+  if (!binding.canSeed || !binding.synced || !binding.gitWritable || binding.text.length) return false;
+  for (const client of binding.clients) {
+    for (const state of client.documents.values()) {
+      if (state.binding !== binding || !state.mirror) continue;
+      binding.canSeed = false;
+      resetPersonalRequest(binding);
+      binding.document.transact(() => binding.text.insert(0, state.mirror), state.origin);
+      return true;
+    }
+  }
+  return false;
+}
+
 export function requestPersonalDocument(binding) {
-  if (binding.ticketId || !binding.synced || binding.socket?.readyState !== WebSocket.OPEN) return;
+  if (binding.ticketId || binding.closing || binding.paused || !binding.synced || binding.socket?.readyState !== WebSocket.OPEN) return;
   if (binding.personalRequestId) {
     binding.personalRefreshPending = true;
+    binding.personalReady = false;
     return;
   }
   binding.personalRequestId = crypto.randomUUID();
+  binding.personalReady = false;
+  binding.personalRequestTimer = setTimeout(() => {
+    resetPersonalRequest(binding);
+    requestPersonalDocument(binding);
+  }, 10_000);
+  binding.personalRequestTimer.unref?.();
   binding.socket.send(JSON.stringify({
     type: 'personal-projection-get', requestId: binding.personalRequestId,
     author: binding.hub.options.user, color: binding.hub.options.color,
@@ -29,17 +59,24 @@ export function handlePersonalDocument(binding, message) {
   }
   if (!binding.personalRequestId || message.requestId !== binding.personalRequestId) return;
   binding.personalRequestId = '';
+  clearTimeout(binding.personalRequestTimer);
+  binding.personalRequestTimer = null;
+  if (binding.personalRefreshPending) {
+    binding.personalRefreshPending = false;
+    requestPersonalDocument(binding);
+    return;
+  }
   const projected = Buffer.from(message.textBase64, 'base64').toString('utf8');
-  const attachedSeed = [...binding.clients].flatMap((client) => [...client.documents.values()])
-    .find((state) => state.binding === binding && state.mirror)?.mirror ?? '';
-  binding.personalText = projected || binding.text.toString() || attachedSeed;
+  binding.personalText = projected;
   binding.personalReady = true;
   binding.personalContributors = message.contributors ?? [];
   binding.personalConflicts = message.conflicts ?? [];
+  binding.personalGitConflicts = message.gitConflicts ?? [];
   binding.initialiseAttachedClients();
   for (const client of binding.clients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
+      binding.reconcileInitialDisk(client, absolutePath, state);
       binding.syncClientView(client, absolutePath);
       if (client.kind === 'review') {
         client.send({
@@ -49,14 +86,11 @@ export function handlePersonalDocument(binding, message) {
           gitBase64: Buffer.from(binding.hub.readGitHeadText(binding.relativePath), 'utf8').toString('base64'),
           contributors: binding.personalContributors,
           conflicts: binding.personalConflicts,
+          gitConflicts: binding.personalGitConflicts,
         });
         client.scheduleMaterialisation?.(absolutePath);
       }
     }
-  }
-  if (binding.personalRefreshPending) {
-    binding.personalRefreshPending = false;
-    requestPersonalDocument(binding);
   }
 }
 
@@ -73,7 +107,8 @@ export function requestDocumentVariant(binding, client, absolutePath, authorId) 
 export function localFileText(binding) {
   return binding.personalMaterialisationMode === 'git'
     ? binding.hub.readGitHeadText(binding.relativePath)
-    : (binding.personalReady ? binding.personalText : binding.text.toString());
+    : (binding.ticketId ? binding.text.toString()
+      : binding.personalReady && !binding.personalGitConflicts?.length ? binding.personalText : null);
 }
 
 export function setPersonalMaterialisation(binding, mode, absolutePath) {
