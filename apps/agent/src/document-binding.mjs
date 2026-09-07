@@ -269,7 +269,7 @@ export class DocumentBinding {
     const state = client.documents.get(absolutePath);
     if (!state || state.binding !== this || state.initialised) return;
     if (personalDocument.seedAttachedDocument(this)) this.requestPersonalDocument();
-    if (!this.ticketId && client.kind !== 'review' && !this.personalReady) return;
+    if (!this.ticketId && !this.personalReady) return; // Wait for the initial personal merge base.
     state.initialised = true;
     if (!this.undoManagers.has(client.clientId)) {
       this.undoManagers.set(client.clientId, new Y.UndoManager(this.text, {

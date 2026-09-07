@@ -32,6 +32,11 @@ test('mandatory training waits for explicit server progress and invalidated file
   assert.match(reviewServer, /materialisationInvalidated && !this\.closed/u);
 });
 
+test('Review waits for its personal projection before accepting the first edit', () => {
+  assert.match(documentBinding, /if \(!this\.ticketId && !this\.personalReady\) return;/u);
+  assert.doesNotMatch(documentBinding, /client\.kind !== 'review' && !this\.personalReady/u);
+});
+
 test('ticket panel retries transient initialisation failures and can recover controls', () => {
   assert.match(ticketPanel, /async function reloadWithRetry\(\)/u);
   assert.match(ticketPanel, /scheduleRetry\(\)/u);

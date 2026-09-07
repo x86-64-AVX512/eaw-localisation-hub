@@ -213,7 +213,13 @@ test('real Review–Agent–server transport preserves in-flight typing and writ
       for (const message of alice.held.splice(0)) alice.socket.send(JSON.stringify(message));
       await waitUntil(() => bob.document.text().includes('"Alice One"'), 'Alice CRDT update at Bob');
       assert.equal(alice.document.text(), bob.document.text());
-      await waitUntil(async () => (await fs.readFile(fileAlice, 'utf8')).includes('"Alice One"'), 'Alice personal materialisation');
+      try {
+        await waitUntil(async () => (await fs.readFile(fileAlice, 'utf8')).includes('"Alice One"'), 'Alice personal materialisation');
+      } catch (error) {
+        const messages = alice.messages.slice(-20).map(({ type, message }) => ({ type, message }));
+        error.message += `; Review messages: ${JSON.stringify(messages)}; Agent output: ${aliceAgent.output.slice(-2000)}`;
+        throw error;
+      }
       await waitUntil(async () => (await fs.readFile(fileBob, 'utf8')).includes('"Bob Two"'), 'Bob personal materialisation');
       assert.equal(await fs.readFile(fileAlice, 'utf8'), `\uFEFF${original.replace('"One"', '"Alice One"')}`);
       assert.equal(await fs.readFile(fileBob, 'utf8'), `\uFEFF${original.replace('"Two"', '"Bob Two"')}`);
