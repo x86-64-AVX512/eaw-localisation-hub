@@ -10,7 +10,7 @@ Do not open a public issue for vulnerabilities, leaked credentials, authenticati
 
 Until GitHub private vulnerability reporting is enabled, contact the repository owner privately through the EaW team communication channel. Include the affected version, reproduction steps, expected impact and any relevant logs with secrets removed. Do not attach server backups, bearer tokens, invitation codes, passwords, SSH keys or unredacted `.env` files.
 
-The project is an alpha and is provided without warranty under GPL-2.0-only. Acknowledgement or a release deadline cannot be guaranteed, but reports should receive an initial response within seven days.
+The project is an early beta, the program is still rough, and it is provided without warranty under GPL-2.0-only. Acknowledgement or a release deadline cannot be guaranteed, but reports should receive an initial response within seven days.
 
 ## Deployment baseline
 

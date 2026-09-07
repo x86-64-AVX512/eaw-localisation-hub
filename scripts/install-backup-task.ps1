@@ -7,6 +7,8 @@
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'backup-schedule.ps1')
+$triggerTime = Get-EawBackupTriggerTime -At $At
 . (Join-Path $PSScriptRoot 'credential-store.ps1')
 $credentialTarget = Get-EawHubCredentialTarget -Server $Server -Kind 'BackupToken'
 if (-not (Get-EawHubCredential -Target $credentialTarget)) {
@@ -24,7 +26,7 @@ $backupScript = Join-Path $PSScriptRoot 'backup-server.ps1'
 $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $backupScript +
     '" -Server "' + $Server + '" -Destination "' + $Destination + '" -Keep ' + $Keep
 $action = New-ScheduledTaskAction -Execute (Get-Command powershell.exe -ErrorAction Stop).Source -Argument $arguments
-$trigger = New-ScheduledTaskTrigger -Daily -At $At
+$trigger = New-ScheduledTaskTrigger -Daily -At $triggerTime
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `

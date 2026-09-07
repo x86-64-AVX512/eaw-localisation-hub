@@ -398,6 +398,11 @@ test('password auth supports multiple roles, private reset, identity enforcement
     });
     assert.equal(seniorSession.status, 201);
     const seniorToken = seniorSession.value.token;
+    assert.equal((await api(port, 'GET', '/api/admin/audit', { token: seniorToken })).status, 403);
+    assert.equal((await api(port, 'GET', '/api/admin/audit', { token: adminUserToken })).status, 401);
+    assert.equal((await api(port, 'GET', '/api/admin/audit', { token: adminToken })).status, 200);
+    assert.equal((await api(port, 'GET', '/api/management/audit', { token: adminToken })).status, 404);
+    assert.equal((await api(port, 'DELETE', '/api/admin/audit', { token: adminToken })).status, 404);
     assert.equal((await api(port, 'GET', '/api/management/users', { token: seniorToken })).status, 200);
     assert.equal((await api(port, 'PUT', `/api/management/users/${seniorAccount.value.user.id}/roles`, {
       token: seniorToken, body: { roles: ['translator'] },

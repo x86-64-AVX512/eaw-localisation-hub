@@ -136,9 +136,9 @@ function Open-AdminSession {
     $script:adminIssuedAt = [DateTime]::UtcNow
     $script:managerUser = $session.user
     $form.Text = if ($TeamManagement) {
-        'EaW Localisation Hub 0.8.7F2 – Управление командой'
+        'EaW Localisation Hub 0.8.7F3 – Управление командой'
     } else {
-        'EaW Localisation Hub 0.8.7F2 – Администратор'
+        'EaW Localisation Hub 0.8.7F3 – Администратор'
     }
 }
 
@@ -401,7 +401,7 @@ function Show-InvitationsDialog {
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = if ($TeamManagement) { 'EaW Localisation Hub 0.8.7F2 – Управление командой' } else { 'EaW Localisation Hub 0.8.7F2 – Администратор' }
+$form.Text = if ($TeamManagement) { 'EaW Localisation Hub 0.8.7F3 – Управление командой' } else { 'EaW Localisation Hub 0.8.7F3 – Администратор' }
 $form.Size = [System.Drawing.Size]::new(900, 790)
 $form.MinimumSize = [System.Drawing.Size]::new(900, 790)
 $form.StartPosition = 'CenterScreen'
@@ -555,6 +555,17 @@ $scheduleBackupButton.Location = [System.Drawing.Point]::new(15, 112)
 $scheduleBackupButton.Size = [System.Drawing.Size]::new(235, 31)
 $backupGroup.Controls.Add($scheduleBackupButton)
 $backupGroup.Visible = -not $TeamManagement
+if (-not $TeamManagement) {
+    . (Join-Path $PSScriptRoot 'admin-audit-ui.ps1')
+    $auditButton = [System.Windows.Forms.Button]::new()
+    $auditButton.Text = 'Журнал действий…'
+    $auditButton.Location = [System.Drawing.Point]::new(685, 54)
+    $auditButton.Size = [System.Drawing.Size]::new(175, 29)
+    $form.Controls.Add($auditButton)
+    $auditButton.Add_Click({
+        try { Show-EawAuditDialog -Owner $form } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+    })
+}
 
 $status = [System.Windows.Forms.Label]::new()
 $status.Text = 'Для управления нужен сохранённый вход с подходящей ролью и повторный ввод пароля.'

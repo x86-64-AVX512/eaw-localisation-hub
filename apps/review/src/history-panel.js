@@ -1,4 +1,5 @@
 import { createStandardDiffView } from './standard-diff-view.js';
+import { confirmAction } from './confirm-action.js';
 
 const reasonLabels = {
   baseline: 'Исходное состояние', edit: 'Редактирование', suggestion: 'Принята правка', restore: 'Восстановление',
@@ -15,8 +16,20 @@ export function createHistoryPanel({ monaco, state, editor, send, showToast }) {
   const diffView = createStandardDiffView({
     monaco, container: document.querySelector('#history-diff'),
   });
+  diffView.setActive(false);
   let selectedId = '';
   let previousId = '';
+
+  function suspendHistory() {
+    selectedId = '';
+    previousId = '';
+    diffView.setActive(false);
+  }
+
+  function closeHistory() {
+    suspendHistory();
+    if (dialog.open) dialog.close();
+  }
 
   function render() {
     list.replaceChildren();
@@ -49,7 +62,7 @@ export function createHistoryPanel({ monaco, state, editor, send, showToast }) {
   }
 
   function receiveVersion(message) {
-    if (message.id !== selectedId && message.id !== previousId) return;
+    if (!dialog.open || (message.id !== selectedId && message.id !== previousId)) return;
     const binary = atob(message.textBase64);
     const value = new TextDecoder().decode(
       Uint8Array.from(binary, (character) => character.charCodeAt(0)),
@@ -66,18 +79,20 @@ export function createHistoryPanel({ monaco, state, editor, send, showToast }) {
     restore.disabled = true;
     render();
     dialog.showModal();
-    diffView.layout();
+    diffView.setActive(true);
   });
-  restore.addEventListener('click', () => {
+  restore.addEventListener('click', async () => {
     if (!selectedId) return;
     const entry = state.history.find((item) => item.id === selectedId);
     const date = entry ? new Date(entry.updatedAt || entry.createdAt).toLocaleString() : '';
-    if (!confirm(`Восстановить текст из версии ${date}? Текущее состояние останется в истории.`)) return;
-    send({ type: 'historyRestore', path: state.path, id: selectedId, headId: state.historyHeadId });
-    dialog.close();
+    const id = selectedId, headId = state.historyHeadId;
+    if (!await confirmAction(restore, `Применить версию от ${date}? Текущее состояние останется в истории.`, { label: 'Применить' }) || selectedId !== id) return;
+    send({ type: 'historyRestore', path: state.path, id, headId });
+    closeHistory();
     showToast('Запрошено восстановление версии…');
   });
-  document.querySelector('#history-close').addEventListener('click', () => dialog.close());
+  document.querySelector('#history-close').addEventListener('click', closeHistory);
+  dialog.addEventListener('close', suspendHistory);
 
   return {
     update(entries, headId) {

@@ -199,6 +199,10 @@ function validateHistoryEntry(value) {
 export function validateServerMessage(message) {
   serverRecord(message, 'Server message');
   const type = serverString(message.type, 'Server message type', 64);
+  if (type === 'tickets-changed') {
+    serverString(message.revision, 'Ticket catalog revision', 64);
+    return message;
+  }
   if (type === 'synced') {
     if (!Number.isSafeInteger(message.protocol) || message.protocol < 0 || message.protocol > 1000) {
       throw new TypeError('Server protocol version must be an integer');

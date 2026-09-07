@@ -1,3 +1,5 @@
+import { confirmAction } from './confirm-action.js';
+
 export function createKeyReplacementPanel({ token, state, showToast }) {
   const open = document.querySelector('#key-replace-open');
   const dialog = document.querySelector('#key-replace-dialog');
@@ -63,7 +65,8 @@ export function createKeyReplacementPanel({ token, state, showToast }) {
     finally { previewButton.disabled = false; }
   });
   applyButton.addEventListener('click', async () => {
-    if (!preview || !confirm(`Применить ${preview.changes.length} замен в ${preview.files.length} файлах?`)) return;
+    const approvedPreview = preview;
+    if (!preview || !await confirmAction(applyButton, `Применить ${preview.changes.length} замен в ${preview.files.length} файлах?`, { label: 'Применить' }) || preview !== approvedPreview) return;
     applyButton.disabled = true;
     try {
       const result = await request('/api/key-replacements/apply', {

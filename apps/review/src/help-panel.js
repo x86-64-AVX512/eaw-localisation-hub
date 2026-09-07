@@ -144,7 +144,10 @@ export function createHelpPanel({ state, token, showToast }) {
     const isNew = state.serverVersion && newer(state.serverVersion, state.version);
     notice.hidden = !isNew;
     if (isNew) notice.textContent = `Доступна новая версия EaW Localisation Hub ${state.serverVersion}. Установлена ${state.version}.`;
-    const incomplete = SEGMENTS.some((item) => completedRevision(item.id) < item.revision);
+    // The initial Agent hello can precede its authenticated account refresh.
+    // Do not interpret an unconfirmed empty map as a new user's server state.
+    const incomplete = state.trainingProgressConfirmed === true
+      && SEGMENTS.some((item) => completedRevision(item.id) < item.revision);
     if (incomplete && !tutorial.open) openTutorial(false);
   }
   for (const control of [enabled, sound]) control.addEventListener('change', () => {

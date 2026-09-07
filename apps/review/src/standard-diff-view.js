@@ -41,6 +41,9 @@ export function createStandardDiffView({
     wrappingStrategy: 'advanced', scrollBeyondLastLine: false, ...editorOptions,
   });
   diff.setModel({ original: originalModel, modified: modifiedModel });
+  let active = true;
+  let layoutFrame = 0;
+  let hiddenSignature = '';
 
   function enforceOptions() {
     const options = {
@@ -53,11 +56,14 @@ export function createStandardDiffView({
   }
 
   function clearHiddenAreas() {
+    if (!active || hiddenSignature === 'all') return;
+    hiddenSignature = 'all';
     diff.getOriginalEditor().setHiddenAreas([]);
     diff.getModifiedEditor().setHiddenAreas([]);
   }
 
   function showChangedRegionsOnly() {
+    if (!active) return;
     const changes = diff.getLineChanges();
     if (!changes) return;
     if (!changes.length) { clearHiddenAreas(); return; }
@@ -69,20 +75,29 @@ export function createStandardDiffView({
       changes, 'modifiedStartLineNumber', 'modifiedEndLineNumber',
       modifiedModel.getLineCount(), contextLineCount,
     );
+    const signature = JSON.stringify([originalVisible, modifiedVisible]);
+    if (signature === hiddenSignature) return;
+    hiddenSignature = signature;
     diff.getOriginalEditor().setHiddenAreas(hiddenRanges(monaco, originalVisible, originalModel.getLineCount()));
     diff.getModifiedEditor().setHiddenAreas(hiddenRanges(monaco, modifiedVisible, modifiedModel.getLineCount()));
   }
 
   const diffUpdated = diff.onDidUpdateDiff(showChangedRegionsOnly);
   function layout() {
+    if (!active) return;
+    window.cancelAnimationFrame(layoutFrame);
     diff.layout();
     enforceOptions();
-    requestAnimationFrame(() => { diff.layout(); enforceOptions(); showChangedRegionsOnly(); });
+    layoutFrame = window.requestAnimationFrame(() => {
+      layoutFrame = 0;
+      if (!active) return;
+      diff.layout(); enforceOptions(); showChangedRegionsOnly();
+    });
   }
-  function setOriginal(value) { clearHiddenAreas(); originalModel.setValue(value); layout(); }
-  function setModified(value) { clearHiddenAreas(); modifiedModel.setValue(value); layout(); }
+  function setOriginal(value) { hiddenSignature = ''; clearHiddenAreas(); originalModel.setValue(value); layout(); }
+  function setModified(value) { hiddenSignature = ''; clearHiddenAreas(); modifiedModel.setValue(value); layout(); }
   function setTexts(original, modified) {
-    clearHiddenAreas();
+    hiddenSignature = ''; clearHiddenAreas();
     originalModel.setValue(original);
     modifiedModel.setValue(modified);
     layout();
@@ -90,8 +105,21 @@ export function createStandardDiffView({
   enforceOptions();
   return {
     diff, originalModel, modifiedModel, layout, setOriginal, setModified, setTexts,
+    setActive(value) {
+      const next = value === true;
+      if (active === next) return;
+      active = next;
+      window.cancelAnimationFrame(layoutFrame);
+      layoutFrame = 0;
+      if (!active) { diff.setModel(null); return; }
+      hiddenSignature = '';
+      diff.setModel({ original: originalModel, modified: modifiedModel });
+      layout();
+    },
     clear() { setTexts('', ''); },
     dispose() {
+      active = false;
+      window.cancelAnimationFrame(layoutFrame);
       diffUpdated.dispose(); diff.dispose(); originalModel.dispose(); modifiedModel.dispose();
     },
   };

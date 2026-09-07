@@ -9,7 +9,7 @@ export async function handleAdminHttp(context) {
     request, response, url, authStore, adminSessions, authenticatedUser,
     authenticatedAdmin, authenticatedBackup, readJsonBody, transientLoginSource,
     sendJson, disconnectAuthenticatedSockets, rooms, dataDirectory, atomicWrite,
-    broadcastDirectories, flushRooms,
+    broadcastDirectories, flushRooms, auditLog,
   } = context;
   const managementPath = url.pathname.startsWith('/api/management/')
     ? url.pathname.slice('/api/management'.length)
@@ -17,6 +17,25 @@ export async function handleAdminHttp(context) {
       ? url.pathname.slice('/api/admin'.length)
       : null;
   if (!managementPath) return false;
+  const audited = (actor, action, id, operation, details = {}) => {
+    if (!auditLog) return operation();
+    return auditLog.run(actor, `account-${action}`, id, details, async () => {
+      const result = await operation();
+      details.resultId = result?.id || result?.invite?.id || '';
+      return result;
+    }, { destructive: action === 'delete' || action === 'invite-delete' });
+  };
+  // Do not expose this route through the Team Management alias, even to admins.
+  if (managementPath === '/audit') {
+    if (url.pathname !== '/api/admin/audit' || request.method !== 'GET') {
+      sendJson(response, 404, { error: 'Not found', code: 'not_found' });
+      return true;
+    }
+    const actor = await authenticatedAdmin(request);
+    authStore.requireAdmin(actor);
+    sendJson(response, 200, await auditLog.list(Object.fromEntries(url.searchParams)));
+    return true;
+  }
   if (request.method === 'POST' && managementPath === '/session') {
     const actor = await authenticatedUser(request);
     authStore.requireManager(actor);
@@ -37,7 +56,8 @@ export async function handleAdminHttp(context) {
   }
   if (request.method === 'POST' && managementPath === '/invites') {
     const actor = await authenticatedAdmin(request, { fresh: true });
-    sendJson(response, 201, await authStore.createInvite(actor, await readJsonBody(request)));
+    const body = await readJsonBody(request);
+    sendJson(response, 201, await audited(actor, 'invite-create', 'new-invite', () => authStore.createInvite(actor, body)));
     return true;
   }
   if (request.method === 'GET' && managementPath === '/users') {
@@ -59,7 +79,8 @@ export async function handleAdminHttp(context) {
   if (request.method === 'POST' && match) {
     const actor = await authenticatedAdmin(request, { fresh: true });
     const enabled = match[2] === 'enable';
-    const user = await authStore.setUserEnabled(actor, decodeURIComponent(match[1]), enabled);
+    const id = decodeURIComponent(match[1]);
+    const user = await audited(actor, enabled ? 'enable' : 'disable', id, () => authStore.setUserEnabled(actor, id, enabled));
     if (!enabled) {
       await disconnectAuthenticatedSockets((identity) => identity?.id === user.id, 'Account disabled');
     }
@@ -70,7 +91,8 @@ export async function handleAdminHttp(context) {
   match = /^\/users\/([^/]+)(?:\/revoke)?$/.exec(managementPath);
   if ((request.method === 'DELETE' || (request.method === 'POST' && managementPath.endsWith('/revoke'))) && match) {
     const actor = await authenticatedAdmin(request, { fresh: true });
-    const user = await authStore.deleteUser(actor, decodeURIComponent(match[1]));
+    const id = decodeURIComponent(match[1]);
+    const user = await audited(actor, 'delete', id, () => authStore.deleteUser(actor, id));
     await disconnectAuthenticatedSockets((identity) => identity?.id === user.id, 'Account deleted');
     const loadedRooms = await Promise.all([...rooms.values()]);
     for (const room of loadedRooms) room.anonymiseUser(user.id);
@@ -84,7 +106,8 @@ export async function handleAdminHttp(context) {
   match = /^\/sessions\/([^/]+)\/revoke$/.exec(managementPath);
   if (request.method === 'POST' && match) {
     const actor = await authenticatedAdmin(request, { fresh: true });
-    const session = await authStore.revokeSession(actor, decodeURIComponent(match[1]));
+    const id = decodeURIComponent(match[1]);
+    const session = await audited(actor, 'session-revoke', id, () => authStore.revokeSession(actor, id));
     await disconnectAuthenticatedSockets(
       (identity) => identity?.sessionId === session.id, 'Device session revoked',
     );
@@ -95,20 +118,24 @@ export async function handleAdminHttp(context) {
   if (request.method === 'PUT' && match) {
     const actor = await authenticatedAdmin(request, { fresh: true });
     const body = await readJsonBody(request);
-    sendJson(response, 200, { user: await authStore.updateRoles(actor, decodeURIComponent(match[1]), body.roles) });
+    const id = decodeURIComponent(match[1]);
+    sendJson(response, 200, { user: await audited(actor, 'roles', id, () => authStore.updateRoles(actor, id, body.roles),
+      { roles: Array.isArray(body.roles) ? body.roles.slice(0, 8).map((role) => String(role).slice(0, 64)) : [] }) });
     return true;
   }
   match = /^\/users\/([^/]+)\/recovery-authorize$/.exec(managementPath);
   if (request.method === 'POST' && match) {
     const actor = await authenticatedAdmin(request, { fresh: true });
-    sendJson(response, 200, { user: await authStore.authorizeRecoveryCode(actor, decodeURIComponent(match[1])) });
+    const id = decodeURIComponent(match[1]);
+    sendJson(response, 200, { user: await audited(actor, 'recovery-authorize', id, () => authStore.authorizeRecoveryCode(actor, id)) });
     return true;
   }
   match = /^\/users\/([^/]+)\/temporary-password$/.exec(managementPath);
   if (request.method === 'POST' && match) {
     const actor = await authenticatedAdmin(request, { fresh: true });
     const body = await readJsonBody(request);
-    const user = await authStore.setTemporaryPassword(actor, decodeURIComponent(match[1]), body.temporaryPassword);
+    const id = decodeURIComponent(match[1]);
+    const user = await audited(actor, 'temporary-password', id, () => authStore.setTemporaryPassword(actor, id, body.temporaryPassword));
     await disconnectAuthenticatedSockets((identity) => identity?.id === user.id, 'Temporary password issued');
     sendJson(response, 200, { user });
     return true;
@@ -116,14 +143,16 @@ export async function handleAdminHttp(context) {
   match = /^\/invites\/([^/]+)\/revoke$/.exec(managementPath);
   if (request.method === 'POST' && match) {
     const actor = await authenticatedAdmin(request, { fresh: true });
-    const invite = await authStore.revokeInvite(actor, decodeURIComponent(match[1]));
+    const id = decodeURIComponent(match[1]);
+    const invite = await audited(actor, 'invite-revoke', id, () => authStore.revokeInvite(actor, id));
     sendJson(response, 200, { invite });
     return true;
   }
   match = /^\/invites\/([^/]+)$/.exec(managementPath);
   if (request.method === 'DELETE' && match) {
     const actor = await authenticatedAdmin(request, { fresh: true });
-    const invite = await authStore.deleteInviteRecord(actor, decodeURIComponent(match[1]));
+    const id = decodeURIComponent(match[1]);
+    const invite = await audited(actor, 'invite-delete', id, () => authStore.deleteInviteRecord(actor, id));
     sendJson(response, 200, { invite });
     return true;
   }

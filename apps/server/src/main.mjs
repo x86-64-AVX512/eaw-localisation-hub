@@ -22,6 +22,8 @@ import { TicketStore } from './ticket-store.mjs'; import { handleTicketHttp } fr
 import { TicketService } from './ticket-service.mjs'; import { GitCommitVerifier } from './git-commit-verifier.mjs';
 import { GitBranchCache } from './git-branch-cache.mjs';
 import { EventJournal } from './event-journal.mjs';
+import { watchTicketCatalog } from './ticket-catalog.mjs';
+import { AuditLog } from './audit-log.mjs';
 import {
   DISPLAY_VERSION,
   MAX_CONNECTIONS_PER_USER,
@@ -80,6 +82,7 @@ const authStore = new AuthStore(options.data, atomicWrite, options.auth);
 const bootstrapInvite = await authStore.initialise();
 const eventJournal = new EventJournal(options.data, atomicWrite);
 await eventJournal.initialise();
+const auditLog = new AuditLog(options.data); await auditLog.initialise();
 const adminSessions = new AdminSessionStore(authStore);
 const configuredGitRefresh = Number(process.env.EAW_HUB_GIT_REFRESH_MILLISECONDS ?? 60_000);
 const gitRefreshMilliseconds = Number.isFinite(configuredGitRefresh) && configuredGitRefresh >= 250
@@ -100,12 +103,14 @@ const roomRegistry = new RoomRegistry(
 );
 await roomRegistry.initialise();
 roomRegistry.eventJournal = eventJournal;
+roomRegistry.auditLog = auditLog;
 const rooms = roomRegistry.rooms;
 const ticketStore = new TicketStore(options.data, atomicWrite, new GitCommitVerifier(process.env.EAW_HUB_GITHUB_REPOSITORY));
 ticketStore.eventJournal = eventJournal;
 roomRegistry.ticketStore = ticketStore;
 await ticketStore.initialise();
 const ticketService = new TicketService(ticketStore, roomRegistry);
+watchTicketCatalog(ticketStore, rooms);
 
 async function getRoom(documentId) {
   return roomRegistry.get(documentId);
@@ -181,6 +186,7 @@ async function flushRooms() {
   await Promise.all(loadedRooms.map((room) => room.flush()));
   await authStore.flush();
   await eventJournal.flush();
+  await auditLog.flush();
 }
 
 async function disconnectAuthenticatedSockets(predicate, reason) {
@@ -224,7 +230,7 @@ async function handleHttp(request, response) {
     return;
   }
   if (await handleTicketHttp({
-    request, response, url,
+    request, response, url, auditLog,
     readJsonBody: (incoming) => readJsonBody(incoming, 12 * 1024 * 1024),
     authenticatedUser, sendJson, ticketStore, ticketService,
   })) return;
@@ -336,7 +342,7 @@ async function handleHttp(request, response) {
     request, response, url, authStore, adminSessions, authenticatedUser,
     authenticatedAdmin, authenticatedBackup, readJsonBody, transientLoginSource,
     sendJson, disconnectAuthenticatedSockets, rooms, dataDirectory: options.data,
-    atomicWrite, broadcastDirectories, flushRooms,
+    atomicWrite, broadcastDirectories, flushRooms, auditLog,
   })) return;
   sendJson(response, 404, { error: 'Not found', code: 'not_found' });
 }

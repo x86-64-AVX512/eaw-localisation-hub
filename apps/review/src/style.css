@@ -75,10 +75,15 @@ button.primary { border-color: #517bdc; background: #315db8; }
 }
 .brand { grid-area: brand; display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .status { grid-area: status; justify-self: end; }
-.actions { grid-area: actions; flex-wrap: wrap; justify-content: flex-end; }
+.actions { grid-area: actions; min-width: 0; max-width: 100%; flex-wrap: wrap; justify-content: flex-end; }
+.appbar.appbar-stacked {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "brand" "actions" "status";
+}
+.appbar.appbar-stacked .actions { justify-self: stretch; }
 .brand strong { font-size: 16px; }
 .brand span { overflow: hidden; color: #9da9ba; text-overflow: ellipsis; white-space: nowrap; }
-.ticket-switcher { display: flex; min-width: 0; gap: 6px; margin-top: 3px; }
+.ticket-switcher { display: flex; min-width: 0; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
 .ticket-switcher select {
   min-width: 0; max-width: 310px; border: 1px solid #394253; border-radius: 6px; padding: 4px 7px;
   color: #e9edf4; background: #12161d;
@@ -439,9 +444,10 @@ dialog textarea {
 @media (max-width: 1180px) {
   .workspace { grid-template-columns: 240px minmax(360px, 1fr) 330px; }
   .appbar {
-    grid-template-columns: minmax(220px, 1fr) auto;
-    grid-template-areas: "brand actions";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "brand" "actions";
   }
+  .actions { justify-self: stretch; justify-content: flex-start; }
   .status { display: none; }
   #toast { left: 258px; max-width: calc(100vw - 540px); }
 }
@@ -452,3 +458,12 @@ dialog textarea {
   background-color: transparent !important;
 }
 .audit-inline-comment { color: #6a9955 !important; font-style: italic; }
+.confirm-action {
+  position: fixed; inset: auto; margin: 0; z-index: 10000;
+  width: max-content; max-width: min(340px, calc(100vw - 16px)); box-sizing: border-box;
+  padding: 10px 12px; border: 1px solid #58677d; border-radius: 8px;
+  background: #252c38; color: #e4e9f1; box-shadow: 0 6px 24px #0008;
+  font-size: 12px; line-height: 1.4; overflow-wrap: anywhere;
+}
+.confirm-action-buttons { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.confirm-action button { padding: 3px 9px; min-height: 25px; font-size: 12px; }

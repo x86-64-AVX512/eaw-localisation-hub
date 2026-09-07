@@ -1,6 +1,18 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F2` form; package metadata uses `0.8.7-alpha.2`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F3` form; package metadata uses `0.8.7-beta.3`.
+
+## 0.8.7F3 – 2026-09-07
+
+- Mandatory training opens only after a full authenticated server response has explicitly returned the account's progress and confirmed that a current segment is incomplete. Initial Agent greetings and compact WebSocket room identities no longer treat missing progress as an empty account.
+- Open Review windows recover after Agent restarts. Activation is preserved even when cursor anchors refer to a document that the new Agent has not synchronised yet.
+- Ticket catalog changes reach other connected users immediately. Revision checks, catalog opening and reconnects recover missed changes while preserving unsaved metadata fields.
+- Added independent, durable server audit records for ticket operations, discussions, suggestions, reservations, document edits and account management. Deletions record the attempt before mutation and the final result afterwards.
+- Audit records use authenticated account identities, survive object deletion, and are included in server backups. EaW Hub Admin provides filtering and pagination; Team Management has no audit UI or endpoint, and senior translators cannot read audit records. No deleted-object restoration was added.
+- Daily backup scheduling converts the selected time to the DateTime required by Windows Task Scheduler. The schedule runs at local 03:00 under the logged-in user and catches up when available.
+- Replaced browser confirmation boxes in Review with compact confirmations beside the triggering action, including keyboard cancellation and protection against stale targets.
+- Windows CI now compares canonical paths safely when simulating atomic replacement failures, and an invalidated in-flight personal-file write is scheduled again instead of being lost.
+- Protocol 17 requires updating the server and Desktop Agent together.
 
 ## 0.8.7F2 – 2026-09-06
 
@@ -37,4 +49,4 @@ All notable public changes to EaW Localisation Hub are recorded here. Version na
 - Added a Windows deployment utility and server backup/restore tooling.
 - Fixed synchronization races, stale visual conflicts, review navigation and incremental-edit rendering issues.
 
-This is an alpha release. Back up project and server data before upgrades.
+This is an early beta and the program is still rough. Back up project and server data before upgrades.

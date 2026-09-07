@@ -67,6 +67,7 @@ export class TicketStore {
     this.tickets = [];
     this.persistence = Promise.resolve();
     this.commitVerifier = commitVerifier;
+    this.revision = crypto.randomUUID();
   }
 
   async initialise() {
@@ -88,7 +89,11 @@ export class TicketStore {
 
   persist() {
     const data = `${JSON.stringify({ schema: 2, tickets: this.tickets }, null, 2)}\n`;
-    this.persistence = this.persistence.catch(() => {}).then(() => this.atomicWrite(this.target, data));
+    this.persistence = this.persistence.catch(() => {}).then(async () => {
+      await this.atomicWrite(this.target, data);
+      this.revision = crypto.randomUUID();
+      await this.onChanged?.(this.revision);
+    });
     return this.persistence;
   }
 

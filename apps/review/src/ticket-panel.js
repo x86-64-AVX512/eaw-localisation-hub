@@ -53,15 +53,35 @@ export function createTicketPanel(options) {
   let retryDelay = 2_000;
   let unavailable = false;
   let disposed = false;
+  let navigating = false;
   let diffEditor = null;
   let diffModels = [];
   let diffRequest = 0;
+  let summaryRequest = 0;
+  let catalogRevision = '';
+  let dirtyDetails = false;
+  const watch = createTicketCatalogWatch({
+    refresh: () => reloadWithRetry(),
+    revision: () => api('/api/tickets/revision'), currentRevision: () => catalogRevision,
+  });
+  for (const input of [editTitle, editDescription, editFiles]) input.addEventListener('input', () => { dirtyDetails = true; });
 
   function disposeDiff() {
     diffEditor?.dispose(); diffEditor = null;
     for (const model of diffModels) model.dispose();
     diffModels = [];
     diffContainer.replaceChildren();
+  }
+
+  function suspendCatalogDiff() {
+    summaryRequest += 1;
+    diffRequest += 1;
+    disposeDiff();
+  }
+
+  function closeCatalog() {
+    suspendCatalogDiff();
+    if (catalog.open) catalog.close();
   }
 
   async function showFileDiff(ticket, file, button) {
@@ -71,8 +91,13 @@ export function createTicketPanel(options) {
     diffContainer.textContent = 'Загрузка diff…';
     let payload;
     try { payload = await api(`/api/tickets/${ticket.id}/diff?file=${encodeURIComponent(file.path)}`); }
-    catch (error) { diffContainer.textContent = `Diff недоступен: ${error.message}`; return; }
-    if (ticket.id !== selectedId || requestId !== diffRequest) return;
+    catch (error) {
+      if (catalog.open && ticket.id === selectedId && requestId === diffRequest) {
+        diffContainer.textContent = `Diff недоступен: ${error.message}`;
+      }
+      return;
+    }
+    if (!catalog.open || ticket.id !== selectedId || requestId !== diffRequest) return;
     const snapshot = payload.files[0];
     diffContainer.replaceChildren();
     const original = monaco.editor.createModel(decodeBase64(snapshot.baseTextBase64), 'eaw-yaml');
@@ -134,16 +159,27 @@ export function createTicketPanel(options) {
     return payload;
   }
 
-  function navigate(ticket) {
+  async function navigate(ticket) {
+    if (navigating) return;
+    navigating = true;
     const path = ticket && !ticket.files.includes(state.relativePath) ? ticket.files[0] : requestedPath;
     const hash = new URLSearchParams({ token, path });
     if (ticket) hash.set('ticket', ticket.id);
+    await options.beforeNavigate?.();
     location.hash = hash.toString();
     location.reload();
   }
 
   function currentTicket() {
     return tickets.find((ticket) => ticket.id === selectedId) ?? null;
+  }
+
+  function leaveUnavailable(reason = 'deleted') {
+    if (navigating || !state.ticket) return;
+    showToast(reason === 'file-removed'
+      ? 'Файл удалён из открытого тикета. Переход к основной версии…'
+      : 'Открытый тикет удалён. Переход к основной версии…');
+    void navigate(null);
   }
 
   function renderSwitcher() {
@@ -179,17 +215,19 @@ export function createTicketPanel(options) {
       const meta = document.createElement('span');
       meta.textContent = `${STATUS_LABELS[ticket.status] ?? ticket.status} · ${ticket.files.length} файл(а/ов) · ${localDate(ticket.updatedAt)}`;
       button.append(title, meta);
-      button.addEventListener('click', () => { selectedId = ticket.id; renderList(); renderDetails(); });
+      button.addEventListener('click', () => { selectedId = ticket.id; dirtyDetails = false; renderList(); renderDetails(); });
       list.append(button);
     }
   }
 
   async function renderSummary(ticket) {
+    const requestId = ++summaryRequest;
+    diffRequest += 1;
     diff.textContent = 'Подсчёт изменений…';
     diffFiles.replaceChildren(); disposeDiff();
     try {
       const summary = await api(`/api/tickets/${ticket.id}/diff`);
-      if (ticket.id !== selectedId) return;
+      if (!catalog.open || ticket.id !== selectedId || requestId !== summaryRequest) return;
       diff.textContent = `Файлов в тикете: ${summary.files.length}. Diff загружается только для выбранного файла.`;
       for (const file of summary.files) {
         const button = document.createElement('button');
@@ -197,9 +235,11 @@ export function createTicketPanel(options) {
         button.addEventListener('click', () => showFileDiff(ticket, file, button));
         diffFiles.append(button);
       }
-      if (summary.files[0]) showFileDiff(ticket, summary.files[0], diffFiles.firstElementChild);
+      if (summary.files[0]) void showFileDiff(ticket, summary.files[0], diffFiles.firstElementChild);
     } catch (error) {
-      diff.textContent = `Diff недоступен: ${error.message}`;
+      if (catalog.open && ticket.id === selectedId && requestId === summaryRequest) {
+        diff.textContent = `Diff недоступен: ${error.message}`;
+      }
     }
   }
 
@@ -233,20 +273,35 @@ export function createTicketPanel(options) {
     document.querySelector('#ticket-rebase').disabled = readOnly;
     document.querySelector('#ticket-apply').disabled = readOnly;
     document.querySelector('#ticket-archive').disabled = Boolean(ticket.archivedAt);
-    renderSummary(ticket);
+    if (catalog.open) void renderSummary(ticket);
   }
 
   async function reload() {
-    tickets = (await api('/api/tickets?archived=1')).tickets ?? [];
-    if (state.ticket) state.ticket = tickets.find((ticket) => ticket.id === state.ticket.id) ?? state.ticket;
+    const payload = await api('/api/tickets?archived=1');
+    if (disposed) return;
+    const draft = dirtyDetails ? { id: selectedId, title: editTitle.value, description: editDescription.value, files: editFiles.value } : null;
+    tickets = payload.tickets ?? [];
+    catalogRevision = payload.revision ?? '';
+    if (selectedId && !currentTicket()) { selectedId = ''; dirtyDetails = false; }
+    if (state.ticket) {
+      const current = tickets.find((ticket) => ticket.id === state.ticket.id);
+      if (!current) { leaveUnavailable(); return; }
+      state.ticket = current ?? { ...state.ticket, status: 'closed', deleted: true };
+      if (!current || current.archivedAt || ['applied', 'closed'].includes(current.status)) {
+        options.editor?.updateOptions({ readOnly: true });
+      }
+    }
     renderSwitcher();
     renderList();
     renderDetails();
+    if (draft && draft.id === selectedId) {
+      editTitle.value = draft.title; editDescription.value = draft.description; editFiles.value = draft.files;
+    }
   }
 
   async function operation(name, path, confirmation) {
     const ticket = currentTicket();
-    if (!ticket || (confirmation && !confirm(confirmation))) return;
+    if (!ticket || (confirmation && !await confirmAction(document.querySelector(`#ticket-${path}`), confirmation))) return;
     for (const id of operationButtons) document.querySelector(`#${id}`).disabled = true;
     try {
       const payload = await api(`/api/tickets/${ticket.id}/${path}`, { method: 'POST', body: '{}' });
@@ -302,8 +357,12 @@ export function createTicketPanel(options) {
       showToast(`Не удалось обновить тикет: ${error.message}`, true);
     }
   });
-  catalogButton.addEventListener('click', () => { selectedId = state.ticket?.id ?? tickets[0]?.id ?? ''; renderList(); renderDetails(); catalog.showModal(); });
-  document.querySelector('#ticket-catalog-close').addEventListener('click', () => catalog.close());
+  catalogButton.addEventListener('click', () => {
+    selectedId = state.ticket?.id ?? tickets[0]?.id ?? ''; dirtyDetails = false;
+    catalog.showModal(); renderList(); renderDetails(); watch.changed();
+  });
+  document.querySelector('#ticket-catalog-close').addEventListener('click', closeCatalog);
+  catalog.addEventListener('close', suspendCatalogDiff);
   for (const name of Object.keys(STATUS_LABELS)) filterStatus.add(new Option(STATUS_LABELS[name], name));
   search.addEventListener('input', renderList);
   filterStatus.addEventListener('change', renderList);
@@ -314,7 +373,7 @@ export function createTicketPanel(options) {
     if (!ticket) return;
     try {
       await api(`/api/tickets/${ticket.id}`, { method: 'PATCH', body: JSON.stringify({ title: editTitle.value, description: editDescription.value }) });
-      await reload(); showToast('Название и описание сохранены.');
+      dirtyDetails = false; await reload(); showToast('Название и описание сохранены.');
     } catch (error) { showToast(`Не удалось сохранить: ${error.message}`, true); }
   });
   document.querySelector('#ticket-save-files').addEventListener('click', async () => {
@@ -322,7 +381,7 @@ export function createTicketPanel(options) {
     if (!ticket) return;
     try {
       const payload = await api(`/api/tickets/${ticket.id}/files`, { method: 'PUT', body: JSON.stringify({ files: fileLines(editFiles.value) }) });
-      await reload(); showToast('Список файлов сохранён.');
+      dirtyDetails = false; await reload(); showToast('Список файлов сохранён.');
       if (state.ticket?.id === ticket.id && !payload.ticket.files.includes(state.relativePath)) navigate(payload.ticket);
     } catch (error) { showToast(`Не удалось изменить файлы: ${error.message}`, true); }
   });
@@ -331,7 +390,9 @@ export function createTicketPanel(options) {
   document.querySelector('#ticket-archive').addEventListener('click', () => operation('Тикет архивирован.', 'archive', 'Архивировать тикет?'));
   document.querySelector('#ticket-delete').addEventListener('click', async () => {
     const ticket = currentTicket();
-    if (!ticket || !confirm(`Навсегда удалить тикет «${ticket.title}», его документы и историю?`)) return;
+    const button = document.querySelector('#ticket-delete');
+    if (!ticket || !await confirmAction(button, `Удалить тикет «${ticket.title}» вместе с документами и историей?`, { label: 'Удалить', danger: true })) return;
+    button.disabled = true;
     try {
       await api(`/api/tickets/${ticket.id}`, { method: 'DELETE' });
       const wasCurrent = state.ticket?.id === ticket.id;
@@ -340,12 +401,16 @@ export function createTicketPanel(options) {
       showToast('Тикет удалён.');
       if (wasCurrent) navigate(null);
     } catch (error) { showToast(`Не удалось удалить тикет: ${error.message}`, true); }
+    finally { button.disabled = false; }
   });
 
   return {
+    refresh: (revision) => watch.changed(revision),
+    leaveUnavailable,
     async initialise() { await reloadWithRetry(); },
     dispose() {
       disposed = true;
+      watch.dispose();
       disposeDiff();
       if (retryTimer) window.clearTimeout(retryTimer);
       retryTimer = 0;
@@ -353,3 +418,5 @@ export function createTicketPanel(options) {
   };
 }
 import { decodeBase64 } from './review-utilities.js';
+import { createTicketCatalogWatch } from './ticket-catalog-watch.js';
+import { confirmAction } from './confirm-action.js';

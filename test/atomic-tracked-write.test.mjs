@@ -18,9 +18,13 @@ function fixture(t) {
 
 test('failed atomic replacement leaves the complete original in place and cleans its staging file', async (t) => {
   const { repository, directory, target, original } = fixture(t);
+  const canonicalTarget = await fs.promises.realpath(target);
+  const pathKey = (value) => process.platform === 'win32'
+    ? path.resolve(value).toLowerCase() : path.resolve(value);
   const rename = fs.promises.rename;
   t.mock.method(fs.promises, 'rename', async (from, to) => {
-    if (to !== target) return rename(from, to);
+    // Windows runners may expand RUNNER~1 or normalise path casing in realpath().
+    if (pathKey(to) !== pathKey(canonicalTarget)) return rename(from, to);
     assert.equal(fs.readFileSync(target, 'utf8'), original, 'the destination was never truncated');
     assert.match(fs.readFileSync(from, 'utf8'), /"Changed"/u);
     throw Object.assign(new Error('Simulated replacement failure'), { code: 'EACCES' });

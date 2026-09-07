@@ -22,6 +22,7 @@ import { expiredPresenceIds } from '../../../packages/shared/src/presence.mjs';
 import { parseSuggestionTrace } from '../../../packages/shared/src/suggestion-trace.mjs';
 import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mjs';
 import { textChangeSummary } from './notification-summary.mjs';
+import { auditDocumentControl, auditDocumentEdit } from './document-audit.mjs';
 import {
   DISPLAY_VERSION,
   MAX_CLIENTS_PER_ROOM,
@@ -495,7 +496,7 @@ export class DocumentRoom {
       throw new ProtocolLimitError('CRDT update exceeds the per-message limit');
     }
 
-    return this.enqueueMessage(() => this.applyBinary(socket, incoming));
+    return this.enqueueMessage(() => auditDocumentEdit(this, socket, incoming, () => this.applyBinary(socket, incoming)));
   }
 
   async applyBinary(socket, incoming) {
@@ -532,7 +533,7 @@ export class DocumentRoom {
   }
 
   receiveJson(socket, message) {
-    return this.enqueueMessage(() => this.applyJson(socket, message));
+    return this.enqueueMessage(() => auditDocumentControl(this, socket, message, () => this.applyJson(socket, message)));
   }
 
   enqueueMessage(operation) {

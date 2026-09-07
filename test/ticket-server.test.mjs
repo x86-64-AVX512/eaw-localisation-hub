@@ -37,8 +37,16 @@ test('ticket HTTP metadata gates its isolated WebSocket document namespace', { t
     '--data', temporary, '--auth', 'disabled',
   ], { cwd: path.resolve(import.meta.dirname, '..'), stdio: 'ignore', windowsHide: true });
   const file = 'localisation/russian/ticket_l_russian.yml';
+  let observer;
   try {
     await waitForHealth(port);
+    observer = new WebSocket(`ws://127.0.0.1:${port}/?document=${encodeURIComponent(`general-dev:${file}`)}`);
+    const observed = [];
+    observer.on('message', (data, binary) => { if (!binary) observed.push(JSON.parse(data.toString())); });
+    await once(observer, 'open');
+    for (let attempt = 0; attempt < 100 && !observed.some(({ type }) => type === 'synced'); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     const created = await fetch(`http://127.0.0.1:${port}/api/tickets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -50,6 +58,11 @@ test('ticket HTTP metadata gates its isolated WebSocket document namespace', { t
     const { ticket } = await created.json();
     const listed = await (await fetch(`http://127.0.0.1:${port}/api/tickets`)).json();
     assert.equal(listed.tickets[0].id, ticket.id);
+    for (let attempt = 0; attempt < 100 && !observed.some(({ type }) => type === 'tickets-changed'); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(observed.some((message) => message.type === 'tickets-changed' && message.revision === listed.revision), true);
+    assert.equal((await (await fetch(`http://127.0.0.1:${port}/api/tickets/revision`)).json()).revision, listed.revision);
 
     const accepted = new WebSocket(`ws://127.0.0.1:${port}/?document=${encodeURIComponent(`ticket-${ticket.id}:${file}`)}`);
     const messages = [];
@@ -65,7 +78,19 @@ test('ticket HTTP metadata gates its isolated WebSocket document namespace', { t
     await once(rejected, 'open');
     const [code] = await once(rejected, 'close');
     assert.equal(code, 1008);
+    const deleted = await fetch(`http://127.0.0.1:${port}/api/tickets/${ticket.id}`, { method: 'DELETE' });
+    assert.equal(deleted.status, 200);
+    const revision = (await (await fetch(`http://127.0.0.1:${port}/api/tickets/revision`)).json()).revision;
+    assert.notEqual(revision, listed.revision);
+    for (let attempt = 0; attempt < 100 && !observed.some((message) => message.revision === revision); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(observed.some((message) => message.type === 'tickets-changed' && message.revision === revision), true);
+    const auditFiles = await fs.readdir(path.join(temporary, 'audit'));
+    const records = await Promise.all(auditFiles.filter((name) => name.endsWith('.json')).map(async (name) => JSON.parse(await fs.readFile(path.join(temporary, 'audit', name), 'utf8'))));
+    assert.equal(records.some((record) => record.action === 'ticket-delete' && record.target === ticket.id && record.outcome === 'completed'), true);
   } finally {
+    observer?.terminate();
     child.kill('SIGTERM');
     await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 2000))]);
     if (child.exitCode === null) child.kill('SIGKILL');

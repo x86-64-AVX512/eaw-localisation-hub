@@ -1,8 +1,8 @@
 {
   "name": "eaw-localisation-hub",
   "private": true,
-  "version": "0.8.7-alpha.2",
-  "description": "EaW collaborative localisation prototype",
+  "version": "0.8.7-beta.3",
+  "description": "EaW collaborative localisation early beta",
   "license": "GPL-2.0-only",
   "author": "EaW Localisation Hub contributors",
   "keywords": ["equestria-at-war", "localisation", "notepad-plus-plus", "collaboration"],
@@ -19,7 +19,7 @@
     "test:live-plugin": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-live-plugin.ps1",
     "check": "npm run check:publication && npm test && npm run build:client && npm run build:installer && npm run build:deployer && npm run build:source && npm run test:plugin && npm run test:launcher && npm run test:credentials && npm run test:status && npm run test:client && npm run test:deployer && npm run test:source && npm run test:installer",
     "check:publication": "node scripts/check-publication.mjs",
-    "test:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-powershell.ps1",
+    "test:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-powershell.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-backup-schedule.ps1",
     "test:client": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-package.ps1",
     "test:deployer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-deployer-package.ps1",
     "test:source": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-source-package.ps1",
@@ -45,8 +45,8 @@
     "yjs": "^13.6.27"
   },
   "eawHub": {
-    "displayVersion": "0.8.7F2",
-    "windowsFileVersion": "0.8.7.2"
+    "displayVersion": "0.8.7F3",
+    "windowsFileVersion": "0.8.7.3"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

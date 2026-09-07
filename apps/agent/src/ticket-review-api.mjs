@@ -14,6 +14,10 @@ export async function handleTicketReviewApi(context) {
     return true;
   }
   try {
+    if (requestUrl.pathname === '/api/tickets/revision' && request.method === 'GET') {
+      json(response, 200, await hub.ticketRequest('/api/tickets/revision'), secureHeaders);
+      return true;
+    }
     if (requestUrl.pathname === '/api/tickets') {
       const payload = request.method === 'POST'
         ? await hub.ticketRequest('/api/tickets', {

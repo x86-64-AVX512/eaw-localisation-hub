@@ -13,6 +13,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
   const diffView = createStandardDiffView({
     monaco, container: document.querySelector('#git-history-diff'),
   });
+  diffView.setActive(false);
   let entries = [];
   let nextOffset = 0;
   let hasMore = false;
@@ -100,6 +101,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
     try {
       const query = new URLSearchParams({ path: state.path, offset: String(nextOffset), limit: '50' });
       const payload = await request(`/api/git-history?${query}`);
+      if (!dialog.open) return;
       entries.push(...(payload.entries ?? []).filter(
         (entry) => !entries.some((known) => known.commit === entry.commit),
       ));
@@ -118,6 +120,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
   }
 
   async function compare() {
+    if (!dialog.open) return;
     const from = fromSelect.value;
     const to = toSelect.value;
     if (!from || !to) return;
@@ -136,24 +139,31 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
         toPath: toEntry?.historicalPath ?? state.relativePath,
       });
       const payload = await request(`/api/git-history/diff?${query}`);
-      if (requestId !== comparisonId) return;
+      if (requestId !== comparisonId || !dialog.open) return;
       diffView.setTexts(decodeBase64(payload.baseBase64), decodeBase64(payload.headBase64));
       selection.textContent = `${String(payload.fromCommit).slice(0, 10)} → ${String(payload.toCommit).slice(0, 10)}`;
     } catch (error) {
-      if (requestId === comparisonId) selection.textContent = error.message;
-      showToast(error.message, true);
+      if (requestId === comparisonId && dialog.open) {
+        selection.textContent = error.message;
+        showToast(error.message, true);
+      }
     }
   }
 
   openButton.addEventListener('click', () => {
     dialog.showModal();
+    diffView.setActive(true);
     diffView.layout();
     load(true);
   });
   fromSelect.addEventListener('change', compare);
   toSelect.addEventListener('change', compare);
   more.addEventListener('click', () => load(false));
-  document.querySelector('#git-history-close').addEventListener('click', () => dialog.close());
+  document.querySelector('#git-history-close').addEventListener('click', () => {
+    comparisonId += 1;
+    dialog.close();
+    diffView.setActive(false);
+  });
   document.querySelector('#git-history-fullscreen').addEventListener('click', (event) => {
     dialog.classList.toggle('fullscreen');
     event.currentTarget.textContent = dialog.classList.contains('fullscreen') ? 'Обычный размер' : 'На весь экран';

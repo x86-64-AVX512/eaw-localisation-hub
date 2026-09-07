@@ -1,6 +1,7 @@
 import { decodeBase64, encodeBase64, safeColor } from './review-utilities.js';
 import { cardButton, cardHeader, renderMessages } from './review-card-elements.js';
 import { suggestionTraceParts } from '../../../packages/shared/src/suggestion-trace.mjs';
+import { confirmAction } from './confirm-action.js';
 
 export function visibleComparisonText(text) {
   const value = String(text ?? '');
@@ -83,9 +84,11 @@ export function createReviewCards({
         (value) => send({ type: 'commentStatus', path: state.path, id: value.id, status: nextStatus }), item));
     }
     const deleteType = item.kind === 'comment' ? 'commentDelete' : 'suggestionDelete';
-    actions.append(cardButton('Удалить', (value) => {
-      if (confirm('Удалить это обсуждение без возможности восстановления?')) {
+    actions.append(cardButton('Удалить', async (value, button) => {
+      if (await confirmAction(button, item.kind === 'comment' ? 'Удалить комментарий и ответы?' : 'Удалить правку и ответы?', { label: 'Удалить', danger: true })) {
+        button.disabled = true;
         send({ type: deleteType, path: state.path, id: value.id });
+        setTimeout(() => { if (button.isConnected) button.disabled = false; }, 5000);
       }
     }, item, 'danger'));
     card.append(actions);

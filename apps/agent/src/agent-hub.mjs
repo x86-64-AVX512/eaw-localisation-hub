@@ -166,6 +166,8 @@ export class AgentHub {
   updateIdentity(identity) {
     const displayName = String(identity?.displayName ?? '').trim();
     if (!displayName) return;
+    const trainingProgressConfirmed = this.identity?.trainingProgressConfirmed === true
+      || Object.hasOwn(identity, 'trainingProgress');
     const trainingProgress = { ...(this.identity?.trainingProgress ?? {}) };
     for (const [segmentId, revision] of Object.entries(identity.trainingProgress ?? {})) {
       trainingProgress[segmentId] = Math.max(Number(trainingProgress[segmentId] ?? 0), Number(revision ?? 0));
@@ -181,6 +183,9 @@ export class AgentHub {
       recoveryStatus: String(identity.recoveryStatus ?? ''),
       // A delayed account refresh must never roll back progress saved by a newer request.
       trainingProgress,
+      // WebSocket room identity is intentionally compact and has no progress.
+      // Only a full authenticated account response can confirm this field.
+      trainingProgressConfirmed,
     };
     this.options.user = displayName;
     for (const client of this.clients) {
@@ -206,6 +211,9 @@ export class AgentHub {
       temporaryPassword: this.identity?.temporaryPassword === true,
       recoveryStatus: this.identity?.recoveryStatus ?? '',
       trainingProgress: this.identity?.trainingProgress ?? {},
+      // An empty progress map is meaningful only after /api/auth/me or another
+      // authenticated server response has supplied the account identity.
+      trainingProgressConfirmed: this.identity?.trainingProgressConfirmed === true,
       serverVersion: this.serverVersion ?? '',
     });
   }
@@ -560,6 +568,14 @@ export class AgentHub {
     }
     if (!state && ['activate', 'deactivate', 'cursor', 'close', 'edit', 'snapshot'].includes(message.type)) return;
     if (!state) throw new Error(`The plugin has not opened ${absolutePath}`);
+    // Activation belongs to the local connection, even when old CRDT cursor
+    // anchors cannot be resolved in a fresh binding after the Agent restarts.
+    if (message.type === 'activate') {
+      if (client.activeDocumentPath && client.activeDocumentPath !== absolutePath) {
+        client.documents.get(client.activeDocumentPath)?.binding.deactivatePresence(client);
+      }
+      client.activeDocumentPath = absolutePath;
+    }
     if (message.reviewAnchors) {
       message = resolveReviewAnchors(state.binding, client, message);
       if (!message) {
@@ -586,11 +602,6 @@ export class AgentHub {
       return;
     }
     if (message.type === 'activate') {
-      if (client.activeDocumentPath && client.activeDocumentPath !== absolutePath) {
-        const previous = client.documents.get(client.activeDocumentPath);
-        previous?.binding.deactivatePresence(client);
-      }
-      client.activeDocumentPath = absolutePath;
       state.binding.cursor(client, absolutePath, message);
     } else if (message.type === 'deactivate') {
       if (client.activeDocumentPath === absolutePath) {

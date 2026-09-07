@@ -14,7 +14,7 @@ export function cardButton(label, action, item, className = '') {
   const button = document.createElement('button');
   button.textContent = label;
   button.className = className;
-  button.addEventListener('click', () => action(item));
+  button.addEventListener('click', () => action(item, button));
   return button;
 }
 

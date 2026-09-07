@@ -132,7 +132,10 @@ export class TicketService {
     const before = this.ticketStore.get(id);
     const changed = await this.ticketStore.setFiles(actor, id, files);
     if (changed.removed.length) {
-      await this.roomRegistry.deleteDocuments(changed.removed.map((file) => this.ticketDocument(before, file)));
+      await this.roomRegistry.deleteDocuments(
+        changed.removed.map((file) => this.ticketDocument(before, file)),
+        'Ticket file removed',
+      );
     }
     return { ticket: changed.ticket };
   }

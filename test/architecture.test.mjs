@@ -81,6 +81,7 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/review/src/review-utilities.js',
     'apps/review/src/suggestion-history.js',
     'apps/review/src/ticket-panel.js',
+    'apps/review/src/appbar-layout.js',
     'apps/review/src/agent-connection.js',
     'apps/review/src/git-conflict-diff.js',
     'apps/review/src/git-conflict-state.js',
@@ -332,9 +333,13 @@ test('Review collaboration sections scroll instead of overlapping at short windo
 
 test('Review header grows when its actions wrap instead of clipping the ticket switcher', () => {
   const styles = source('apps/review/src/style.css');
-  assert.match(styles, /grid-template-areas: "brand actions" "status status"/u);
+  const layout = source('apps/review/src/appbar-layout.js');
+  assert.match(styles, /\.appbar\.appbar-stacked[\s\S]*grid-template-areas: "brand" "actions" "status"/u);
+  assert.match(styles, /\.ticket-switcher \{[^}]*flex-wrap: wrap/u);
   assert.match(styles, /\.appbar \{[\s\S]*align-items: start/u);
   assert.match(styles, /\.appbar \{[\s\S]*flex: 0 0 auto/u);
+  assert.match(layout, /brandWidth \+ columnGap \+ actionsWidth > availableWidth/u);
+  assert.match(layout, /new ResizeObserver\(refresh\)/u);
 });
 
 test('personal file controls live in an on-demand dialog instead of a permanent notice', () => {
@@ -379,7 +384,7 @@ test('Git history, document history, and localisation audit share the compact wr
   assert.match(standard, /hideUnchangedRegions: \{ enabled: false \}/u);
   assert.match(standard, /diff\.onDidUpdateDiff\(showChangedRegionsOnly\)/u);
   assert.match(standard, /setHiddenAreas\(hiddenRanges/u);
-  assert.match(standard, /requestAnimationFrame\(\(\) => \{ diff\.layout\(\); enforceOptions\(\); showChangedRegionsOnly\(\); \}\)/u);
+  assert.match(standard, /layoutFrame = window\.requestAnimationFrame\([\s\S]*diff\.layout\(\); enforceOptions\(\); showChangedRegionsOnly\(\)/u);
   assert.match(style, /\.standard-diff \.diagonal-fill/u);
   assert.match(style, /background-image: none !important/u);
 });

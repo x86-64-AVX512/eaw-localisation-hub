@@ -141,16 +141,18 @@ async function stopProcess(child) {
   if (child.exitCode === null) child.kill('SIGKILL');
 }
 
-async function connectReview(stateDirectory, filePath, initialText) {
+async function connectReview(stateDirectory, filePath, initialText, retained = null) {
   const discovery = JSON.parse(await fs.readFile(path.join(stateDirectory, 'review-session.json'), 'utf8'));
   const socket = new WebSocket(`${discovery.origin.replace('http:', 'ws:')}/review-socket?token=${discovery.token}`, {
     origin: discovery.origin,
   });
-  const client = { socket, held: [], holding: false, ready: false, messages: [] };
-  client.document = createReviewDocument({
+  const client = retained ?? { held: [], holding: false, messages: [] };
+  client.socket = socket;
+  client.ready = false;
+  client.document ??= createReviewDocument({
     send(message) {
       if (client.holding) client.held.push(message);
-      else socket.send(JSON.stringify(message));
+      else client.socket.send(JSON.stringify(message));
     },
     onText() {},
   });
@@ -158,11 +160,15 @@ async function connectReview(stateDirectory, filePath, initialText) {
     const message = JSON.parse(data.toString('utf8'));
     client.messages.push(message);
     if (message.type === 'documentSync') client.document.receive(message);
-    if (message.type === 'documentReady') { client.ready = true; client.document.replay(); }
+    if (message.type === 'documentReady') {
+      client.ready = true; client.document.replay();
+      socket.send(JSON.stringify(client.document.anchor({ type: 'cursor', path: filePath, positionByte: 0, anchorByte: 0 })));
+    }
   });
   await once(socket, 'open');
   socket.send(JSON.stringify({ type: 'open', path: filePath, crdt: 'yjs-v1',
     textBase64: Buffer.from(initialText).toString('base64') }));
+  socket.send(JSON.stringify(client.document.anchor({ type: 'activate', path: filePath, positionByte: 0, anchorByte: 0 })));
   await waitUntil(() => client.ready, 'Review ready');
   client.close = () => { socket.terminate(); client.document.dispose(); };
   return client;
@@ -213,6 +219,19 @@ test('real Review–Agent–server transport preserves in-flight typing and writ
       assert.equal(await fs.readFile(fileBob, 'utf8'), `\uFEFF${original.replace('"Two"', '"Bob Two"')}`);
       assert.equal(alice.messages.some(({ type }) => type === 'error'), false);
       assert.equal(bob.messages.some(({ type }) => type === 'error'), false);
+
+      // Keep the Review CRDT peer alive while its Agent disappears. Old relative
+      // activation positions must not leave the new connection without an active file.
+      const beforeRestart = alice.document.text();
+      await stopProcess(aliceAgent);
+      aliceAgent = startAgent(repoAlice, stateAlice, 'Alice');
+      await waitUntil(() => /review application: ready/u.test(aliceAgent.output), 'restarted Alice Review endpoint');
+      alice = await connectReview(stateAlice, fileAlice, beforeRestart, alice);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      assert.equal(alice.socket.readyState, WebSocket.OPEN, 'restarted Review must stay connected after its cursor heartbeat');
+      assert.equal(alice.messages.some(({ type }) => type === 'error'), false);
+      alice.document.commit(beforeRestart.replace('Alice One', 'Alice restarted'));
+      await waitUntil(() => bob.document.text().includes('Alice restarted'), 'editing after Agent restart');
     } finally {
       alice?.close(); bob?.close();
       await stopProcess(aliceAgent); await stopProcess(bobAgent); await stopProcess(server);

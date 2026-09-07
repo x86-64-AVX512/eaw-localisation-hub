@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
-const ALLOWED_ROOTS = new Set(['auth.json', 'recovery-pepper.key', 'tickets.json', 'documents']);
+const ALLOWED_ROOTS = new Set(['auth.json', 'recovery-pepper.key', 'tickets.json', 'documents', 'audit', 'events.json']);
 
 async function collectFiles(root, relative = '') {
   const absolute = path.join(root, relative);

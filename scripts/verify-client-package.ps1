@@ -3,8 +3,8 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
-$packageRoot = Join-Path $projectRoot 'dist\EaW-Hub-Client-0.8.7F2'
-$archivePath = Join-Path $projectRoot 'dist\EaW-Hub-Client-0.8.7F2.zip'
+$packageRoot = Join-Path $projectRoot 'dist\EaW-Hub-Client-0.8.7F3'
+$archivePath = Join-Path $projectRoot 'dist\EaW-Hub-Client-0.8.7F3.zip'
 $checksumPath = "$archivePath.sha256"
 $required = @(
     'node.exe',
@@ -26,8 +26,10 @@ $required = @(
     'scripts\credential-store.ps1',
     'scripts\install-client.ps1',
     'scripts\server-admin-ui.ps1',
+    'scripts\admin-audit-ui.ps1',
     'scripts\backup-server.ps1',
     'scripts\install-backup-task.ps1',
+    'scripts\backup-schedule.ps1',
     'scripts\set-backup-passphrase.ps1',
     'scripts\manage-server.mjs',
     'plugin\EawLocalisationHub.dll',
@@ -46,7 +48,7 @@ foreach ($relative in $required) {
     }
 }
 $version = (Get-Content -LiteralPath (Join-Path $packageRoot 'VERSION') -Raw -Encoding utf8).Trim()
-if ($version -ne '0.8.7F2') { throw "Unexpected client package version: $version" }
+if ($version -ne '0.8.7F3') { throw "Unexpected client package version: $version" }
 if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) { throw "Client archive is missing: $archivePath" }
 if ((Get-Item -LiteralPath $archivePath).Length -lt 1MB) { throw 'Client archive is unexpectedly small.' }
 if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) { throw "Client checksum is missing: $checksumPath" }

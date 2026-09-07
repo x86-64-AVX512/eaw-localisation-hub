@@ -1,4 +1,5 @@
 import { decodeBase64 } from './review-utilities.js';
+import { confirmAction } from './confirm-action.js';
 
 export function createDocumentVariants({
   state, editor, send, showToast, beforeChange, afterChange, onChanged,
@@ -55,8 +56,8 @@ export function createDocumentVariants({
 
   selector.addEventListener('change', () => select(selector.value));
   openButton.addEventListener('click', () => dialog.showModal());
-  document.querySelector('#personal-file-git').addEventListener('click', () => {
-    if (!window.confirm('Записать в рабочий файл чистую версию Git HEAD? Совместный документ не изменится.')) return;
+  document.querySelector('#personal-file-git').addEventListener('click', async (event) => {
+    if (!await confirmAction(event.currentTarget, 'Записать в рабочий файл чистую версию Git HEAD?', { label: 'Записать' })) return;
     send({ type: 'personalFileMaterialize', path: state.path, mode: 'git' });
     dialog.close();
   });

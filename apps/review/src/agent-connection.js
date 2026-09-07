@@ -5,7 +5,19 @@ export function createAgentConnection({ token, onMessage, onOpen, onWaiting }) {
   let disposed = false;
 
   function send(message) {
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+    if (socket?.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify(message));
+    return true;
+  }
+
+  async function flush(timeoutMilliseconds = 500) {
+    const activeSocket = socket;
+    if (activeSocket?.readyState !== WebSocket.OPEN) return;
+    const deadline = performance.now() + timeoutMilliseconds;
+    do {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    } while (activeSocket.readyState === WebSocket.OPEN
+      && activeSocket.bufferedAmount > 0 && performance.now() < deadline);
   }
 
   function schedule() {
@@ -37,6 +49,7 @@ export function createAgentConnection({ token, onMessage, onOpen, onWaiting }) {
   connect();
   return {
     send,
+    flush,
     dispose() {
       disposed = true;
       window.clearTimeout(retryTimer);

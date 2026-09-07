@@ -13,7 +13,7 @@ import * as view from './document-view.mjs';
 import * as gitState from './git-document-state.mjs';
 import * as personalDocument from './personal-document.mjs';
 import { broadcastReviewUpdate, applyReviewUpdate } from './review-document.mjs';
-import { closeDocument } from './document-lifecycle.mjs';
+import { closeDocument, handleUnavailableTicketClose } from './document-lifecycle.mjs';
 const REMOTE_ORIGIN = Symbol('remote-server-update');
 function encodeRelativePosition(position) {
   return Buffer.from(Y.encodeRelativePosition(position)).toString('base64');
@@ -96,10 +96,12 @@ export class DocumentBinding {
       this.synced = false;
       personalDocument.resetPersonalRequest(this);
       console.warn('[agent] document disconnected');
+      const closeReason = reason?.toString('utf8') || '';
+      if (handleUnavailableTicketClose(this, code, closeReason)) return;
       if (code === 1008) {
         this.paused = true;
         this.emitDocumentStatus('unauthorized');
-        const detail = reason?.toString('utf8') || 'Authentication failed';
+        const detail = closeReason || 'Authentication failed';
         for (const client of this.clients) {
           client.send({ type: 'notice', message: `Сервер отклонил авторизацию: ${detail}. Перезапустите Agent после входа.` });
         }
@@ -124,6 +126,12 @@ export class DocumentBinding {
   }
 
   receiveServerMessage(message) {
+    if (message.type === 'tickets-changed') {
+      for (const client of this.clients) {
+        if (client.kind === 'review') client.send({ type: 'ticketCatalogChanged', revision: message.revision });
+      }
+      return;
+    }
     if (message.type === 'synced') {
       if (message.protocol !== PROTOCOL_VERSION) {
         throw new Error(`Protocol mismatch: server=${message.protocol}, agent=${PROTOCOL_VERSION}`);

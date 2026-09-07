@@ -19,6 +19,7 @@ import { createDocumentVariants } from './document-variants.js';
 import { createRemoteDocument } from './remote-document.js';
 import { createLocalisationAuditPanel } from './localisation-audit-panel.js'; import { createHelpPanel } from './help-panel.js';
 import { createNotificationCenter } from './notification-center.js';
+import { createAppbarLayout } from './appbar-layout.js';
 import {
   createDialogController, decodeBase64, encodeBase64, utf16ToByte,
 } from './review-utilities.js';
@@ -33,9 +34,11 @@ const state = {
   suggestionMessages: new Map(), commentMessages: new Map(),
   recoveryStatus: '', temporaryPassword: false,
   history: [], historyHeadId: '', editingSuggestionId: '', suggestionProjection: null,
-  documentView: 'shared', documentVariants: null, version: '', serverVersion: '', trainingProgress: {},
+  documentView: 'shared', documentVariants: null, version: '', serverVersion: '',
+  trainingProgress: {}, trainingProgressConfirmed: false,
 };
 const statusElement = document.querySelector('#status'), toastElement = document.querySelector('#toast');
+const appbarLayout = createAppbarLayout(document.querySelector('.appbar'));
 const askText = createDialogController(); let toastTimer;
 function setStatus(text, error = false) { statusElement.textContent = text; statusElement.classList.toggle('error', error); }
 function showToast(text, error = false) { clearTimeout(toastTimer); toastElement.textContent = text;
@@ -81,7 +84,21 @@ editingMode = createEditingModeController({
 });
 const avatarProfile = createAvatarProfile({ state, send, showToast });
 const recoveryBanner = createRecoveryBanner({ state, send, showToast });
-const ticketPanel = createTicketPanel({ monaco, state, token, requestedPath, showToast });
+let documentClosing = false;
+async function closeActiveDocument({ flush = true } = {}) {
+  if (documentClosing || !state.path) return;
+  documentClosing = true;
+  editingMode?.flushSuggestion();
+  state.ready = false;
+  state.presences.clear();
+  refreshCollaboration();
+  agentConnection?.send({ type: 'deactivate', path: state.path });
+  agentConnection?.send({ type: 'close', path: state.path });
+  if (flush) await agentConnection?.flush();
+}
+const ticketPanel = createTicketPanel({
+  monaco, state, editor, token, requestedPath, showToast, beforeNavigate: closeActiveDocument,
+});
 const keyReplacementPanel = createKeyReplacementPanel({ state, token, showToast }); const localisationAuditPanel = createLocalisationAuditPanel({ monaco, state, token, showToast });
 const helpPanel = createHelpPanel({ state, token, showToast }); const notificationCenter = createNotificationCenter({ token, showToast });
 const scrollSync = createScrollSync({ editor, initialPair: requestedPair });
@@ -102,6 +119,10 @@ const applyRemoteReplace = createRemoteDocument({
   onChanged: () => { reviewRefresh.schedule(); collaborationPanel.refresh(); },
 });
 function handleMessage(message) {
+  if (message.type === 'ticketCatalogChanged') { ticketPanel.refresh(message.revision); return; }
+  if (message.type === 'ticketUnavailable' && message.ticketId === state.ticket?.id) {
+    ticketPanel.leaveUnavailable(message.reason); return;
+  }
   if (message.path && message.path.toLowerCase() !== state.path.toLowerCase()) return;
   if (reviewRefresh.handleBatch(message.type)) return;
   if (message.type === 'agentHello') {
@@ -114,6 +135,7 @@ function handleMessage(message) {
       workspace: message.workspace || state.workspace,
       version: message.version || state.version, serverVersion: message.serverVersion || state.serverVersion,
       trainingProgress: message.trainingProgress ?? state.trainingProgress,
+      trainingProgressConfirmed: message.trainingProgressConfirmed === true,
     });
     setStatus(`${message.user} · ${message.workspace}`);
     collaborationPanel.refresh();
@@ -125,6 +147,8 @@ function handleMessage(message) {
   } else if (message.type === 'documentReady') {
     state.ready = true;
     state.reviewDocument.replay();
+    send({ type: 'activate', path: state.path, positionByte: 0, anchorByte: 0 });
+    ticketPanel.refresh();
     editor.updateOptions({ readOnly: state.documentView !== 'shared'
       || ['applied', 'closed'].includes(state.ticket?.status) });
     setStatus('Совместный документ подключён');
@@ -247,7 +271,6 @@ async function start() {
         type: 'open', path: state.path, textBase64: encodeBase64(editor.getValue()), crdt: 'yjs-v1',
         ...(state.ticket ? { ticketId: state.ticket.id } : {}),
       });
-      send({ type: 'activate', path: state.path, positionByte: 0, anchorByte: 0 });
     },
     onWaiting: (_delay, error = '') => {
       state.ready = false;
@@ -258,6 +281,7 @@ async function start() {
 }
 start().catch((error) => setStatus(error.message, true));
 window.addEventListener('beforeunload', () => {
+  void closeActiveDocument({ flush: false });
   ticketPanel.dispose();
   keyReplacementPanel.dispose(); localisationAuditPanel.dispose(); helpPanel.dispose();
   notificationCenter.dispose();
@@ -269,7 +293,7 @@ window.addEventListener('beforeunload', () => {
   scrollSync.dispose();
   reviewRefresh.dispose();
   reviewNavigation.dispose();
+  appbarLayout.dispose();
   agentConnection?.dispose();
   gitConflictDiff.dispose();
-  if (state.path) send({ type: 'deactivate', path: state.path });
 });

@@ -160,13 +160,13 @@ export class RoomRegistry {
     }
   }
 
-  async deleteDocuments(documentIds) {
+  async deleteDocuments(documentIds, closeReason = 'Ticket deleted') {
     for (const documentId of documentIds) {
       const hash = crypto.createHash('sha256').update(documentId).digest('hex');
       const loaded = this.rooms.get(documentId);
       if (loaded) {
         const room = await loaded;
-        for (const client of room.clients) client.close(1001, 'Ticket deleted');
+        for (const client of room.clients) client.close(1001, closeReason);
         this.rooms.delete(documentId);
         room.destroy();
       }

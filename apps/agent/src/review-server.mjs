@@ -150,18 +150,26 @@ class ReviewClient {
       state.materialisationExpected = materialised;
       state.materialisationDeadline = Date.now() + 5000;
       state.materialisationMismatch = null;
+      let materialisationInvalidated = false;
       try {
         await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(materialised), {
-          isCurrent: () => !this.closed && state.binding.synced && state.binding.gitWritable !== false
+          isCurrent: () => {
+            const current = !this.closed && state.binding.synced && state.binding.gitWritable !== false
             && !this.hub.workspaceBlocked && !state.pendingExternal && !this.hub.gitOperationInProgress?.()
             && (!state.binding.gitState || currentGitFileBlob(this.hub.options.repo, state.binding.relativePath)
               === state.binding.gitState.localBlob)
             && (typeof state.binding.localFileText === 'function'
-              ? state.binding.localFileText() : state.binding.text.toString()) === materialised,
+              ? state.binding.localFileText() : state.binding.text.toString()) === materialised;
+            materialisationInvalidated = !current;
+            return current;
+          },
         });
       } catch {
         this.send({ type: 'error', message: 'Не удалось безопасно сохранить локальный файл.' });
       }
+      // State can advance while the temporary file is being flushed. A later
+      // projection may already be ready, so retry instead of losing the save.
+      if (materialisationInvalidated && !this.closed) this.scheduleMaterialisation(absolutePath);
     }, 500);
     timer.unref();
     this.materialisationTimers.set(absolutePath, timer);
