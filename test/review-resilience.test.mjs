@@ -24,12 +24,13 @@ test('recovery warning waits for an explicit server-confirmed status', () => {
   assert.doesNotMatch(reviewApp, /message\.recoveryStatus \?\? 'setup_required'/u);
 });
 
-test('mandatory training waits for explicit server progress and invalidated file writes retry', () => {
+test('mandatory training waits for server progress and Review records successful disk writes', () => {
   assert.match(agentHub, /Object\.hasOwn\(identity, 'trainingProgress'\)/u);
   assert.match(agentHub, /trainingProgressConfirmed: this\.identity\?\.trainingProgressConfirmed === true/u);
   assert.match(reviewApp, /trainingProgressConfirmed: message\.trainingProgressConfirmed === true/u);
   assert.match(helpPanel, /state\.trainingProgressConfirmed === true/u);
   assert.match(reviewServer, /materialisationInvalidated && !this\.closed/u);
+  assert.match(reviewServer, /materialisationSucceeded && !materialisationInvalidated[\s\S]*confirmDiskMaterialisation/u);
 });
 
 test('Review waits for its personal projection before accepting the first edit', () => {

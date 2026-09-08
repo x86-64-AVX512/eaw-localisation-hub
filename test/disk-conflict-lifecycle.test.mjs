@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  checkDiskChange, finishExternalMerge, reconcileInitialDisk, resolveExternalConflict,
+  checkDiskChange, confirmDiskMaterialisation, finishExternalMerge,
+  reconcileInitialDisk, resolveExternalConflict,
 } from '../apps/agent/src/disk-reconciliation.mjs';
 
 function localClient(path, state) {
@@ -167,6 +168,42 @@ test('a full Git rollback changes only the personal projection', async () => {
   assert.equal(binding.text.toString(), shared);
   assert.equal(state.diskBase, git);
   assert.match(client.sent.find(({ type }) => type === 'notice').message, /только к вашему локальному файлу/u);
+});
+
+test('a Git rollback is detected immediately after Review materialisation', async () => {
+  const absolutePath = 'C:\\repo\\localisation\\russian\\test.yml';
+  const git = 'l_russian:\n mine:0 "Git"\n';
+  const personal = git.replace('"Git"', '"Mine"');
+  const state = {
+    diskBase: git, pendingExternal: null, binding: null,
+    materialisationExpected: personal, materialisationDeadline: Date.now() + 5000,
+    materialisationMismatch: null, basePersistPromise: Promise.resolve(),
+  };
+  const client = localClient(absolutePath, state);
+  const binding = {
+    relativePath: 'localisation/russian/test.yml', ticketId: '', paused: false,
+    synced: true, gitWritable: true, clients: new Set([client]), personalText: personal,
+    text: { toString: () => personal }, baseWrites: new Set(),
+    hub: {
+      gitOperationInProgress: () => false,
+      readGitHeadText: () => git,
+      saveBaseSnapshot: async () => {},
+    },
+    async readDiskText() { return git; },
+    localFileText() { return this.personalText; },
+    replacePersonalDocument(text) { this.personalText = text; this.replaced = text; },
+    persistBaseSnapshot(target, text) { this.persisted = { target, text }; },
+    scheduleDiskCheck() {},
+  };
+  state.binding = binding;
+
+  confirmDiskMaterialisation(binding, absolutePath, state, personal);
+  await checkDiskChange(binding, client, absolutePath, state);
+  await checkDiskChange(binding, client, absolutePath, state);
+
+  assert.equal(binding.replaced, git);
+  assert.equal(state.diskBase, git);
+  assert.equal(binding.text.toString(), personal, 'shared document must remain untouched');
 });
 
 test('disk conflict resolver ignores explicitly canonical conflicts', () => {

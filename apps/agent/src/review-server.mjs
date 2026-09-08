@@ -22,6 +22,7 @@ import { fileHistoryDiff, listFileHistory } from './git-file-history.mjs';
 import { runGitSync } from './git-executable.mjs';
 import { auditLocalisation } from './localisation-audit.mjs';
 import { currentGitFileBlob } from './git-ticket-context.mjs';
+import { confirmDiskMaterialisation } from './disk-reconciliation.mjs';
 
 const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -151,6 +152,7 @@ class ReviewClient {
       state.materialisationDeadline = Date.now() + 5000;
       state.materialisationMismatch = null;
       let materialisationInvalidated = false;
+      let materialisationSucceeded = false;
       try {
         await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(materialised), {
           isCurrent: () => {
@@ -164,8 +166,12 @@ class ReviewClient {
             return current;
           },
         });
+        materialisationSucceeded = true;
       } catch {
         this.send({ type: 'error', message: 'Не удалось безопасно сохранить локальный файл.' });
+      }
+      if (materialisationSucceeded && !materialisationInvalidated) {
+        confirmDiskMaterialisation(state.binding, absolutePath, state, materialised);
       }
       // State can advance while the temporary file is being flushed. A later
       // projection may already be ready, so retry instead of losing the save.

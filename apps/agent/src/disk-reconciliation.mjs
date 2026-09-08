@@ -194,6 +194,22 @@ export function persistBaseSnapshot(binding, state, text) {
   pendingWrite.then(() => binding.baseWrites.delete(pendingWrite));
 }
 
+export function confirmDiskMaterialisation(binding, absolutePath, sourceState, text) {
+  const deadline = Date.now() + 5000;
+  const states = new Set([sourceState]);
+  for (const client of binding.clients ?? []) {
+    const state = client.documents.get(absolutePath);
+    if (state?.binding === binding) states.add(state);
+  }
+  for (const state of states) {
+    state.diskBase = text;
+    state.materialisationExpected = text;
+    state.materialisationDeadline = deadline;
+    state.materialisationMismatch = null;
+  }
+  binding.persistBaseSnapshot?.(sourceState, text);
+}
+
 export function reconcileInitialDisk(binding, client, absolutePath, state) {
   if (binding.ticketId) {
     state.initialReconciled = true;

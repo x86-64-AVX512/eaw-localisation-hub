@@ -6,7 +6,7 @@ All notable public changes to EaW Localisation Hub are recorded here. Version na
 
 - Opening an existing file no longer folds other contributors' shared edits into the local user's personal Git file. Disk reconciliation now keeps separate shared and personal merge results, including for external file edits and conflict resolution.
 - Content-changing Review actions automatically select the "Git + my changes" working-file mode, so their personal projection is materialised without another manual choice.
-- Discarding a complete working-file change back to Git HEAD now resets only that user's local projection; the shared document and other contributors remain untouched.
+- Discarding a complete working-file change back to Git HEAD, including immediately after a Review save, now resets only that user's local projection; the shared document and other contributors remain untouched.
 - Reservations now recognise localisation entries written both as `key:0 "Value"` and as `key: "Value"`, while continuing to ignore language headers and blank values.
 - Review waits for the initial personal merge base before initialising any document, preventing startup edits from racing personal materialisation.
 - Deleting a ticket closes its catalog view immediately, so rendering a large, soon-to-be-removed document list no longer stalls the interface.
