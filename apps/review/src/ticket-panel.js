@@ -393,6 +393,7 @@ export function createTicketPanel(options) {
     const button = document.querySelector('#ticket-delete');
     if (!ticket || !await confirmAction(button, `Удалить тикет «${ticket.title}» вместе с документами и историей?`, { label: 'Удалить', danger: true })) return;
     button.disabled = true;
+    closeCatalog();
     try {
       await api(`/api/tickets/${ticket.id}`, { method: 'DELETE' });
       const wasCurrent = state.ticket?.id === ticket.id;

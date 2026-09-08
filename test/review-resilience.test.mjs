@@ -77,6 +77,11 @@ test('closing ticket catalog disposes Monaco and rejects late diff responses', (
   assert.match(ticketPanel, /!catalog\.open \|\| ticket\.id !== selectedId \|\| requestId !== diffRequest/u);
 });
 
+test('deleting a ticket closes its active diff before waiting on the server', () => {
+  const deletion = ticketPanel.slice(ticketPanel.indexOf("document.querySelector('#ticket-delete')"));
+  assert.ok(deletion.indexOf('closeCatalog()') < deletion.indexOf("method: 'DELETE'"));
+});
+
 test('closing document history detaches Monaco and rejects late versions', () => {
   assert.match(historyPanel, /diffView\.setActive\(false\)/u);
   assert.match(historyPanel, /function closeHistory\(\)[\s\S]*suspendHistory\(\)[\s\S]*dialog\.close\(\)/u);

@@ -1,8 +1,26 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
+import { DISPLAY_VERSION, SEMVER_VERSION } from '../packages/shared/src/constants.mjs';
 
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
+
+test('release versions stay consistent across package and Windows metadata', async () => {
+  const [manifestText, lockText, versionText, installer] = await Promise.all([
+    read('package.json'), read('package-lock.json'), read('VERSION'), read('installer/EaWLocalisationHub.iss'),
+  ]);
+  const manifest = JSON.parse(manifestText);
+  const lock = JSON.parse(lockText);
+  const displayMatch = /^(\d+\.\d+\.\d+)F(\d+)$/u.exec(DISPLAY_VERSION);
+  assert.ok(displayMatch);
+  assert.equal(manifest.version, SEMVER_VERSION);
+  assert.equal(lock.version, SEMVER_VERSION);
+  assert.equal(lock.packages[''].version, SEMVER_VERSION);
+  assert.equal(manifest.eawHub.displayVersion, DISPLAY_VERSION);
+  assert.equal(manifest.eawHub.windowsFileVersion, `${displayMatch[1]}.${displayMatch[2]}`);
+  assert.equal(versionText.trim(), DISPLAY_VERSION);
+  assert.match(installer, new RegExp(`#define AppVersion "${DISPLAY_VERSION}"`, 'u'));
+});
 
 test('public repository metadata declares GPL-2.0-only and publication safeguards', async () => {
   const [manifest, ignore, dockerIgnore, license, workflow, audit] = await Promise.all([
