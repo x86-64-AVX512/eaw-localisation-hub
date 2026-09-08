@@ -5,6 +5,8 @@ All notable public changes to EaW Localisation Hub are recorded here. Version na
 ## 0.8.7F4 – 2026-09-09
 
 - Opening an existing file no longer folds other contributors' shared edits into the local user's personal Git file. Disk reconciliation now keeps separate shared and personal merge results, including for external file edits and conflict resolution.
+- Content-changing Review actions automatically select the "Git + my changes" working-file mode, so their personal projection is materialised without another manual choice.
+- Discarding a complete working-file change back to Git HEAD now resets only that user's local projection; the shared document and other contributors remain untouched.
 - Reservations now recognise localisation entries written both as `key:0 "Value"` and as `key: "Value"`, while continuing to ignore language headers and blank values.
 - Review waits for the initial personal merge base before initialising any document, preventing startup edits from racing personal materialisation.
 - Deleting a ticket closes its catalog view immediately, so rendering a large, soon-to-be-removed document list no longer stalls the interface.
@@ -21,7 +23,7 @@ All notable public changes to EaW Localisation Hub are recorded here. Version na
 - Daily backup scheduling converts the selected time to the DateTime required by Windows Task Scheduler. The schedule runs at local 03:00 under the logged-in user and catches up when available.
 - Replaced browser confirmation boxes in Review with compact confirmations beside the triggering action, including keyboard cancellation and protection against stale targets.
 - Windows CI now compares canonical paths safely when simulating atomic replacement failures, and an invalidated in-flight personal-file write is scheduled again instead of being lost.
-- Protocol 17 requires updating the server and Desktop Agent together.
+- Protocol 18 requires updating the server and Desktop Agent together.
 
 ## 0.8.7F2 – 2026-09-06
 

@@ -144,6 +144,22 @@ export class DocumentHistory {
     return projectLocalisationOwnership(String(gitText ?? ''), current, this.ownership, identity);
   }
 
+  replacePersonalProjection(actor, text, gitText) {
+    const identity = actorFields(actor);
+    if (!identity.authorId) return false;
+    const base = String(gitText ?? '');
+    this.updateGitBase(base);
+    const next = captureLocalisationVariant(base, String(text ?? ''));
+    const previous = this.authorVariants.get(identity.authorId);
+    const variantChanged = !previous || previous.size !== next.size
+      || [...next].some(([key, line]) => previous.get(key) !== line);
+    const nameChanged = this.ownerNames.get(identity.authorId) !== identity.author;
+    this.authorVariants.set(identity.authorId, next);
+    this.ownerNames.set(identity.authorId, identity.author);
+    const conflictsChanged = this.rebaseConflicts.delete(identity.authorId);
+    return variantChanged || nameChanged || conflictsChanged;
+  }
+
   contributors() {
     return [...new Set([...this.ownership.values(), ...this.authorVariants.keys()])]
       .map((id) => ({ id, displayName: this.ownerNames.get(id) ?? 'Unknown' }));

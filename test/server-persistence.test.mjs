@@ -213,6 +213,24 @@ test('server restores CRDT text, reservations, comments, and suggestions after r
     first.socket.send(JSON.stringify({ type: 'suggestion-accept', id: 'persistent-suggestion', author: 'Bob' }));
     await acceptedReview;
     assert.equal(text.toString(), expected.replace('"Сохранено"', '"Предложено"'));
+    const projectionRequestId = 'rollback-projection';
+    const personalProjection = waitForJson(first.socket, (message) => (
+      message.type === 'personal-projection' && message.requestId === projectionRequestId
+    ));
+    first.socket.send(JSON.stringify({
+      type: 'personal-projection-set', text: expected,
+      author: 'Bob', color: '#6699ff',
+    }));
+    first.socket.send(JSON.stringify({
+      type: 'personal-projection-get', requestId: projectionRequestId,
+      author: 'Bob', color: '#6699ff',
+    }));
+    assert.equal(
+      Buffer.from((await personalProjection).textBase64, 'base64').toString('utf8'),
+      expected,
+    );
+    assert.equal(text.toString(), expected.replace('"Сохранено"', '"Предложено"'),
+      'replacing a personal projection must not modify shared text');
     const metadataFile = await waitForValue(async () => {
       try {
         const names = await fs.readdir(path.join(dataDirectory, 'documents'));

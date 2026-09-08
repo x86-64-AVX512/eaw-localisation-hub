@@ -102,7 +102,7 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
   }
   const externalText = await binding.readDiskText(absolutePath);
   const personal = binding.localFileText();
-  if (personal === null || !binding.synced || !binding.gitWritable) return;
+  if (!binding.synced || !binding.gitWritable) return;
 
   if (state.materialisationExpected !== null) {
     if (externalText === state.materialisationExpected) {
@@ -134,6 +134,32 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
     return;
   }
   if (externalText === state.diskBase) return;
+
+  let gitText = null;
+  try {
+    gitText = binding.hub.readGitHeadText(binding.relativePath);
+  } catch {}
+  const personalBeforeConflict = personal ?? binding.personalText;
+  if (gitText !== null && externalText === gitText && personalBeforeConflict !== gitText) {
+    for (const attached of binding.clients) {
+      const attachedState = attached.documents.get(absolutePath);
+      if (!attachedState || attachedState.binding !== binding) continue;
+      attachedState.pendingExternal = null;
+      attachedState.diskBase = gitText;
+      attachedState.materialisationExpected = null;
+      attachedState.materialisationDeadline = 0;
+      attachedState.materialisationMismatch = null;
+      binding.persistBaseSnapshot(attachedState, gitText);
+      attached.send({ type: 'externalConflictReset', path: absolutePath, source: 'disk' });
+    }
+    binding.replacePersonalDocument(gitText);
+    client.send({
+      type: 'notice', path: absolutePath,
+      message: 'Git-откат применён только к вашему локальному файлу; совместный документ не изменён.',
+    });
+    return;
+  }
+  if (personal === null) return;
 
   const merges = mergeDiskCopies(binding, state.diskBase, externalText);
   const conflicts = diskMergeConflicts(merges);

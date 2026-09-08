@@ -131,6 +131,23 @@ test('personal projection keeps Git plus only the selected author changes', () =
   assert.deepEqual(history.contributors().map(({ displayName }) => displayName), ['Alice', 'Bob']);
 });
 
+test('a local Git rollback replaces only the author projection', () => {
+  const git = 'l_russian:\n a:0 "Git"\n b:0 "Git"\n';
+  const history = new DocumentHistory('unused');
+  history.ensureBaseline(git);
+  history.record(git.replace('a:0 "Git"', 'a:0 "Alice"'), alice);
+  history.record(
+    git.replace('a:0 "Git"', 'a:0 "Alice"').replace('b:0 "Git"', 'b:0 "Bob"'),
+    bob,
+  );
+  const shared = history.text(history.headId());
+
+  assert.equal(history.replacePersonalProjection(alice, git, git), true);
+  assert.equal(history.personalProjection('alice', git), git);
+  assert.equal(history.personalProjection('bob', git), git.replace('b:0 "Git"', 'b:0 "Bob"'));
+  assert.equal(history.text(history.headId()), shared, 'shared history must not be rewritten');
+});
+
 test('same-key author variants remain separate and are reported as conflicts', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-variants-'));
   const target = path.join(directory, 'room.history.json');

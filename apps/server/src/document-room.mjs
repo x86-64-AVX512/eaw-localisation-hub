@@ -963,6 +963,15 @@ export class DocumentRoom {
       return;
     }
 
+    if (message.type === 'personal-projection-set') {
+      const actor = this.actorFor(socket, message, 'Personal projection update');
+      if (!this.clientWritable(socket)) throw new ProtocolLimitError('Refresh Git before updating the personal projection');
+      const text = controlledText(message.text, 'Personal projection', MAX_ROOM_STATE_BYTES);
+      const baseText = String(this.gitBase?.text ?? this.history.text(this.history.entries[0]?.id) ?? '');
+      if (this.history.replacePersonalProjection(actor, text, baseText)) this.schedulePersist();
+      return;
+    }
+
     if (message.type === 'personal-projection-get') {
       const requestId = controlledString(message.requestId, 'Projection request id', 128, { required: true });
       const actor = this.actorFor(socket, message, 'Personal projection');

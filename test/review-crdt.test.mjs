@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import path from 'node:path';
 import * as Y from 'yjs';
 import { createReviewDocument } from '../apps/review/src/review-document.js';
 import { applyReviewUpdate, broadcastReviewUpdate, resolveReviewAnchors } from '../apps/agent/src/review-document.mjs';
+import { AgentHub } from '../apps/agent/src/agent-hub.mjs';
 
 const encode = (update) => Buffer.from(update).toString('base64');
 const documentId = 'workspace/file';
@@ -99,6 +101,31 @@ test('Agent broadcasts CRDT deltas to other ready Review peers, without echoing 
   broadcastReviewUpdate(binding, Uint8Array.of(0, 0), origin);
   assert.equal(sender.sent.length, 0);
   assert.equal(observer.sent[0].type, 'documentSync');
+});
+
+test('a Review content update resumes Git plus my changes materialisation', () => {
+  const calls = [];
+  const binding = {
+    gitWritable: true,
+    personalMaterialisationMode: 'git',
+    setPersonalMaterialisation(mode, target) {
+      calls.push(['mode', mode, target]);
+      this.personalMaterialisationMode = mode;
+    },
+    reviewUpdate() { calls.push(['update']); },
+  };
+  const resolvedPath = path.resolve(absolutePath);
+  const client = {
+    authenticated: true, kind: 'review',
+    documents: new Map([[resolvedPath, { binding }]]),
+    send() {},
+  };
+  const hub = Object.create(AgentHub.prototype);
+  hub.workspaceTransitioning = false;
+
+  hub.receivePluginMessage(client, { type: 'reviewUpdate', path: resolvedPath });
+
+  assert.deepEqual(calls, [['mode', 'mine', resolvedPath], ['update']]);
 });
 
 test('Review suggestion ranges follow their characters while another edit is in flight', () => {

@@ -3,7 +3,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'agent-status.ps1')
 
 $metadata = Get-EawHubClientStatusMetadata -ProjectRoot $projectRoot
-if ($metadata.Protocol -ne 17) { throw "Unexpected protocol: $($metadata.Protocol)" }
+if ($metadata.Protocol -ne 18) { throw "Unexpected protocol: $($metadata.Protocol)" }
 if ((Compare-EawHubDisplayVersion -Installed '0.8.4F2' -Recommended '0.8.7F4') -ne -1) {
     throw 'Version comparison did not detect an update.'
 }

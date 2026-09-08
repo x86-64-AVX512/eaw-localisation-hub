@@ -601,6 +601,14 @@ export class AgentHub {
       });
       return;
     }
+    const reviewContentMutations = new Set([
+      'edit', 'snapshot', 'reviewUpdate', 'undo', 'redo',
+      'suggestionAccept', 'suggestionRevert', 'historyRestore',
+    ]);
+    if (client.kind === 'review' && reviewContentMutations.has(message.type)
+      && state.binding.personalMaterialisationMode !== 'mine') {
+      state.binding.setPersonalMaterialisation('mine', absolutePath);
+    }
     if (message.type === 'activate') {
       state.binding.cursor(client, absolutePath, message);
     } else if (message.type === 'deactivate') {

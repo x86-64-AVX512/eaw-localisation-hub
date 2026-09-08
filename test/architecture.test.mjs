@@ -346,10 +346,13 @@ test('Review header grows when its actions wrap instead of clipping the ticket s
 test('personal file controls live in an on-demand dialog instead of a permanent notice', () => {
   const markup = source('apps/review/src/index.html');
   const variants = source('apps/review/src/document-variants.js');
+  const hub = source('apps/agent/src/agent-hub.mjs');
   assert.match(markup, /id="personal-file-open"/u);
   assert.match(markup, /<dialog id="personal-file-dialog"/u);
   assert.doesNotMatch(markup, /id="personal-file-notice"/u);
   assert.match(variants, /openButton\.addEventListener\('click', \(\) => dialog\.showModal\(\)\)/u);
+  assert.match(hub, /reviewContentMutations[\s\S]*setPersonalMaterialisation\('mine', absolutePath\)/u,
+    'a content-changing Review action must resume personal-file materialisation');
 });
 
 test('Review updates its document context and becomes read-only while Git switches branches', () => {

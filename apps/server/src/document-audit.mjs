@@ -5,7 +5,7 @@ const ACTIONS = new Set([
   'suggestion-create', 'suggestion-update', 'suggestion-reply', 'suggestion-accept',
   'suggestion-revert', 'suggestion-reject', 'suggestion-delete',
   'reservation-create', 'reservation-delete', 'git-conflict-resolve',
-  'personal-projection-resolve', 'history-restore',
+  'personal-projection-resolve', 'personal-projection-set', 'history-restore',
 ]);
 const short = (value, limit = 240) => String(value ?? '').slice(0, limit);
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');

@@ -134,6 +134,41 @@ test('external disk edits join the shared document without copying foreign edits
   assert.equal(state.materialisationExpected, external);
 });
 
+test('a full Git rollback changes only the personal projection', async () => {
+  const absolutePath = 'C:\\repo\\localisation\\russian\\test.yml';
+  const git = 'l_russian:\n mine:0 "Git"\n other:0 "Git"\n';
+  const personal = git.replace('mine:0 "Git"', 'mine:0 "Mine"');
+  const shared = personal.replace('other:0 "Git"', 'other:0 "Dogoo"');
+  const state = {
+    diskBase: personal, pendingExternal: null, binding: null,
+    materialisationExpected: null, materialisationDeadline: 0, materialisationMismatch: null,
+  };
+  const client = localClient(absolutePath, state);
+  const binding = {
+    relativePath: 'localisation/russian/test.yml', ticketId: '', paused: false,
+    synced: true, gitWritable: true, clients: new Set([client]), personalText: personal,
+    text: { toString: () => shared },
+    hub: {
+      gitOperationInProgress: () => false,
+      readGitHeadText: () => git,
+    },
+    async readDiskText() { return git; },
+    localFileText() { return this.personalText; },
+    replacePersonalDocument(text) { this.personalText = text; this.replaced = text; },
+    applyMergedText(text) { this.applied = text; },
+    persistBaseSnapshot(_state, text) { this.persisted = text; },
+  };
+  state.binding = binding;
+
+  await checkDiskChange(binding, client, absolutePath, state);
+
+  assert.equal(binding.replaced, git);
+  assert.equal(binding.applied, undefined, 'shared document must remain untouched');
+  assert.equal(binding.text.toString(), shared);
+  assert.equal(state.diskBase, git);
+  assert.match(client.sent.find(({ type }) => type === 'notice').message, /только к вашему локальному файлу/u);
+});
+
 test('disk conflict resolver ignores explicitly canonical conflicts', () => {
   const absolutePath = 'C:\\repo\\localisation\\russian\\test.yml';
   const state = { pendingExternal: {}, binding: null };

@@ -104,6 +104,23 @@ export function requestDocumentVariant(binding, client, absolutePath, authorId) 
   }));
 }
 
+export function replacePersonalDocument(binding, text) {
+  binding.personalText = String(text ?? '');
+  binding.personalReady = true;
+  binding.personalGitConflicts = [];
+  if (binding.ticketId || binding.closing || binding.paused || !binding.synced
+    || binding.socket?.readyState !== WebSocket.OPEN) return false;
+  resetPersonalRequest(binding);
+  binding.socket.send(JSON.stringify({
+    type: 'personal-projection-set',
+    text: binding.personalText,
+    author: binding.hub.options.user,
+    color: binding.hub.options.color,
+  }));
+  requestPersonalDocument(binding);
+  return true;
+}
+
 export function localFileText(binding) {
   return binding.personalMaterialisationMode === 'git'
     ? binding.hub.readGitHeadText(binding.relativePath)

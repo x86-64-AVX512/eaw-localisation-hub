@@ -416,6 +416,8 @@ export class DocumentBinding {
 
   requestPersonalDocument() { return personalDocument.requestPersonalDocument(this); }
 
+  replacePersonalDocument(text) { return personalDocument.replacePersonalDocument(this, text); }
+
   requestDocumentVariant(client, absolutePath, authorId) {
     return personalDocument.requestDocumentVariant(this, client, absolutePath, authorId);
   }

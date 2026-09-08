@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { WebSocket } from 'ws';
-import { requestPersonalDocument, resetPersonalRequest, handlePersonalDocument, localFileText } from '../apps/agent/src/personal-document.mjs';
+import {
+  requestPersonalDocument, resetPersonalRequest, handlePersonalDocument,
+  localFileText, replacePersonalDocument,
+} from '../apps/agent/src/personal-document.mjs';
 
 function bindingFixture() {
   const sent = [];
@@ -65,4 +68,15 @@ test('personal Git conflicts block mine materialisation but allow an explicit Gi
   assert.equal(localFileText(binding), null);
   binding.personalMaterialisationMode = 'git';
   assert.equal(localFileText(binding), 'Git');
+});
+
+test('a local rollback replaces and refreshes the personal projection', () => {
+  const binding = bindingFixture();
+  binding.personalGitConflicts = [{ key: 'key' }];
+  assert.equal(replacePersonalDocument(binding, 'Git'), true);
+  assert.deepEqual(binding.personalGitConflicts, []);
+  assert.equal(binding.sent[0].type, 'personal-projection-set');
+  assert.equal(binding.sent[0].text, 'Git');
+  assert.equal(binding.sent[1].type, 'personal-projection-get');
+  resetPersonalRequest(binding);
 });
