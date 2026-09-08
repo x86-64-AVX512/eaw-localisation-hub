@@ -21,6 +21,15 @@ function waitForMessage(socket) {
   });
 }
 
+async function waitUntil(predicate, label, timeoutMilliseconds = 10_000) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+}
+
 test('review endpoint keeps its loopback port and capability across Agent restarts', async () => {
   const state = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-review-endpoint-'));
   try {
@@ -143,14 +152,20 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       type: 'open', path: tracked,
       textBase64: Buffer.from('l_russian:\n REVIEW_KEY:0 "Review"\n', 'utf8').toString('base64'),
     }));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitUntil(() => received.some(({ type }) => type === 'open'), 'Review open message');
     assert.equal(received.at(-1)?.type, 'open');
     const changed = 'l_russian:\n REVIEW_KEY:0 "Из Review"\n';
     socket.send(JSON.stringify({
       type: 'snapshot', path: tracked,
       textBase64: Buffer.from(changed, 'utf8').toString('base64'),
     }));
-    await new Promise((resolve) => setTimeout(resolve, 650));
+    await waitUntil(async () => {
+      try {
+        return await fs.readFile(tracked, 'utf8') === `\uFEFF${changed}`;
+      } catch {
+        return false;
+      }
+    }, 'Review file materialisation');
     assert.equal(await fs.readFile(tracked, 'utf8'), `\uFEFF${changed}`);
     socket.close();
   } finally {

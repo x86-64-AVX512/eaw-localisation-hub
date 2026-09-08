@@ -23,13 +23,17 @@ async function freePort() {
 }
 
 function spawnServer(port, dataDirectory) {
-  return spawn(process.execPath, [
+  const server = spawn(process.execPath, [
     'apps/server/src/main.mjs', '--port', String(port), '--data', dataDirectory, '--auth', 'disabled',
   ], {
     cwd: projectRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
+  server.output = '';
+  server.stdout.on('data', (chunk) => { server.output += chunk.toString('utf8'); });
+  server.stderr.on('data', (chunk) => { server.output += chunk.toString('utf8'); });
+  return server;
 }
 
 async function waitForHealth(port) {
@@ -53,11 +57,38 @@ async function waitForHealth(port) {
   throw new Error('Server did not become healthy');
 }
 
+async function waitForValue(producer, description, timeoutMilliseconds = 10_000) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const value = await producer();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for ${description}`);
+}
+
 async function stopServer(server) {
-  if (!server || server.exitCode !== null) return;
+  if (!server || server.exitCode !== null || server.signalCode !== null) return;
+  const exited = once(server, 'exit');
   server.kill('SIGTERM');
-  await Promise.race([once(server, 'exit'), new Promise((resolve) => setTimeout(resolve, 3000))]);
-  if (server.exitCode === null) server.kill('SIGKILL');
+  const graceful = await Promise.race([
+    exited.then(() => true),
+    new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 10_000);
+      timer.unref?.();
+    }),
+  ]);
+  if (!graceful && server.exitCode === null && server.signalCode === null) {
+    server.kill('SIGKILL');
+    const forced = await Promise.race([
+      exited.then(() => true),
+      new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(false), 5_000);
+        timer.unref?.();
+      }),
+    ]);
+    if (!forced) throw new Error(`Server did not exit after SIGKILL:\n${server.output}`);
+  }
 }
 
 function connectDocument(port, documentId) {
@@ -182,12 +213,24 @@ test('server restores CRDT text, reservations, comments, and suggestions after r
     first.socket.send(JSON.stringify({ type: 'suggestion-accept', id: 'persistent-suggestion', author: 'Bob' }));
     await acceptedReview;
     assert.equal(text.toString(), expected.replace('"Сохранено"', '"Предложено"'));
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    const metadataFile = await waitForValue(async () => {
+      try {
+        const names = await fs.readdir(path.join(dataDirectory, 'documents'));
+        for (const name of names) {
+          if (!/^[0-9a-f]{64}\.json$/u.test(name)) continue;
+          const metadata = JSON.parse(await fs.readFile(path.join(dataDirectory, 'documents', name), 'utf8'));
+          if (metadata.suggestions?.some(({ id, status }) => (
+            id === 'persistent-suggestion' && status === 'accepted'
+          ))) return name;
+        }
+      } catch {}
+      return null;
+    }, 'accepted suggestion persistence');
+    const firstClosed = once(first.socket, 'close');
     first.socket.close();
+    await firstClosed;
     await stopServer(server);
 
-    const metadataFile = (await fs.readdir(path.join(dataDirectory, 'documents')))
-      .find((name) => /^[0-9a-f]{64}\.json$/u.test(name));
     const metadataPath = path.join(dataDirectory, 'documents', metadataFile);
     const legacyMetadata = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
     legacyMetadata.documentId = documentId;

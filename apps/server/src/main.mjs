@@ -8,13 +8,9 @@ import { AuthError, AuthStore, bearerToken } from './auth.mjs';
 import { AdminSessionStore } from './admin-session.mjs';
 import { handleAdminHttp } from './admin-http.mjs';
 import { DocumentRoom, closeDocumentRoomValidator } from './document-room.mjs';
+import { attachDocumentSocket } from './document-socket.mjs';
 import {
-  ProtocolLimitError,
-  byteLength,
-  consumeInboundBudget,
-  createInboundBudget,
-  sendWithBackpressure,
-  validDocumentId,
+  ProtocolLimitError, createInboundBudget, validDocumentId,
 } from './protocol-limits.mjs';
 import { minimisePersistedDocumentMetadata } from './room-metadata.mjs';
 import { RoomRegistry } from './room-registry.mjs';
@@ -361,6 +357,7 @@ const httpServer = http.createServer((request, response) => {
 });
 
 const websocketServer = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
+let shuttingDown = false;
 websocketServer.on('connection', async (socket, request) => {
   try {
     if (websocketServer.clients.size > MAX_CONNECTIONS_TOTAL) {
@@ -389,29 +386,8 @@ websocketServer.on('connection', async (socket, request) => {
     socket.inboundBudget = createInboundBudget();
     room.addClient(socket);
 
-    socket.on('message', async (data, isBinary) => {
-      try {
-        const control = isBinary ? null : JSON.parse(data.toString('utf8'));
-        if (!ticketStore.documentWritable(documentId)
-          && (isBinary || !['presence', 'history-get', 'personal-projection-get'].includes(control?.type))) {
-          sendWithBackpressure(socket, JSON.stringify({ type: 'error', message: 'Ticket is read-only' }));
-          return;
-        }
-        if (!room.clientWritable(socket)
-          && (isBinary || !['presence', 'history-get', 'personal-projection-get', 'git-conflict-resolve'].includes(control?.type))) {
-          sendWithBackpressure(socket, JSON.stringify({
-            type: 'error', message: 'The local Git version of this file is not canonical',
-          }));
-          return;
-        }
-        consumeInboundBudget(socket, byteLength(data), isBinary);
-        if (isBinary) await room.receiveBinary(socket, data);
-        else await room.receiveJson(socket, control);
-      } catch (error) {
-        console.error('[server] rejected a document message');
-        sendWithBackpressure(socket, JSON.stringify({ type: 'error', message: error.message }));
-        if (error instanceof ProtocolLimitError) socket.close(error.closeCode, 'Protocol resource limit exceeded');
-      }
+    attachDocumentSocket({
+      socket, documentId, room, ticketStore, isShuttingDown: () => shuttingDown,
     });
     socket.on('close', () => room.removeClient(socket));
     socket.on('error', () => console.error('[server] websocket error'));
@@ -433,8 +409,13 @@ if (bootstrapInvite) {
 }
 
 async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`[server] ${signal}: flushing ${rooms.size} room(s)`);
   websocketServer.close();
+  const clients = [...websocketServer.clients];
+  await Promise.allSettled(clients.map((client) => client.messageQueue));
+  for (const client of clients) client.terminate();
   await flushRooms();
   await roomRegistry.close();
   await closeDocumentRoomValidator();

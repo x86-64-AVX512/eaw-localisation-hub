@@ -40,6 +40,7 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/server/src/auth-recovery.mjs',
     'apps/server/src/recovery-code.mjs',
     'apps/server/src/protocol-limits.mjs',
+    'apps/server/src/document-socket.mjs',
     'apps/server/src/document-room.mjs',
     'apps/server/src/room-metadata.mjs',
     'apps/server/src/room-registry.mjs',

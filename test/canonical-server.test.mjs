@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { once } from 'node:events';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,6 +43,22 @@ async function waitForRecordedMessage(messages, predicate, label, timeoutMillise
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(messages, null, 2)}`);
+}
+async function stopProcess(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, 'exit');
+  child.kill('SIGTERM');
+  const graceful = await Promise.race([
+    exited.then(() => true),
+    new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 10_000);
+      timer.unref?.();
+    }),
+  ]);
+  if (!graceful && child.exitCode === null && child.signalCode === null) {
+    child.kill('SIGKILL');
+    await exited;
+  }
 }
 async function connect(port, head, blob) {
   const document = encodeURIComponent('general-dev:localisation/replace/russian/test.yml');
@@ -136,7 +153,7 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     assert.match(current.ydoc.getText('content').toString(), /"Remote"/u);
     current.socket.close();
   } finally {
-    if (server && server.exitCode == null) server.kill('SIGTERM');
-    await fs.rm(root, { recursive: true, force: true });
+    await stopProcess(server);
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });

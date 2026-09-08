@@ -9,6 +9,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
+import * as Y from 'yjs';
 import { createReviewDocument } from '../apps/review/src/review-document.js';
 import { DISPLAY_VERSION, PROTOCOL_VERSION } from '../packages/shared/src/constants.mjs';
 import { applyUtf8ByteEdit } from '../packages/shared/src/text.mjs';
@@ -63,6 +64,21 @@ async function waitForHealth(port) {
       return JSON.parse(body).ok;
     } catch { return false; }
   }, 'server health');
+}
+
+async function observeDocument(port, documentId) {
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${port}/?document=${encodeURIComponent(documentId)}`,
+  );
+  const document = new Y.Doc();
+  let synced = false;
+  socket.on('message', (data, isBinary) => {
+    if (isBinary) Y.applyUpdate(document, new Uint8Array(data));
+    else if (JSON.parse(data.toString('utf8')).type === 'synced') synced = true;
+  });
+  await once(socket, 'open');
+  await waitUntil(() => synced, 'server observer sync');
+  return { socket, text: () => document.getText('content').toString() };
 }
 
 class FakePlugin {
@@ -135,10 +151,13 @@ class FakePlugin {
 }
 
 async function stopProcess(child) {
-  if (!child || child.exitCode !== null) return;
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
   child.kill('SIGTERM');
-  await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 2000))]);
-  if (child.exitCode === null) child.kill('SIGKILL');
+  await Promise.race([once(child, 'exit'), new Promise((resolve) => {
+    const timer = setTimeout(resolve, 2000);
+    timer.unref?.();
+  })]);
+  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
 }
 
 async function connectReview(stateDirectory, filePath, initialText, retained = null) {
@@ -263,7 +282,7 @@ test('two agents keep personal worktrees isolated while sharing metadata and ser
     const alicePipe = `eaw-hub-alice-${suffix}`;
     const bobPipe = `eaw-hub-bob-${suffix}`;
     const ipcSecret = `integration-${crypto.randomBytes(16).toString('hex')}`;
-    let server; let aliceAgent; let bobAgent; let alice; let bob;
+    let server; let aliceAgent; let bobAgent; let alice; let bob; let observer;
     try {
       server = spawnNode(['apps/server/src/main.mjs', '--port', String(port),
         '--data', path.join(temporary, 'server-data'), '--auth', 'disabled']);
@@ -285,22 +304,31 @@ test('two agents keep personal worktrees isolated while sharing metadata and ser
         FakePlugin.connect(pipePath(bobPipe), fileBob, original, 'bob-plugin', ipcSecret),
       ]);
       await bob.waitFor((message) => message.type === 'presence' && message.user === 'Alice');
+      observer = await observeDocument(
+        port,
+        'general-dev:localisation/russian/prototype_l_russian.yml',
+      );
+      await waitUntil(() => observer.text() === original, 'initial shared document');
 
       const aliceOnly = original.replace('"Первый"', '"Версия Alice"');
       alice.snapshot(aliceOnly);
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await waitUntil(() => observer.text() === aliceOnly, 'Alice shared update');
       assert.equal(alice.text, aliceOnly);
       assert.equal(bob.text, original, 'Alice text must not be materialised into Bob worktree');
 
       const bobOnly = original.replace('"Второй"', '"Версия Bob"');
       bob.snapshot(bobOnly);
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const sharedSeparateKeys = aliceOnly.replace('"Второй"', '"Версия Bob"');
+      await waitUntil(() => observer.text() === sharedSeparateKeys, 'Bob shared update');
       assert.equal(bob.text, bobOnly);
       assert.equal(alice.text, aliceOnly, 'Bob text must not be materialised into Alice worktree');
 
       const aliceSameKey = aliceOnly.replace('"Третий"', '"Третий Alice"');
       alice.snapshot(aliceSameKey);
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      await waitUntil(
+        () => observer.text().includes('"Третий Alice"'),
+        'Alice same-key shared update',
+      );
       const bobSameKey = bobOnly.replace('"Третий"', '"Третий Bob"');
       bob.snapshot(bobSameKey);
       const conflict = await bob.waitFor((message) => message.type === 'externalConflict'
@@ -308,13 +336,17 @@ test('two agents keep personal worktrees isolated while sharing metadata and ser
       assert.match(conflict.detail, /один и тот же ключ|одновременно|изменён/iu);
       bob.send({ type: 'externalConflictResolve', path: fileBob,
         key: 'key_three', choice: 'external' });
+      await waitUntil(
+        () => observer.text().includes('"Третий Bob"'),
+        'Bob conflict resolution',
+      );
       await waitUntil(() => bob.text.includes('"Третий Bob"'), 'Bob conflict choice');
-      await new Promise((resolve) => setTimeout(resolve, 500));
       assert.match(alice.text, /"Третий Alice"/u,
         'same-key choices must remain separate in Alice personal projection');
       assert.doesNotMatch(alice.text, /"Третий Bob"/u);
     } finally {
       alice?.close(); bob?.close();
+      observer?.socket.terminate();
       await stopProcess(aliceAgent); await stopProcess(bobAgent); await stopProcess(server);
       await fs.rm(temporary, { recursive: true, force: true });
     }

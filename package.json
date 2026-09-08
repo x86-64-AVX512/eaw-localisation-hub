@@ -14,7 +14,7 @@
     "server": "node apps/server/src/main.mjs",
     "agent": "node apps/agent/src/main.mjs",
     "pretest": "node scripts/build-review-web.mjs",
-    "test": "node --test \"test/*.test.mjs\"",
+    "test": "node --test --test-concurrency=1 \"test/*.test.mjs\"",
     "test:plugin": "node scripts/verify-plugin.mjs",
     "test:live-plugin": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-live-plugin.ps1",
     "check": "npm run check:publication && npm test && npm run build:client && npm run build:installer && npm run build:deployer && npm run build:source && npm run test:plugin && npm run test:launcher && npm run test:credentials && npm run test:status && npm run test:client && npm run test:deployer && npm run test:source && npm run test:installer",
