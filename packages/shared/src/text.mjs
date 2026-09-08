@@ -320,7 +320,7 @@ export async function writeTrackedTextFile(repositoryRoot, absolutePath, text, {
 
 export function parseLocalisationKeys(text) {
   const entries = [];
-  const expression = /^[ \t]*([^#\s][^:\r\n]*):\d+[ \t]+/gm;
+  const expression = /^[ \t]*([^#\s][^:\r\n]*):(?:\d+)?[ \t]+(?=\S)/gm;
   for (const match of text.matchAll(expression)) {
     entries.push({ key: match[1].trim(), index: match.index });
   }

@@ -40,7 +40,7 @@ test('automatic training waits for a server-confirmed incomplete account', (t) =
   });
 
   const state = {
-    version: '0.8.7F3', serverVersion: '0.8.7F3',
+    version: '0.8.7F4', serverVersion: '0.8.7F4',
     trainingProgress: {}, trainingProgressConfirmed: false,
   };
   const panel = createHelpPanel({ state, token: 'local', showToast() {} });
@@ -61,7 +61,7 @@ test('automatic training waits for a server-confirmed incomplete account', (t) =
 test('Agent distinguishes local startup from server-confirmed training progress', () => {
   const messages = [];
   const context = {
-    identity: null, serverVersion: '0.8.7F3',
+    identity: null, serverVersion: '0.8.7F4',
     options: { user: 'Alice', color: '#abcdef', workspace: 'general-dev' },
     clients: new Set(),
   };

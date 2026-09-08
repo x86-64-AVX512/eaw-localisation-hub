@@ -214,10 +214,10 @@ test('localisation keys are discovered inside a selection', () => {
     'l_russian:',
     ' key_one:0 "Один"',
     ' # comment',
-    ' key_two:0 "Два"',
+    ' key_two: "Два"',
     '',
   ].join('\r\n');
   const start = text.indexOf(' key_one');
-  const end = text.indexOf(' key_two') + ' key_two:0 "Два"'.length;
+  const end = text.indexOf(' key_two') + ' key_two: "Два"'.length;
   assert.deepEqual(keysInsideRange(text, start, end), ['key_one', 'key_two']);
 });

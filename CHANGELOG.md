@@ -1,6 +1,15 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F3` form; package metadata uses `0.8.7-beta.3`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F4` form; package metadata uses `0.8.7-beta.4`.
+
+## 0.8.7F4 – 2026-09-09
+
+- Opening an existing file no longer folds other contributors' shared edits into the local user's personal Git file. Disk reconciliation now keeps separate shared and personal merge results, including for external file edits and conflict resolution.
+- Reservations now recognise localisation entries written both as `key:0 "Value"` and as `key: "Value"`, while continuing to ignore language headers and blank values.
+- Review waits for the initial personal merge base before initialising any document, preventing startup edits from racing personal materialisation.
+- Deleting a ticket closes its catalog view immediately, so rendering a large, soon-to-be-removed document list no longer stalls the interface.
+- WebSocket document messages are processed in arrival order, and graceful shutdown waits for queued messages before flushing rooms.
+- Integration suites run serially to avoid shared-server and persistence races in CI.
 
 ## 0.8.7F3 – 2026-09-07
 
