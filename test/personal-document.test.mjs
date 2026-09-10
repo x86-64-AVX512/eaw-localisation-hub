@@ -3,7 +3,7 @@ import test from 'node:test';
 import { WebSocket } from 'ws';
 import {
   requestPersonalDocument, resetPersonalRequest, handlePersonalDocument,
-  localFileText, replacePersonalDocument,
+  localFileText, replacePersonalDocument, setPersonalSelection,
 } from '../apps/agent/src/personal-document.mjs';
 
 function bindingFixture() {
@@ -78,5 +78,43 @@ test('a local rollback replaces and refreshes the personal projection', () => {
   assert.equal(binding.sent[0].type, 'personal-projection-set');
   assert.equal(binding.sent[0].text, 'Git');
   assert.equal(binding.sent[1].type, 'personal-projection-get');
+  resetPersonalRequest(binding);
+});
+
+test('one shared localisation key can be included without changing its neighbours or shared text', () => {
+  const git = 'l_russian:\n a:0 "Git A"\n b:0 "Git B"\n';
+  const shared = 'l_russian:\n a:0 "Shared A"\n b:0 "Shared B"\n';
+  const binding = bindingFixture();
+  const scheduled = [], synced = [], savedModes = [];
+  binding.gitWritable = true;
+  binding.personalMaterialisationMode = 'mine';
+  binding.personalText = git;
+  binding.text = { toString: () => shared };
+  binding.hub.readGitHeadText = () => git;
+  binding.hub.savePersonalMode = (_path, mode) => { savedModes.push(mode); return Promise.resolve(); };
+  binding.relativePath = 'localisation/russian/file.yml';
+  binding.personalSelectionRevision = 'selection-1';
+  binding.personalSelectionGit = git;
+  binding.personalSelectionShared = shared;
+  const client = {
+    kind: 'review', closed: false, send() {},
+    documents: new Map(),
+    scheduleMaterialisation(path) { scheduled.push(path); },
+  };
+  const absolutePath = 'C:\\repo\\localisation\\russian\\file.yml';
+  client.documents.set(absolutePath, { binding, initialised: true });
+  binding.clients.add(client);
+  binding.syncClientView = (_client, path) => synced.push(path);
+
+  assert.equal(setPersonalSelection(binding, absolutePath, 'key:a', true, 'stale-selection'), false);
+  assert.equal(binding.personalText, git);
+  assert.equal(setPersonalSelection(binding, absolutePath, 'key:a', true, 'selection-1'), true);
+  assert.equal(binding.text.toString(), shared, 'the collaborative document is not changed');
+  assert.equal(binding.personalText, 'l_russian:\n a:0 "Shared A"\n b:0 "Git B"\n');
+  assert.equal(binding.sent[0].type, 'personal-projection-set');
+  assert.equal(binding.sent[0].text, binding.personalText);
+  assert.deepEqual(savedModes, ['mine']);
+  assert.deepEqual(scheduled, [absolutePath]);
+  assert.deepEqual(synced, [absolutePath]);
   resetPersonalRequest(binding);
 });

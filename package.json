@@ -1,7 +1,7 @@
 {
   "name": "eaw-localisation-hub",
   "private": true,
-  "version": "0.8.7-beta.4",
+  "version": "0.8.7-beta.5",
   "description": "EaW collaborative localisation early beta",
   "license": "GPL-2.0-only",
   "author": "EaW Localisation Hub contributors",
@@ -16,7 +16,7 @@
     "pretest": "node scripts/build-review-web.mjs",
     "test": "node --test --test-concurrency=1 \"test/*.test.mjs\"",
     "test:plugin": "node scripts/verify-plugin.mjs",
-    "test:live-plugin": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-live-plugin.ps1",
+    "test:live-plugin": "npm run build:plugin && npm run test:plugin",
     "check": "npm run check:publication && npm test && npm run build:client && npm run build:installer && npm run build:deployer && npm run build:source && npm run test:plugin && npm run test:launcher && npm run test:credentials && npm run test:status && npm run test:client && npm run test:deployer && npm run test:source && npm run test:installer",
     "check:publication": "node scripts/check-publication.mjs",
     "test:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-powershell.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-backup-schedule.ps1",
@@ -45,8 +45,8 @@
     "yjs": "^13.6.27"
   },
   "eawHub": {
-    "displayVersion": "0.8.7F4",
-    "windowsFileVersion": "0.8.7.4"
+    "displayVersion": "0.8.7F5",
+    "windowsFileVersion": "0.8.7.5"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

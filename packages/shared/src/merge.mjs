@@ -9,7 +9,7 @@ function splitLines(text) {
     const raw = text.slice(position, end);
     const eol = raw.endsWith('\r\n') ? '\r\n' : raw.endsWith('\n') ? '\n' : '';
     const content = eol ? raw.slice(0, -eol.length) : raw;
-    const match = /^[ \t]*([^#\s][^:\r\n]*):\d+[ \t]+/.exec(content);
+    const match = /^[ \t]*([^#\s][^:\r\n]*):(?:\d+)?[ \t]+/.exec(content);
     records.push({ content, eol, key: match ? match[1].trim() : null });
     position = end;
   }
@@ -268,4 +268,102 @@ export function projectLocalisationOwnership(gitText, currentText, ownership, us
   const template = ownership.get('__file_structure__') === userId ? currentText : gitText;
   const order = [...git.order, ...current.order.filter((key) => !git.lines.has(key))];
   return renderWithChoices(template, choices, order);
+}
+
+function keyedRecords(analysis) {
+  const result = new Map();
+  analysis.records.forEach((record, index) => {
+    if (record.key && !result.has(record.key)) {
+      result.set(record.key, { line: record.content, lineNumber: index + 1 });
+    }
+  });
+  return result;
+}
+
+export function localisationSelectionChanges(gitText, sharedText, localText) {
+  const git = analyse(gitText);
+  const shared = analyse(sharedText);
+  const local = analyse(localText);
+  const duplicateKeys = [...new Set([...git.duplicates, ...shared.duplicates, ...local.duplicates])];
+  if (duplicateKeys.length) {
+    return {
+      entries: [],
+      blockedReason: `Нельзя выбрать изменения построчно: повторяющиеся ключи – ${duplicateKeys.join(', ')}.`,
+    };
+  }
+  const gitRecords = keyedRecords(git);
+  const sharedRecords = keyedRecords(shared);
+  const localRecords = keyedRecords(local);
+  const structuralKeys = new Set(git.order.filter((key) => shared.lines.has(key)));
+  const gitStructure = structureSignature(git.records, structuralKeys);
+  const sharedStructure = structureSignature(shared.records, structuralKeys);
+  const localStructure = structureSignature(local.records, structuralKeys);
+  const maximumLine = Math.max(1, shared.records.length);
+  const entries = [];
+  for (const key of new Set([...git.lines.keys(), ...shared.lines.keys()])) {
+    const gitLine = git.lines.get(key) ?? null;
+    const sharedLine = shared.lines.get(key) ?? null;
+    if (sameLine(gitLine, sharedLine)) continue;
+    const localLine = local.lines.get(key) ?? null;
+    const state = sameLine(localLine, sharedLine)
+      ? 'included' : sameLine(localLine, gitLine) ? 'excluded' : 'custom';
+    const sourceLine = sharedRecords.get(key)?.lineNumber ?? gitRecords.get(key)?.lineNumber ?? 1;
+    entries.push({
+      id: `key:${key}`,
+      key,
+      label: key,
+      lineNumber: Math.max(1, Math.min(maximumLine, sourceLine)),
+      gitLine,
+      sharedLine,
+      localLine: localRecords.get(key)?.line ?? localLine,
+      state,
+      kind: gitLine == null ? 'added' : sharedLine == null ? 'deleted' : 'modified',
+    });
+  }
+  if (gitStructure !== sharedStructure) {
+    entries.unshift({
+      id: '__file_structure__',
+      key: '__file_structure__',
+      label: 'Структура файла и отдельные комментарии',
+      lineNumber: 1,
+      gitLine: null,
+      sharedLine: null,
+      localLine: null,
+      state: localStructure === sharedStructure
+        ? 'included' : localStructure === gitStructure ? 'excluded' : 'custom',
+      kind: 'structure',
+    });
+  }
+  return { entries, blockedReason: '' };
+}
+
+export function setLocalisationSelection(gitText, sharedText, localText, changeId, include) {
+  const git = analyse(gitText);
+  const shared = analyse(sharedText);
+  const local = analyse(localText);
+  if (git.duplicates.size || shared.duplicates.size || local.duplicates.size) {
+    throw new Error('Local-file changes are ambiguous because a localisation key is repeated');
+  }
+  if (changeId === '__file_structure__') {
+    const structuralKeys = new Set(git.order.filter((key) => shared.lines.has(key)));
+    if (structureSignature(git.records, structuralKeys) === structureSignature(shared.records, structuralKeys)) {
+      throw new Error('The shared structure change is no longer current');
+    }
+    const variant = captureLocalisationVariant(gitText, localText);
+    if (include) variant.set(changeId, sharedText);
+    else variant.delete(changeId);
+    return projectLocalisationVariant(gitText, variant);
+  }
+  if (!String(changeId).startsWith('key:')) throw new Error('Unknown local-file change');
+  const key = String(changeId).slice(4);
+  if (sameLine(git.lines.get(key) ?? null, shared.lines.get(key) ?? null)) {
+    throw new Error('The shared change is no longer current');
+  }
+  const choices = new Map(local.lines);
+  choices.set(key, include ? (shared.lines.get(key) ?? null) : (git.lines.get(key) ?? null));
+  const preferred = include
+    ? [...shared.order, ...git.order.filter((candidate) => !shared.lines.has(candidate))]
+    : [...git.order, ...shared.order.filter((candidate) => !git.lines.has(candidate))];
+  preferred.push(...local.order.filter((candidate) => !preferred.includes(candidate)));
+  return renderWithChoices(localText, choices, [...new Set(preferred)]);
 }

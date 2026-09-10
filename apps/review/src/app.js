@@ -105,7 +105,7 @@ const scrollSync = createScrollSync({ editor, initialPair: requestedPair });
 createEnglishOriginal({ state, editor, token, showToast, onOpened: (pair) => scrollSync.setPair(pair) });
 const historyPanel = createHistoryPanel({ monaco, state, editor, send, showToast }); const gitHistoryPanel = createGitHistoryPanel({ monaco, state, token, showToast });
 const documentVariants = createDocumentVariants({
-  state, editor, send, showToast,
+  monaco, state, editor, send, showToast,
   beforeChange: () => editingMode.beforeRemoteChange(),
   afterChange: () => editingMode.afterRemoteChange(),
   onChanged: () => { reviewRefresh.schedule(); collaborationPanel.refresh(); },
@@ -289,9 +289,8 @@ window.addEventListener('beforeunload', () => {
   editingMode.dispose();
   state.reviewDocument.dispose();
   presenceController.dispose();
-  historyPanel.dispose(); gitHistoryPanel.dispose();
-  scrollSync.dispose();
-  reviewRefresh.dispose();
+  historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();
+  scrollSync.dispose(); reviewRefresh.dispose();
   reviewNavigation.dispose();
   appbarLayout.dispose();
   agentConnection?.dispose();

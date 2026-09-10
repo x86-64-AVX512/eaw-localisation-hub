@@ -2,15 +2,104 @@ import { decodeBase64 } from './review-utilities.js';
 import { confirmAction } from './confirm-action.js';
 
 export function createDocumentVariants({
-  state, editor, send, showToast, beforeChange, afterChange, onChanged,
+  monaco, state, editor, send, showToast, beforeChange, afterChange, onChanged,
 }) {
   const selector = document.querySelector('#document-view');
   const openButton = document.querySelector('#personal-file-open');
   const dialog = document.querySelector('#personal-file-dialog');
   const message = document.querySelector('#personal-file-message');
+  const notice = document.querySelector('#local-file-notice');
+  const selectionsElement = document.querySelector('#personal-file-selections');
   const conflictsElement = document.createElement('div');
   conflictsElement.className = 'personal-git-conflicts';
   message.after(conflictsElement);
+  const selectionDecorations = editor.createDecorationsCollection();
+
+  function displayLine(value, emptyLabel) {
+    return value == null ? `(${emptyLabel})` : value;
+  }
+
+  function setSelection(entry, include) {
+    if (!state.ready || state.documentView !== 'shared') {
+      showToast('Переключитесь на совместную версию и дождитесь подключения.', true);
+      return;
+    }
+    send({ type: 'personalFileSelectionSet', path: state.path,
+      changeId: entry.id, include: include ? 1 : 0,
+      revision: state.documentVariants?.localSelectionRevision ?? '' });
+  }
+
+  function renderSelections() {
+    const entries = state.documentVariants?.localSelections ?? [];
+    const blocked = state.documentVariants?.localSelectionBlocked ?? '';
+    const disabled = Boolean(blocked || state.documentVariants?.gitConflicts.length);
+    selectionsElement.replaceChildren();
+    if (!entries.length) {
+      const empty = document.createElement('div');
+      empty.className = 'personal-selection-empty';
+      empty.textContent = blocked || 'Совместная версия не отличается от Git HEAD.';
+      selectionsElement.append(empty);
+    }
+    for (const entry of entries) {
+      const row = document.createElement('label');
+      row.className = `personal-selection-row ${entry.state}`;
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = entry.state === 'included';
+      checkbox.indeterminate = entry.state === 'custom';
+      checkbox.disabled = disabled;
+      checkbox.addEventListener('change', () => setSelection(entry, checkbox.checked));
+      const label = document.createElement('span');
+      label.className = 'personal-selection-label';
+      label.textContent = entry.kind === 'structure' ? entry.label : `${entry.label} · строка ${entry.lineNumber}`;
+      const diff = document.createElement('span');
+      diff.className = 'personal-selection-diff';
+      const before = document.createElement('del');
+      before.textContent = displayLine(entry.gitLine, 'в Git строки нет');
+      const after = document.createElement('ins');
+      after.textContent = entry.kind === 'structure'
+        ? 'Изменена структура, отдельные комментарии или порядок строк'
+        : displayLine(entry.sharedLine, 'удалено в совместной версии');
+      diff.append(before, after);
+      row.append(checkbox, label, diff);
+      selectionsElement.append(row);
+    }
+
+    const included = entries.filter((entry) => entry.state === 'included').length;
+    const custom = entries.filter((entry) => entry.state === 'custom').length;
+    notice.hidden = included === 0;
+    notice.textContent = included
+      ? `В локальный файл включено изменений из совместной версии: ${included}.`
+      : '';
+    openButton.classList.toggle('has-included', included > 0);
+    openButton.textContent = included ? `Локальный файл · ${included}` : 'Локальный файл';
+    const decorations = state.documentView === 'shared' && !disabled
+      ? entries.filter((entry) => entry.kind !== 'structure').map((entry) => ({
+        range: new monaco.Range(entry.lineNumber, 1, entry.lineNumber, 1),
+        options: {
+          isWholeLine: true,
+          glyphMarginClassName: `local-file-check ${entry.state}`,
+          glyphMarginHoverMessage: { value: entry.state === 'included'
+            ? 'Изменение включено в локальный файл. Нажмите, чтобы вернуть Git-вариант.'
+            : entry.state === 'excluded'
+              ? 'В локальном файле оставлен Git-вариант. Нажмите, чтобы включить совместный.'
+              : 'Локальный вариант отличается и от Git, и от совместного. Нажмите, чтобы включить совместный.' },
+        },
+      })) : [];
+    selectionDecorations.set(decorations);
+    if (custom) openButton.title = `Собственных или устаревших локальных вариантов: ${custom}`;
+    else openButton.removeAttribute('title');
+  }
+
+  const gutterClick = editor.onMouseDown((event) => {
+    if (event.target.type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) return;
+    if (!event.target.element?.classList?.contains('local-file-check')) return;
+    const lineNumber = event.target.position?.lineNumber;
+    const entries = (state.documentVariants?.localSelections ?? [])
+      .filter((entry) => entry.lineNumber === lineNumber);
+    if (entries.length === 1) setSelection(entries[0], entries[0].state !== 'included');
+    else if (entries.length > 1) dialog.showModal();
+  });
 
   function applyText(text) {
     beforeChange();
@@ -52,6 +141,7 @@ export function createDocumentVariants({
         ? 'Предпросмотр Git + только ваши изменения.'
         : state.documentView === 'git' ? 'Предпросмотр чистого Git HEAD.'
           : `Предпросмотр изменений: ${selector.selectedOptions[0]?.textContent ?? 'участник'}.`);
+    renderSelections();
   }
 
   selector.addEventListener('change', () => select(selector.value));
@@ -74,6 +164,9 @@ export function createDocumentVariants({
       contributors: payload.contributors ?? [],
       conflicts: payload.conflicts ?? [],
       gitConflicts: payload.gitConflicts ?? [],
+      localSelections: payload.localSelections ?? [],
+      localSelectionBlocked: payload.localSelectionBlocked ?? '',
+      localSelectionRevision: payload.localSelectionRevision ?? '',
       authors: new Map(),
     };
     for (const option of [...selector.querySelectorAll('[data-author]')]) option.remove();
@@ -121,6 +214,7 @@ export function createDocumentVariants({
       : 'Рабочий файл содержит только Git и ваши изменения; совместная версия хранится отдельно.';
     dialog.classList.toggle('has-conflicts', conflictCount > 0 || gitConflicts.length > 0);
     openButton.classList.toggle('has-conflicts', conflictCount > 0 || gitConflicts.length > 0);
+    renderSelections();
   }
 
   function updateAuthor(payload) {
@@ -135,5 +229,8 @@ export function createDocumentVariants({
     showToast(payload.message);
   }
 
-  return { update, updateAuthor, status, select };
+  return {
+    update, updateAuthor, status, select,
+    dispose() { gutterClick.dispose(); selectionDecorations.clear(); },
+  };
 }

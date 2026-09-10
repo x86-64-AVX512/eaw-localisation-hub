@@ -16,14 +16,13 @@
 #include "CollaborationOverlays.h"
 #include "EditorInterop.h"
 #include "IpcSecurity.h"
-#include "LegacyIntegrationSettings.h"
 #include "PluginLifecycle.h"
 #include "PluginModel.h"
 #include "ProtocolMessage.h"
 #include "VisualStyle.h"
 namespace {
 
-constexpr wchar_t kPluginName[] = L"EaW Localisation Hub 0.8.7F4";
+constexpr wchar_t kPluginName[] = L"EaW Localisation Hub 0.8.7F5";
 constexpr std::int64_t kProtocolVersion = EAW_HUB_PROTOCOL_VERSION;
 constexpr size_t kMaximumIpcMessageBytes = 12 * 1024 * 1024;
 constexpr ULONGLONG kPresenceHeartbeatMilliseconds = 10 * 1000;
@@ -66,16 +65,12 @@ using eaw::visual::RectanglesOverlap;
 
 HINSTANCE g_instance = nullptr;
 NppData g_nppData{};
-FuncItem g_functions[10]{};
-ShortcutKey g_reserveShortcut{true, true, false, 'R'};
-ShortcutKey g_undoShortcut{true, true, false, 'Z'};
-ShortcutKey g_redoShortcut{true, true, false, 'Y'};
+FuncItem g_functions[1]{};
 HANDLE g_pipe = INVALID_HANDLE_VALUE, g_pipeThread = nullptr, g_writerThread = nullptr;
 HANDLE g_stopEvent = nullptr, g_writeEvent = nullptr;
 CRITICAL_SECTION g_pipeLock{}, g_outboundLock{};
 std::atomic_bool g_lockInitialised{false}, g_outboundLockInitialised{false};
 std::atomic_bool g_applyingRemote{false}, g_started{false}, g_ipcAuthenticated{false};
-bool g_integrationEnabled = false, g_notepadReady = false;
 std::string g_clientId, g_ipcSecret, g_agentUser, g_agentUserId;
 std::string g_agentColor{"#6aa9ff"};
 std::string g_workspace, g_currentDocumentPath, g_activePresencePath, g_pendingReviewPath;
@@ -123,7 +118,6 @@ void ShowConnectionStatus();
 void CreateComment();
 void CreateSuggestion();
 void OpenReviewApplication();
-void ToggleIntegration();
 void SendCurrentDocument();
 void SendCursor(bool force = false);
 void CloseDocument(UINT_PTR bufferId);
@@ -139,15 +133,6 @@ void ScheduleAutoSave(bool immediate = false);
 void MaybeAutoSave();
 INT_PTR CALLBACK PanelDialogProcedure(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK TextInputDialogProcedure(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam);
-
-void UpdateIntegrationMenuCheck() {
-    if (!g_nppData._nppHandle || !g_functions[0]._cmdID) return;
-    SendMessageW(
-        g_nppData._nppHandle,
-        NPPM_SETMENUITEMCHECK,
-        static_cast<WPARAM>(g_functions[0]._cmdID),
-        static_cast<LPARAM>(g_integrationEnabled));
-}
 
 HWND CurrentScintilla() {
     return eaw::editor::CurrentScintilla(g_nppData);
@@ -1092,9 +1077,9 @@ void EnsurePanel(bool show) {
         g_panelDockData = {};
         g_panelDockData.hClient = panel;
         g_panelDockData.pszName = L"Правки и комментарии";
-        g_panelDockData.dlgID = g_functions[1]._cmdID;
+        g_panelDockData.dlgID = 0;
         g_panelDockData.uMask = DWS_DF_CONT_LEFT;
-        g_panelDockData.pszAddInfo = L"EaW Hub 0.8.7F4";
+        g_panelDockData.pszAddInfo = L"EaW Hub 0.8.7F5";
         g_panelDockData.pszModuleName = L"EawLocalisationHub.dll";
         SendMessageW(
             g_nppData._nppHandle,
@@ -1234,13 +1219,14 @@ void HandleAgentLine(const std::string& json) {
         EnterCriticalSection(&g_outboundLock); g_outbound.clear(); ResetEvent(g_writeEvent); LeaveCriticalSection(&g_outboundLock); g_ipcAuthenticated.store(true);
         WritePipeLine(
             "{\"type\":\"hello\",\"clientId\":\"" + JsonEscape(g_clientId)
-            + "\",\"version\":\"0.8.7F4\",\"protocol\":" + std::to_string(kProtocolVersion) + ",\"proof\":\""
+            + "\",\"version\":\"0.8.7F5\",\"protocol\":" + std::to_string(kProtocolVersion) + ",\"proof\":\""
             + HmacSha256(g_ipcSecret, "plugin:" + nonce) + "\"}",
             true);
         SetEvent(g_writeEvent);
         return;
     }
     if (!g_ipcAuthenticated.load()) return;
+    if (type != "agentHello") return;
     if (type == "agentHello") {
         g_agentUser = message.String("user");
         g_agentUserId = message.String("userId");
@@ -1598,15 +1584,9 @@ LRESULT CALLBACK MainSubclassProcedure(HWND window, UINT message, WPARAM wParam,
         return 0;
     }
     if (message == kConnectedMessage) {
-        if (!g_integrationEnabled) {
-            if (!g_pendingReviewPath.empty()) {
-                WritePipeLine("{\"type\":\"reviewOpen\",\"path\":\"" + JsonEscape(g_pendingReviewPath) + "\"}"); g_pendingReviewPath.clear();
-            }
-            return 0;
+        if (!g_pendingReviewPath.empty()) {
+            WritePipeLine("{\"type\":\"reviewOpen\",\"path\":\"" + JsonEscape(g_pendingReviewPath) + "\"}"); g_pendingReviewPath.clear();
         }
-        g_lifecycle.DocumentClosed();
-        UpdatePanel();
-        SendCurrentDocument();
         return 0;
     }
     if (message == kDisconnectedMessage) {
@@ -1686,7 +1666,7 @@ LRESULT CALLBACK ScintillaSubclassProcedure(HWND window, UINT message, WPARAM wP
     return result;
 }
 
-void StartTransport(bool reviewOnly = false) {
+void StartReviewBridgeTransport() {
     if (g_started.exchange(true)) return;
     InitializeCriticalSection(&g_pipeLock);
     g_lockInitialised.store(true);
@@ -1697,32 +1677,6 @@ void StartTransport(bool reviewOnly = false) {
     const DWORD pid = GetCurrentProcessId();
     g_clientId = "npp-" + std::to_string(pid) + "-" + std::to_string(GetTickCount64());
     SetWindowSubclass(g_nppData._nppHandle, MainSubclassProcedure, kMainSubclassId, 0);
-    if (!reviewOnly) {
-    SetWindowSubclass(g_nppData._scintillaMainHandle, ScintillaSubclassProcedure, kScintillaSubclassId, 0);
-    SetWindowSubclass(g_nppData._scintillaSecondHandle, ScintillaSubclassProcedure, kScintillaSubclassId, 0);
-    SetTimer(g_nppData._nppHandle, kObserverTimerId, 250, nullptr);
-
-    SetIndicatorStyle(g_nppData._scintillaMainHandle, kReservationIndicator, INDIC_ROUNDBOX, RGB(70, 135, 255), 80);
-    SetIndicatorStyle(g_nppData._scintillaSecondHandle, kReservationIndicator, INDIC_ROUNDBOX, RGB(70, 135, 255), 80);
-    SendMessage(g_nppData._scintillaMainHandle, SCI_INDICSETFLAGS, kReservationIndicator, kIndicatorFlagValueFore);
-    SendMessage(g_nppData._scintillaSecondHandle, SCI_INDICSETFLAGS, kReservationIndicator, kIndicatorFlagValueFore);
-    SetIndicatorStyle(g_nppData._scintillaMainHandle, kPresenceIndicator, INDIC_FULLBOX, RGB(255, 145, 55), 45);
-    SetIndicatorStyle(g_nppData._scintillaSecondHandle, kPresenceIndicator, INDIC_FULLBOX, RGB(255, 145, 55), 45);
-    SendMessage(g_nppData._scintillaMainHandle, SCI_INDICSETUNDER, kPresenceIndicator, TRUE);
-    SendMessage(g_nppData._scintillaSecondHandle, SCI_INDICSETUNDER, kPresenceIndicator, TRUE);
-    SetIndicatorStyle(g_nppData._scintillaMainHandle, kCommentIndicator, INDIC_ROUNDBOX, RGB(235, 175, 35), 55);
-    SetIndicatorStyle(g_nppData._scintillaSecondHandle, kCommentIndicator, INDIC_ROUNDBOX, RGB(235, 175, 35), 55);
-    SendMessage(g_nppData._scintillaMainHandle, SCI_INDICSETFLAGS, kCommentIndicator, kIndicatorFlagValueFore);
-    SendMessage(g_nppData._scintillaSecondHandle, SCI_INDICSETFLAGS, kCommentIndicator, kIndicatorFlagValueFore);
-    SetIndicatorStyle(g_nppData._scintillaMainHandle, kSuggestionIndicator, INDIC_STRIKE, RGB(50, 175, 100), 255);
-    SetIndicatorStyle(g_nppData._scintillaSecondHandle, kSuggestionIndicator, INDIC_STRIKE, RGB(50, 175, 100), 255);
-    SendMessage(g_nppData._scintillaMainHandle, SCI_INDICSETFLAGS, kSuggestionIndicator, kIndicatorFlagValueFore);
-    SendMessage(g_nppData._scintillaSecondHandle, SCI_INDICSETFLAGS, kSuggestionIndicator, kIndicatorFlagValueFore);
-    SendMessage(g_nppData._scintillaMainHandle, SCI_ANNOTATIONSETVISIBLE, ANNOTATION_HIDDEN, 0);
-    SendMessage(g_nppData._scintillaSecondHandle, SCI_ANNOTATIONSETVISIBLE, ANNOTATION_HIDDEN, 0);
-    SendMessage(g_nppData._scintillaMainHandle, SCI_EOLANNOTATIONSETVISIBLE, EOLANNOTATION_HIDDEN, 0);
-    SendMessage(g_nppData._scintillaSecondHandle, SCI_EOLANNOTATIONSETVISIBLE, EOLANNOTATION_HIDDEN, 0);
-    }
     g_writerThread = CreateThread(nullptr, 0, WriterThreadProcedure, nullptr, 0, nullptr);
     g_pipeThread = CreateThread(nullptr, 0, PipeThreadProcedure, nullptr, 0, nullptr);
 }
@@ -1803,36 +1757,6 @@ void ClearIntegrationState() {
     if (g_panel) {
         SendMessageW(g_nppData._nppHandle, NPPM_DMMHIDE, 0, reinterpret_cast<LPARAM>(g_panel));
     }
-}
-
-void SetIntegrationEnabled(bool enabled, bool persist) {
-    if (g_integrationEnabled == enabled && (!enabled || g_started.load())) {
-        if (persist) eaw::plugin::LegacyIntegrationSettings::Save(g_nppData._nppHandle, enabled);
-        UpdateIntegrationMenuCheck();
-        return;
-    }
-    g_integrationEnabled = enabled;
-    if (persist) eaw::plugin::LegacyIntegrationSettings::Save(g_nppData._nppHandle, enabled);
-    UpdateIntegrationMenuCheck();
-    if (!g_notepadReady) return;
-    if (enabled) {
-        if (g_started.load()) StopTransport();
-        StartTransport();
-        EnsurePanel(true);
-        SendMessageW(
-            g_nppData._nppHandle,
-            NPPM_ADDSCNMODIFIEDFLAGS,
-            0,
-            SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT | SC_PERFORMED_UNDO | SC_PERFORMED_REDO);
-        SendCurrentDocument();
-        return;
-    }
-    StopTransport();
-    ClearIntegrationState();
-}
-
-void ToggleIntegration() {
-    SetIntegrationEnabled(!g_integrationEnabled, true);
 }
 
 std::string CurrentDocumentText() {
@@ -2097,13 +2021,9 @@ void CollaborativeRedo() {
 }
 
 void ShowCollaborationPanel() {
-    if (!g_integrationEnabled) {
-        MessageBoxW(g_nppData._nppHandle,
-            L"Интеграция Legacy-плагина выключена. Включите её первой командой меню плагина.",
-            kPluginName, MB_OK | MB_ICONINFORMATION);
-        return;
-    }
-    EnsurePanel(true);
+    MessageBoxW(g_nppData._nppHandle,
+        L"Совместная работа внутри Notepad++ отключена. Используйте Review.",
+        kPluginName, MB_OK | MB_ICONINFORMATION);
 }
 void OpenReviewApplication() {
     const std::wstring pathValue = CurrentPathWide();
@@ -2117,7 +2037,7 @@ void OpenReviewApplication() {
     if (g_lifecycle.Connected())
         WritePipeLine("{\"type\":\"reviewOpen\",\"path\":\"" + JsonEscape(pathUtf8) + "\"}");
     else {
-        g_pendingReviewPath = pathUtf8; StartTransport(true);
+        g_pendingReviewPath = pathUtf8; StartReviewBridgeTransport();
     }
 }
 void ShowConnectionStatus() {
@@ -2139,19 +2059,8 @@ void ShowConnectionStatus() {
         MB_OK | (g_lifecycle.Connected() && tracked ? MB_ICONINFORMATION : MB_ICONWARNING));
 }
 void ConfigureMenu() {
-    wcscpy_s(g_functions[0]._itemName, L"Включить интеграцию с Agent"); g_functions[0]._pFunc = ToggleIntegration;
-    wcscpy_s(g_functions[1]._itemName, L"Открыть Legacy-панель совместной работы"); g_functions[1]._pFunc = ShowCollaborationPanel;
-    wcscpy_s(g_functions[2]._itemName, L"Забронировать выделение"); g_functions[2]._pFunc = ReserveSelection;
-    g_functions[2]._pShKey = &g_reserveShortcut;
-    wcscpy_s(g_functions[3]._itemName, L"Удалить бронь под курсором"); g_functions[3]._pFunc = DeleteReservationAtCaret;
-    wcscpy_s(g_functions[4]._itemName, L"Совместная отмена"); g_functions[4]._pFunc = CollaborativeUndo;
-    g_functions[4]._pShKey = &g_undoShortcut;
-    wcscpy_s(g_functions[5]._itemName, L"Совместный повтор"); g_functions[5]._pFunc = CollaborativeRedo;
-    g_functions[5]._pShKey = &g_redoShortcut;
-    wcscpy_s(g_functions[6]._itemName, L"Показать статус подключения"); g_functions[6]._pFunc = ShowConnectionStatus;
-    wcscpy_s(g_functions[7]._itemName, L"Оставить комментарий"); g_functions[7]._pFunc = CreateComment;
-    wcscpy_s(g_functions[8]._itemName, L"Предложить правку"); g_functions[8]._pFunc = CreateSuggestion;
-    wcscpy_s(g_functions[9]._itemName, L"Открыть текущий файл в Review"); g_functions[9]._pFunc = OpenReviewApplication;
+    wcscpy_s(g_functions[0]._itemName, L"Открыть текущий файл в Review");
+    g_functions[0]._pFunc = OpenReviewApplication;
 }
 } // namespace
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
@@ -2167,28 +2076,8 @@ extern "C" __declspec(dllexport) FuncItem* getFuncsArray(int* count) {
 }
 extern "C" __declspec(dllexport) void beNotified(SCNotification* notification) {
     if (!notification) return;
-    if (notification->nmhdr.code == NPPN_READY) {
-        g_notepadReady = true;
-        g_integrationEnabled = eaw::plugin::LegacyIntegrationSettings::Load(g_nppData._nppHandle);
-        UpdateIntegrationMenuCheck();
-        if (g_integrationEnabled) SetIntegrationEnabled(true, false);
-        return;
-    }
     if (notification->nmhdr.code == NPPN_SHUTDOWN) {
-        g_notepadReady = false; StopTransport(); return;
-    }
-    if (!g_integrationEnabled) return;
-    if (notification->nmhdr.code == NPPN_BUFFERACTIVATED || notification->nmhdr.code == NPPN_FILEOPENED) {
-        SendCurrentDocument(); return;
-    }
-    if (notification->nmhdr.code == NPPN_FILEBEFORECLOSE) {
-        CloseDocument(static_cast<UINT_PTR>(notification->nmhdr.idFrom)); return;
-    }
-    if (notification->nmhdr.code == NPPN_FILESAVED) { g_saveDueAt = 0; return; }
-    if (g_applyingRemote.load()) return;
-    if (notification->nmhdr.code == SCN_MODIFIED) SendEdit(notification);
-    else if (notification->nmhdr.code == SCN_UPDATEUI) {
-        SendCursor(false); SyncReviewPanelToViewport(); InvalidatePresenceOverlays();
+        StopTransport();
     }
 }
 extern "C" __declspec(dllexport) LRESULT messageProc(UINT, WPARAM, LPARAM) { return TRUE; }

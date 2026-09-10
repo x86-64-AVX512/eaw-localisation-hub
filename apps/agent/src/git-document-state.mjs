@@ -39,6 +39,7 @@ export function applySyncedMessage(binding, message) {
   binding.presences = new Map((message.presences ?? []).map((item) => [item.clientId, item]));
   binding.canSeed = message.canSeed === true;
   applySyncedGit(binding, message);
+  emitCanonicalConflicts(binding, message.git);
   if (message.identity?.displayName) binding.hub.updateIdentity(message.identity);
   binding.hub.updateDirectory(message.directory ?? []);
   binding.synced = true;
@@ -63,11 +64,22 @@ export function applyGitStatus(binding, message) {
   binding.requestPersonalDocument();
   if (binding.gitWritable) binding.initialiseAttachedClients();
   binding.emitDocumentStatus(documentStatus(binding.gitState));
+  emitCanonicalConflicts(binding, message);
+  preserveChangedFile(binding, message).then((savedPath) => {
+    if (!savedPath) return;
+    for (const client of binding.clients) client.send({
+      type: 'notice',
+      message: `Перед блокировкой сохранена копия локальных изменений: ${savedPath}`,
+    });
+  }).catch(() => {});
+}
+
+function emitCanonicalConflicts(binding, message) {
   for (const client of binding.clients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding) continue;
       client.send({ type: 'externalConflictReset', path: absolutePath, source: 'canonical' });
-      if (message.status !== 'conflict') continue;
+      if (message?.status !== 'conflict') continue;
       for (const conflict of message.conflicts ?? []) client.send({
         type: 'externalConflict', path: absolutePath,
         source: 'canonical',
@@ -78,13 +90,6 @@ export function applyGitStatus(binding, message) {
       });
     }
   }
-  preserveChangedFile(binding, message).then((savedPath) => {
-    if (!savedPath) return;
-    for (const client of binding.clients) client.send({
-      type: 'notice',
-      message: `Перед блокировкой сохранена копия локальных изменений: ${savedPath}`,
-    });
-  }).catch(() => {});
 }
 
 export function reconnectForGitHead(binding) {

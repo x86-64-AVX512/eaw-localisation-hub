@@ -23,7 +23,7 @@ if (Test-Path -LiteralPath $paths.ConfigPath) {
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = 'EaW Localisation Hub 0.8.7F4'
+$form.Text = 'EaW Localisation Hub 0.8.7F5'
 $form.Size = [System.Drawing.Size]::new(600, 585)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
@@ -182,7 +182,7 @@ $startButton.Add_Click({
             -User $userBox.Text -SecondUser $secondBox.Text -Workspace $workspaceBox.Text `
             -ProtectedAuth:$authBox.Checked
         $mode = if ($authBox.Checked) { 'Авторизация проверена.' } else { 'Авторизация отключена.' }
-        $statusLabel.Text = "Запущено. Оба плагина подключены. $mode`r`nРедактируйте тестовый файл в двух окнах Notepad++."
+        $statusLabel.Text = "Запущено. $mode`r`nВ каждом Notepad++ откройте текущий файл в Review единственной командой плагина."
         $startedSuccessfully = $true
         $resetButton.Enabled = $false
         $publishButton.Enabled = $true

@@ -1,17 +1,25 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F4` form; package metadata uses `0.8.7-beta.4`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F5` form; package metadata uses `0.8.7-beta.5`.
+
+## 0.8.7F5 – 2026-09-10
+
+- Review now exposes one local-file checkbox per localisation key that differs from Git HEAD. Each shared modification, addition, or deletion can be included or returned to Git independently; the dialog shows exact before/after lines, gutter markers allow direct toggling, and a persistent banner warns whenever selected shared changes are present in the working file.
+- The Notepad++ plugin now exposes only `Open current file in Review`; its editor synchronisation, panel, overlays and collaboration commands are permanently disabled with no configuration switch. The corresponding mandatory training segment was raised to revision 2 so existing users see the change.
+- Canonical Git refresh now recognises both `key:0 "Value"` and `key: "Value"` localisation entries, so versionless keys produce precise per-key merges and conflicts instead of blocking the whole shared document as a structure conflict.
+- Opening a persisted room now refreshes canonical Git before the initial client sync and includes any pending per-key conflicts immediately, instead of showing a stale file-outdated block with an empty conflict list until the periodic refresh.
+- Content-changing Review actions automatically select the "Git + my changes" working-file mode, so their personal projection is materialised without another manual choice.
+- Discarding a complete working-file change back to Git HEAD, including immediately after a Review save, now resets only that user's local projection; the shared document and other contributors remain untouched.
 
 ## 0.8.7F4 – 2026-09-09
 
 - Opening an existing file no longer folds other contributors' shared edits into the local user's personal Git file. Disk reconciliation now keeps separate shared and personal merge results, including for external file edits and conflict resolution.
-- Content-changing Review actions automatically select the "Git + my changes" working-file mode, so their personal projection is materialised without another manual choice.
-- Discarding a complete working-file change back to Git HEAD, including immediately after a Review save, now resets only that user's local projection; the shared document and other contributors remain untouched.
 - Reservations now recognise localisation entries written both as `key:0 "Value"` and as `key: "Value"`, while continuing to ignore language headers and blank values.
 - Review waits for the initial personal merge base before initialising any document, preventing startup edits from racing personal materialisation.
 - Deleting a ticket closes its catalog view immediately, so rendering a large, soon-to-be-removed document list no longer stalls the interface.
 - WebSocket document messages are processed in arrival order, and graceful shutdown waits for queued messages before flushing rooms.
 - Integration suites run serially to avoid shared-server and persistence races in CI.
+- Protocol 18 requires updating the server and Desktop Agent together.
 
 ## 0.8.7F3 – 2026-09-07
 
@@ -23,7 +31,6 @@ All notable public changes to EaW Localisation Hub are recorded here. Version na
 - Daily backup scheduling converts the selected time to the DateTime required by Windows Task Scheduler. The schedule runs at local 03:00 under the logged-in user and catches up when available.
 - Replaced browser confirmation boxes in Review with compact confirmations beside the triggering action, including keyboard cancellation and protection against stale targets.
 - Windows CI now compares canonical paths safely when simulating atomic replacement failures, and an invalidated in-flight personal-file write is scheduled again instead of being lost.
-- Protocol 18 requires updating the server and Desktop Agent together.
 
 ## 0.8.7F2 – 2026-09-06
 

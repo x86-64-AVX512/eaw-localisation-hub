@@ -25,6 +25,19 @@ test('Review reservation commands accept their bounded optional comment', () => 
   }));
 });
 
+test('local-file selection accepts one bounded change id and a binary decision', () => {
+  assert.doesNotThrow(() => validatePluginMessage({
+    type: 'personalFileSelectionSet', path: 'C:\\repo\\localisation\\russian\\file.yml',
+    changeId: 'key:example_key', include: 1, revision: 'revision-1',
+  }));
+  assert.throws(() => validatePluginMessage({
+    type: 'personalFileSelectionSet', path: 'x.yml', changeId: 'key:x', include: true, revision: 'revision-1',
+  }), /include/);
+  assert.throws(() => validatePluginMessage({
+    type: 'personalFileSelectionSet', path: 'x.yml', changeId: 'key:x', include: 2, revision: 'revision-1',
+  }), /include/);
+});
+
 test('plugin protocol schema rejects field confusion and unknown commands', () => {
   assert.throws(() => validatePluginMessage({
     type: 'edit', path: 'x.yml', positionByte: '12', deleteBytes: 0, insertBase64: '',
@@ -41,7 +54,8 @@ test('every dispatched plugin command has an explicit schema', () => {
     'commentStatus', 'commentDelete', 'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
     'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'avatarSet', 'avatarDelete',
     'recoveryIssue', 'recoveryConfirm', 'recoveryDiscard', 'externalConflictResolve',
-    'historyRequest', 'historyRestore', 'personalFileMaterialize', 'personalConflictResolve', 'documentVariantRequest',
+    'historyRequest', 'historyRestore', 'personalFileMaterialize', 'personalFileSelectionSet',
+    'personalConflictResolve', 'documentVariantRequest',
   ]);
 });
 

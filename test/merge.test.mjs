@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeLocalisationThreeWay } from '../packages/shared/src/merge.mjs';
+import {
+  localisationSelectionChanges,
+  mergeLocalisationThreeWay,
+  setLocalisationSelection,
+} from '../packages/shared/src/merge.mjs';
 
 const base = [
   'l_russian:',
@@ -16,6 +20,20 @@ test('three-way merge combines edits to different localisation keys', () => {
   assert.deepEqual(merged.conflicts, []);
   assert.match(merged.text, /key_one:0 "Совместный"/);
   assert.match(merged.text, /key_two:0 "Из Git"/);
+});
+
+test('three-way merge recognises localisation keys without a version number', () => {
+  const versionlessBase = [
+    'l_russian:',
+    ' key_one: "Первый"',
+    ' key_two: "Второй"',
+    '',
+  ].join('\r\n');
+  const collaborative = versionlessBase.replace('"Первый"', '"Совместный"');
+  const external = versionlessBase.replace('"Второй"', '"Из Git"');
+  const merged = mergeLocalisationThreeWay(versionlessBase, collaborative, external);
+  assert.deepEqual(merged.conflicts, []);
+  assert.equal(merged.text, collaborative.replace('"Второй"', '"Из Git"'));
 });
 
 test('three-way merge imports external additions and deletions', () => {
@@ -102,4 +120,58 @@ test('independent key additions do not create artificial layout conflicts', () =
   assert.deepEqual(merged.conflicts, []);
   assert.match(merged.text, /mine:0 "Mine"/u);
   assert.match(merged.text, /git:0 "Git"/u);
+});
+
+test('local-file selections independently include and remove shared key changes', () => {
+  const shared = base.replace('"Первый"', '"Совместный"').replace('"Второй"', '"Принятый"');
+  const oneIncluded = setLocalisationSelection(base, shared, base, 'key:key_one', true);
+  assert.match(oneIncluded, /key_one:0 "Совместный"/u);
+  assert.match(oneIncluded, /key_two:0 "Второй"/u);
+  const changes = localisationSelectionChanges(base, shared, oneIncluded).entries;
+  assert.equal(changes.find(({ key }) => key === 'key_one').state, 'included');
+  assert.equal(changes.find(({ key }) => key === 'key_two').state, 'excluded');
+  assert.equal(setLocalisationSelection(base, shared, oneIncluded, 'key:key_one', false), base);
+});
+
+test('local-file selections preserve custom local keys while toggling another shared change', () => {
+  const shared = base.replace('"Первый"', '"Совместный"');
+  const custom = base.replace('"Второй"', '"Локальный"');
+  const selected = setLocalisationSelection(base, shared, custom, 'key:key_one', true);
+  assert.match(selected, /key_one:0 "Совместный"/u);
+  assert.match(selected, /key_two:0 "Локальный"/u);
+});
+
+test('local-file selections support shared additions and deletions', () => {
+  const shared = base.replace(' key_two:0 "Второй"\r\n', '') + ' key_three:0 "Третий"\r\n';
+  let selected = setLocalisationSelection(base, shared, base, 'key:key_two', true);
+  assert.doesNotMatch(selected, /key_two/u);
+  selected = setLocalisationSelection(base, shared, selected, 'key:key_three', true);
+  assert.match(selected, /key_three:0 "Третий"/u);
+  const changes = localisationSelectionChanges(base, shared, selected).entries;
+  assert.ok(changes.every(({ state }) => state === 'included'));
+});
+
+test('an added key is one independent selection and keeps its shared position', () => {
+  const git = 'l_russian:\n a:0 "A"\n c:0 "C"\n';
+  const shared = 'l_russian:\n a:0 "A"\n b:0 "B"\n c:0 "C"\n';
+  const changes = localisationSelectionChanges(git, shared, git).entries;
+  assert.deepEqual(changes.map(({ id }) => id), ['key:b']);
+  assert.equal(setLocalisationSelection(git, shared, git, 'key:b', true), shared);
+});
+
+test('file structure remains separately selectable without replacing local key values', () => {
+  const git = 'l_russian:\n a:0 "A"\n # note\n b:0 "B"\n';
+  const shared = 'l_russian:\n b:0 "B"\n # moved\n a:0 "Shared A"\n';
+  const local = git.replace('"A"', '"Local A"');
+  const changes = localisationSelectionChanges(git, shared, local).entries;
+  assert.ok(changes.some(({ id }) => id === '__file_structure__'));
+  const selected = setLocalisationSelection(git, shared, local, '__file_structure__', true);
+  assert.match(selected, /a:0 "Local A"/u);
+  assert.ok(selected.indexOf('b:0') < selected.indexOf('a:0'));
+  assert.match(selected, /# moved/u);
+});
+
+test('ambiguous duplicate-key files reject selection without producing a replacement', () => {
+  const duplicate = `${base} key_one:0 "Duplicate"\r\n`;
+  assert.throws(() => setLocalisationSelection(base, duplicate, base, 'key:key_one', true), /repeated/u);
 });

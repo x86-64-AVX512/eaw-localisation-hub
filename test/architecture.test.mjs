@@ -92,7 +92,6 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'plugin/src/CollaborationOverlays.cpp',
     'plugin/src/EditorInterop.cpp',
     'plugin/src/IpcSecurity.cpp',
-    'plugin/src/LegacyIntegrationSettings.cpp',
     'plugin/src/ProtocolMessage.cpp',
   ];
   for (const relativePath of requiredModules) {
@@ -117,7 +116,7 @@ test('local prototype exercises the production canonical Git path', () => {
   assert.match(launcher, /Invoke-GitLabAction 'SyncB'/u);
 });
 
-test('Review owns the complete collaboration UI while the Notepad++ client is marked Legacy', () => {
+test('Review owns the complete collaboration UI while the Notepad++ plugin is a Review bridge', () => {
   const reviewSources = [
     'apps/review/src/app.js',
     'apps/review/src/collaboration-panel.js',
@@ -135,8 +134,8 @@ test('Review owns the complete collaboration UI while the Notepad++ client is ma
   ]) {
     assert.match(reviewSources, new RegExp(`['\"]${command}['\"]`, 'u'), `${command} is absent from Review`);
   }
-  assert.match(source('README.md'), /Notepad\+\+-плагин переведён в режим Legacy/u);
-  assert.match(source('plugin/src/EawLocalisationHub.cpp'), /Legacy-панель совместной работы/u);
+  assert.match(source('README.md'), /плагине Notepad\+\+ оставлена только команда/u);
+  assert.doesNotMatch(source('plugin/src/EawLocalisationHub.cpp'), /Legacy-панель совместной работы/u);
   assert.match(source('apps/review/src/presence-controller.js'), /setInterval\(publish, HEARTBEAT_MILLISECONDS\)/u);
   assert.match(source('apps/review/src/app.js'), /encodeBase64, utf16ToByte/u,
     'Review selection commands must import their UTF-8 offset converter');
@@ -147,13 +146,13 @@ test('Review owns the complete collaboration UI while the Notepad++ client is ma
     'Review caret must be anchored at the exact Monaco column');
 });
 
-test('Legacy suggestion display uses a product-neutral name', () => {
+test('dormant native suggestion display uses a product-neutral name', () => {
   const plugin = source('plugin/src/EawLocalisationHub.cpp');
   assert.match(plugin, /Карточки у текста/u);
   assert.doesNotMatch(plugin, /Как в Google Docs/u);
 });
 
-test('Legacy plugin backs off while the Desktop Agent pipe is absent', () => {
+test('Notepad++ Review bridge backs off while the Desktop Agent pipe is absent', () => {
   const plugin = source('plugin/src/EawLocalisationHub.cpp');
   const connectionLoop = plugin.slice(
     plugin.indexOf('if (!WaitNamedPipeW'),
@@ -165,30 +164,35 @@ test('Legacy plugin backs off while the Desktop Agent pipe is absent', () => {
     'a pipe-open race must also have a stop-aware retry delay');
 });
 
-test('Legacy plugin is inert by default and can be enabled explicitly', () => {
+test('Notepad++ plugin exposes only the Review bridge and cannot enable editor integration', () => {
   const plugin = source('plugin/src/EawLocalisationHub.cpp');
-  const settings = source('plugin/src/LegacyIntegrationSettings.cpp');
-  const ready = plugin.slice(
-    plugin.indexOf('notification->nmhdr.code == NPPN_READY'),
-    plugin.indexOf('notification->nmhdr.code == NPPN_BUFFERACTIVATED'),
+  const menu = plugin.slice(
+    plugin.indexOf('void ConfigureMenu()'),
+    plugin.indexOf('} // namespace', plugin.indexOf('void ConfigureMenu()')),
   );
-  assert.match(settings, /GetPrivateProfileIntW\(kSection, kEnabled, 0/u,
-    'a missing setting must keep the Legacy integration disabled');
-  assert.match(ready, /LegacyIntegrationSettings::Load/u);
-  assert.match(ready, /if \(g_integrationEnabled\) SetIntegrationEnabled\(true, false\)/u,
-    'Notepad++ startup must not start IPC when the opt-in is absent');
-  assert.match(plugin, /Включить интеграцию с Agent/u);
-  assert.match(plugin, /if \(!g_integrationEnabled\) return;/u,
-    'editor notifications must be ignored while Legacy integration sleeps');
+  assert.match(plugin, /FuncItem g_functions\[1\]/u);
+  assert.match(menu, /Открыть текущий файл в Review/u);
+  assert.doesNotMatch(menu, /Legacy|интеграц|панел|брон|комментар|правк|отмен|повтор|статус/iu);
+  assert.doesNotMatch(plugin, /LegacyIntegrationSettings|SetIntegrationEnabled|ToggleIntegration/u,
+    'no setting or hidden activation function may restore editor integration');
+  assert.match(plugin, /if \(type != "agentHello"\) return;/u,
+    'the bridge must ignore every authenticated IPC message except Agent readiness');
+  const notified = plugin.slice(plugin.indexOf('extern "C" __declspec(dllexport) void beNotified'));
+  assert.doesNotMatch(notified, /SCN_MODIFIED|SCN_UPDATEUI|NPPN_BUFFERACTIVATED|NPPN_FILEOPENED/u,
+    'Notepad++ editor notifications must not reach the collaboration implementation');
   const reviewOpenStart = plugin.lastIndexOf('void OpenReviewApplication()');
   const reviewOpen = plugin.slice(reviewOpenStart, plugin.indexOf('void ShowConnectionStatus()', reviewOpenStart));
-  assert.match(reviewOpen, /g_pendingReviewPath = pathUtf8; StartTransport\(true\)/u,
-    'opening Review must establish a transport-only connection without waking editor integration');
-  assert.match(plugin, /void StartTransport\(bool reviewOnly = false\)[\s\S]*if \(!reviewOnly\) \{[\s\S]*SetWindowSubclass\(g_nppData\._scintillaMainHandle/u,
-    'a Review-only connection must not install Scintilla hooks');
+  assert.match(reviewOpen, /g_pendingReviewPath = pathUtf8; StartReviewBridgeTransport\(\)/u,
+    'opening Review must establish its dedicated bridge connection');
+  const transport = plugin.slice(
+    plugin.indexOf('void StartReviewBridgeTransport()'),
+    plugin.indexOf('void StopTransport()'),
+  );
+  assert.doesNotMatch(transport, /ScintillaSubclassProcedure|SetTimer|SetIndicatorStyle/u,
+    'the Review bridge must not install editor hooks, timers, or decorations');
 });
 
-test('Legacy plugin IPC protocol comes from the shared build constant', () => {
+test('Notepad++ Review bridge IPC protocol comes from the shared build constant', () => {
   const build = source('scripts/build-plugin.mjs');
   const plugin = source('plugin/src/EawLocalisationHub.cpp');
   assert.match(build, /import \{ PROTOCOL_VERSION \} from '\.\.\/packages\/shared\/src\/constants\.mjs'/u);
@@ -199,7 +203,7 @@ test('Legacy plugin IPC protocol comes from the shared build constant', () => {
   assert.doesNotMatch(plugin, /message\.Integer\("protocol", 0\) != \d+/u);
 });
 
-test('Legacy plugin does not publish document events before IPC is ready', () => {
+test('dormant native document code cannot publish before IPC is ready', () => {
   const plugin = source('plugin/src/EawLocalisationHub.cpp');
   const writer = plugin.slice(
     plugin.indexOf('void WritePipeLine(const std::string& message, bool priority)'),
@@ -210,7 +214,7 @@ test('Legacy plugin does not publish document events before IPC is ready', () =>
   assert.match(plugin, /g_ipcAuthenticated\.store\(false\)[\s\S]*g_outbound\.clear\(\)[\s\S]*g_pipe = pipe/u);
 });
 
-test('Legacy plugin waits for the active document generation before publishing edits', () => {
+test('dormant native document code validates the active document generation', () => {
   const plugin = source('plugin/src/EawLocalisationHub.cpp');
   const closeStart = plugin.lastIndexOf('void CloseDocument(UINT_PTR bufferId)');
   const closeDocument = plugin.slice(
@@ -246,7 +250,7 @@ test('Agent tolerates late document events after a plugin buffer closes', () => 
   assert.doesNotMatch(source('apps/agent/src/document-binding.mjs'), /Document is not synchronised yet/u);
 });
 
-test('Agent opens Review without requiring the sleeping Legacy client to bind the document', () => {
+test('Agent opens Review without requiring the Notepad++ bridge to bind the document', () => {
   const hub = source('apps/agent/src/agent-hub.mjs');
   const directOpen = hub.slice(
     hub.indexOf("if (message.type === 'reviewOpen')"),
@@ -259,18 +263,10 @@ test('Agent opens Review without requiring the sleeping Legacy client to bind th
     'reviewOpen must be handled before the document binding requirement');
 });
 
-test('Legacy plugin leaves native undo shortcuts to Notepad++', () => {
+test('Review-only Notepad++ plugin exposes no collaboration shortcuts', () => {
   const plugin = source('plugin/src/EawLocalisationHub.cpp');
-  const scintillaSubclass = plugin.slice(
-    plugin.indexOf('LRESULT CALLBACK ScintillaSubclassProcedure'),
-    plugin.indexOf('void DeleteReservationAtCaret'),
-  );
-  assert.doesNotMatch(scintillaSubclass, /WM_KEYDOWN[\s\S]*CollaborativeUndo/u);
-  assert.match(plugin, /g_undoShortcut\{true, true, false, 'Z'\}/u);
-  assert.match(plugin, /g_redoShortcut\{true, true, false, 'Y'\}/u);
-  assert.match(plugin, /ApplyRemoteReplace[\s\S]*SCI_SETUNDOCOLLECTION, TRUE[\s\S]*SCI_EMPTYUNDOBUFFER/u);
-  assert.match(plugin, /diskSynchronized[\s\S]*SCI_SETSAVEPOINT[\s\S]*!diskSynchronized[\s\S]*ScheduleAutoSave/u,
-    'a branch checkout already present on disk must not be saved back by Notepad++');
+  assert.doesNotMatch(plugin, /ShortcutKey g_/u);
+  assert.doesNotMatch(plugin, /_pShKey\s*=/u);
 });
 
 test('inline suggestion editing validates the canonical range before projecting text', () => {
@@ -343,14 +339,21 @@ test('Review header grows when its actions wrap instead of clipping the ticket s
   assert.match(layout, /new ResizeObserver\(refresh\)/u);
 });
 
-test('personal file controls live in an on-demand dialog instead of a permanent notice', () => {
+test('personal file controls expose per-key gutter and dialog selection with a visible warning', () => {
   const markup = source('apps/review/src/index.html');
   const variants = source('apps/review/src/document-variants.js');
   const hub = source('apps/agent/src/agent-hub.mjs');
   assert.match(markup, /id="personal-file-open"/u);
   assert.match(markup, /<dialog id="personal-file-dialog"/u);
-  assert.doesNotMatch(markup, /id="personal-file-notice"/u);
+  assert.match(markup, /id="local-file-notice"/u);
+  assert.match(markup, /id="personal-file-selections"/u);
   assert.match(variants, /openButton\.addEventListener\('click', \(\) => dialog\.showModal\(\)\)/u);
+  assert.match(variants, /type: 'personalFileSelectionSet'/u);
+  assert.match(variants, /checkbox\.addEventListener\('change'/u);
+  assert.match(variants, /GUTTER_GLYPH_MARGIN/u);
+  assert.match(variants, /classList\?\.contains\('local-file-check'\)/u,
+    'clicking another Monaco gutter decoration must not toggle local-file selection');
+  assert.match(hub, /message\.type === 'personalFileSelectionSet'/u);
   assert.match(hub, /reviewContentMutations[\s\S]*setPersonalMaterialisation\('mine', absolutePath\)/u,
     'a content-changing Review action must resume personal-file materialisation');
 });

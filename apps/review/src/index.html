@@ -60,6 +60,7 @@
   <div id="git-files-notice" class="git-notice git-files-notice" role="status" hidden></div>
   <div id="git-file-block" class="git-notice git-file-block" role="alert" hidden></div>
   <div id="version-notice" class="git-notice version-notice" role="status" hidden></div>
+  <div id="local-file-notice" class="local-file-notice" role="status" hidden></div>
   <main id="workspace" class="workspace">
     <aside id="collaboration-lane" aria-label="Совместная работа">
       <section class="side-section">
@@ -122,10 +123,15 @@
       <h2>Локальный рабочий файл</h2>
       <p id="personal-file-message">Состояние рабочего файла ещё не получено.</p>
       <p class="dialog-hint">Эти действия меняют только файл в вашем Git-репозитории. Совместный документ останется без изменений.</p>
+      <div class="personal-selection-heading">
+        <strong>Изменения совместной версии в локальном файле</strong>
+        <span>Галочка включает текущий совместный вариант, снятие возвращает вариант Git.</span>
+      </div>
+      <div id="personal-file-selections" class="personal-file-selections"></div>
       <div class="dialog-actions personal-file-actions">
         <button value="cancel">Закрыть</button>
-        <button id="personal-file-git" type="button">Записать Git HEAD в файл</button>
-        <button id="personal-file-mine" type="button" class="primary">Пересобрать Git + мои</button>
+        <button id="personal-file-git" type="button">Снять все и записать Git HEAD</button>
+        <button id="personal-file-mine" type="button" class="primary">Вернуть Git + мои</button>
       </div>
     </form>
   </dialog>

@@ -46,7 +46,12 @@ button.primary { border-color: #517bdc; background: #315db8; }
 .git-branch-notice, .git-files-notice { border-color: #8c6b27; color: #ffe1a0; background: #3b2e16; }
 .git-file-block { border-color: #f05c68; color: #fff0f1; background: #681922; font-weight: 600; }
 #personal-file-open.has-conflicts { border-color: #d78b37; color: #ffd59b; }
-.personal-file-dialog { width: min(680px, calc(100vw - 40px)); }
+.local-file-notice {
+  flex: 0 0 auto; padding: 7px 14px; border-bottom: 1px solid #3f9b6c;
+  color: #cbf7de; background: #143426; font-weight: 600;
+}
+#personal-file-open.has-included { border-color: #48ae78; color: #baf0d0; }
+.personal-file-dialog { width: min(860px, calc(100vw - 40px)); }
 .personal-file-dialog p { margin: 0 0 12px; line-height: 1.45; }
 .personal-file-dialog.has-conflicts { border-color: #d78b37; }
 .personal-file-dialog.has-conflicts #personal-file-message { color: #ffd59b; }
@@ -56,6 +61,26 @@ button.primary { border-color: #517bdc; background: #315db8; }
 .personal-git-conflicts h3 { margin: 0 0 8px; overflow-wrap: anywhere; }
 .personal-git-conflicts pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px Consolas, monospace; }
 .personal-git-conflicts button { margin: 0 8px 8px 0; }
+.personal-selection-heading { display: flex; justify-content: space-between; gap: 14px; margin-top: 14px; }
+.personal-selection-heading span { color: #8f9bad; font-size: 12px; text-align: right; }
+.personal-file-selections { display: grid; gap: 6px; max-height: 42vh; overflow: auto; margin-top: 8px; }
+.personal-selection-empty { padding: 12px; border: 1px dashed #3b4658; border-radius: 7px; color: #8f9bad; }
+.personal-selection-row {
+  display: grid; grid-template-columns: auto minmax(130px, .7fr) minmax(0, 1.6fr);
+  align-items: start; gap: 9px; padding: 8px 10px; border: 1px solid #354052;
+  border-radius: 7px; background: #171d27;
+}
+.personal-selection-row.custom { border-color: #a77836; }
+.personal-selection-row input { width: 17px; height: 17px; margin-top: 2px; accent-color: #55bd83; }
+.personal-selection-label { overflow-wrap: anywhere; color: #dce4ef; font-family: Consolas, monospace; }
+.personal-selection-diff { display: grid; gap: 3px; min-width: 0; font: 12px Consolas, monospace; }
+.personal-selection-diff del, .personal-selection-diff ins { display: block; overflow-wrap: anywhere; white-space: pre-wrap; }
+.personal-selection-diff del { color: #e5969e; }
+.personal-selection-diff ins { color: #8fd7ad; text-decoration: none; }
+.local-file-check::before { display: block; width: 18px; text-align: center; font-size: 15px; line-height: 19px; }
+.local-file-check.included::before { content: "☑"; color: #63d392; }
+.local-file-check.excluded::before { content: "☐"; color: #8996a9; }
+.local-file-check.custom::before { content: "◩"; color: #e0a955; }
 .local-version-dialog { width: min(620px, 90vw); }
 .local-version-dialog label { display: block; margin: 10px 0; color: #d9e0ec; }
 .local-version-dialog .local-only-check { margin-top: 20px; padding: 12px; border: 1px solid #3f536b; border-radius: 6px; background: #172131; }

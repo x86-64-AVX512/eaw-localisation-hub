@@ -52,6 +52,7 @@ export class DocumentBinding {
     this.personalReady = Boolean(this.ticketId);
     this.personalContributors = [];
     this.personalConflicts = [];
+    this.personalSelectionRevision = ''; this.personalSelectionGit = ''; this.personalSelectionShared = '';
     this.personalMaterialisationMode = this.ticketId ? 'mine' : this.hub.loadPersonalMode(this.relativePath);
 
     this.document.on('update', (update, origin) => {
@@ -418,17 +419,15 @@ export class DocumentBinding {
 
   replacePersonalDocument(text) { return personalDocument.replacePersonalDocument(this, text); }
 
-  requestDocumentVariant(client, absolutePath, authorId) {
-    return personalDocument.requestDocumentVariant(this, client, absolutePath, authorId);
-  }
+  requestDocumentVariant(client, absolutePath, authorId) { return personalDocument.requestDocumentVariant(this, client, absolutePath, authorId); }
 
-  localFileText() {
-    return personalDocument.localFileText(this);
-  }
+  localFileText() { return personalDocument.localFileText(this); }
 
   setPersonalMaterialisation(mode, absolutePath) {
     return personalDocument.setPersonalMaterialisation(this, mode, absolutePath);
   }
+
+  setPersonalSelection(absolutePath, changeId, include, revision) { return personalDocument.setPersonalSelection(this, absolutePath, changeId, include, revision); }
 
   cursor(client, absolutePath, message) {
     const state = this.requireState(client, absolutePath);

@@ -376,12 +376,16 @@ websocketServer.on('connection', async (socket, request) => {
     if (!validDocumentId(documentId)) throw new ProtocolLimitError('Missing or invalid document id');
     ticketStore.assertDocumentAccess(documentId);
     await ticketStore.noteParticipant(documentId, socket.identity);
-    const room = await getRoom(documentId);
     socket.localHead = String(url.searchParams.get('head') ?? '').toLowerCase();
     socket.localBlob = String(url.searchParams.get('blob') ?? '').toLowerCase();
+    const canonicalSnapshot = canonicalSource.enabled
+      ? await canonicalSource.snapshot(documentId, { force: true })
+      : null;
     socket.changedFiles = canonicalSource.enabled
       ? await canonicalSource.changedFilesSince(documentId, socket.localHead).catch(() => [])
       : [];
+    const room = await getRoom(documentId);
+    if (canonicalSnapshot) await room.applyCanonicalSnapshot(canonicalSnapshot);
     socket.room = room;
     socket.inboundBudget = createInboundBudget();
     room.addClient(socket);

@@ -37,7 +37,6 @@ const argumentsList = [
   path.join(projectRoot, 'plugin', 'src', 'EawLocalisationHub.cpp'),
   path.join(projectRoot, 'plugin', 'src', 'EditorInterop.cpp'),
   path.join(projectRoot, 'plugin', 'src', 'IpcSecurity.cpp'),
-  path.join(projectRoot, 'plugin', 'src', 'LegacyIntegrationSettings.cpp'),
   path.join(projectRoot, 'plugin', 'src', 'PluginLifecycle.cpp'),
   path.join(projectRoot, 'plugin', 'src', 'ProtocolMessage.cpp'),
   path.join(projectRoot, 'plugin', 'src', 'VisualStyle.cpp'),
@@ -76,7 +75,7 @@ if (exitCode !== 0) process.exit(exitCode);
 await fs.writeFile(
   path.join(outputDirectory, 'README.txt'),
   [
-    'EaW Localisation Hub 0.8.7F4',
+    'EaW Localisation Hub 0.8.7F5',
     '',
     'Early beta build; the program is still rough. Copy this entire EawLocalisationHub directory into the Notepad++ plugins directory.',
     'The Desktop Agent must be running before Notepad++ connects.',

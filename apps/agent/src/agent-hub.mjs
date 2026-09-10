@@ -591,7 +591,7 @@ export class AgentHub {
       'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
       'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'historyRestore',
       'externalConflictResolve', 'personalFileMaterialize', 'personalConflictResolve',
-      'documentVariantRequest',
+      'personalFileSelectionSet', 'documentVariantRequest',
     ]);
     if (!state.binding.gitWritable && gitMutations.has(message.type)
       && !(message.type === 'externalConflictResolve' && state.binding.gitState?.status === 'conflict')) {
@@ -661,6 +661,14 @@ export class AgentHub {
     }));
     else if (message.type === 'personalFileMaterialize') {
       state.binding.setPersonalMaterialisation(String(message.mode), absolutePath);
+    }
+    else if (message.type === 'personalFileSelectionSet') {
+      if (!state.binding.setPersonalSelection(
+        absolutePath, String(message.changeId), message.include === 1, String(message.revision),
+      )) {
+        client.send({ type: 'notice', path: absolutePath,
+          message: 'Не удалось изменить состав локального файла: состояние документа уже изменилось.' });
+      }
     }
     else if (message.type === 'personalConflictResolve') {
       state.binding.personalReady = false;

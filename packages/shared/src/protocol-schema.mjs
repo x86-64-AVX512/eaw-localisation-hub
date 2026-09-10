@@ -56,6 +56,7 @@ const pluginSchemas = Object.freeze({
   historyRequest: { path: pathField, id: idField },
   historyRestore: { path: pathField, id: idField, headId: idField },
   personalFileMaterialize: { path: pathField, mode: text(32) },
+  personalFileSelectionSet: { path: pathField, changeId: text(4096), include: integer(1), revision: idField },
   personalConflictResolve: { path: pathField, key: text(4096), choice: text(32), conflictId: idField },
   documentVariantRequest: { path: pathField, authorId: idField },
 });

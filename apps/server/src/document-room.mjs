@@ -70,6 +70,7 @@ export class DocumentRoom {
     this.suggestions = [];
     this.gitBase = null;
     this.gitConflict = false;
+    this.gitConflicts = [];
     this.pendingGitSnapshot = null;
     this.gitConflictResolutions = {};
     this.canonicalSource = canonicalSource;
@@ -189,7 +190,8 @@ export class DocumentRoom {
     socket.presenceIds = new Set();
     this.lastAccessAt = Date.now();
     const content = this.document.getText('content');
-    socket.gitWritable = !this.gitBase || Boolean(socket.localBlob && socket.localBlob === this.gitBase.blob);
+    socket.gitWritable = !this.gitBase || (!this.gitConflict
+      && Boolean(socket.localBlob && socket.localBlob === this.gitBase.blob));
     const canSeed = !this.gitBase && content.length === 0 && !this.seedClaimed;
     if (canSeed) this.seedClaimed = true;
     if (!sendWithBackpressure(socket, Y.encodeStateAsUpdate(this.document), { binary: true })) return;
@@ -200,20 +202,11 @@ export class DocumentRoom {
       version: DISPLAY_VERSION,
       documentId: this.documentId,
       canSeed,
-      git: this.gitBase ? {
-        status: socket.gitWritable
-          ? (socket.localHead === this.gitBase.commit ? 'current' : 'branch-outdated')
-          : 'file-outdated',
-        branch: this.gitBase.branch,
-        localHead: socket.localHead ?? '',
-        remoteHead: this.gitBase.commit,
-        localBlob: socket.localBlob ?? '',
-        remoteBlob: this.gitBase.blob,
-        changedFiles: socket.changedFiles?.length ? socket.changedFiles : (this.gitBase.changedFiles ?? []),
-        reason: !socket.localBlob ? 'local-file-not-in-head'
-          : socket.gitWritable ? 'branch-head-outdated' : 'file-blob-differs',
-        checkedAt: this.gitBase.checkedAt,
-      } : null,
+      git: this.gitBase
+        ? (this.gitConflict && this.pendingGitSnapshot
+          ? this.gitConflictStatusFor(socket)
+          : { ...this.gitStatusFor(socket), checkedAt: this.gitBase.checkedAt })
+        : null,
       reservations: this.activeReservations(),
       commentThreads: this.commentThreads,
       suggestions: this.suggestions,
@@ -253,29 +246,45 @@ export class DocumentRoom {
     };
   }
 
-  broadcastGitConflict(snapshot, conflicts) {
-    this.broadcastJson({
+  serialiseGitConflicts(conflicts = this.gitConflicts) {
+    return conflicts.slice(0, 1000).map((item) => ({
+      key: item.key, label: item.label,
+      baseLine: String(item.baseLine ?? '').slice(0, 60 * 1024),
+      collaborativeLine: String(item.collaborativeLine ?? '').slice(0, 60 * 1024),
+      externalLine: String(item.externalLine ?? '').slice(0, 60 * 1024),
+      detail: item.key === '__file_structure__'
+        ? 'Комментарии или структура файла изменены с обеих сторон.'
+        : item.key === '__duplicate_keys__'
+          ? 'В файле есть повторяющиеся ключи; выбор применяется ко всему файлу.'
+          : 'Один и тот же ключ изменён в Git и в совместном документе.',
+    }));
+  }
+
+  gitConflictStatusFor(client, snapshot = this.pendingGitSnapshot) {
+    return {
       type: 'git-status', status: 'conflict', branch: snapshot.branch,
-      remoteHead: snapshot.commit, remoteBlob: snapshot.blob,
+      localHead: client.localHead ?? '', remoteHead: snapshot.commit,
+      localBlob: client.localBlob ?? '', remoteBlob: snapshot.blob,
       changedFiles: (snapshot.changedFiles ?? []).slice(0, 500),
-      conflicts: conflicts.slice(0, 1000).map((item) => ({
-        key: item.key, label: item.label,
-        baseLine: String(item.baseLine ?? '').slice(0, 60 * 1024),
-        collaborativeLine: String(item.collaborativeLine ?? '').slice(0, 60 * 1024),
-        externalLine: String(item.externalLine ?? '').slice(0, 60 * 1024),
-        detail: item.key === '__file_structure__'
-          ? 'Комментарии или структура файла изменены с обеих сторон.'
-          : item.key === '__duplicate_keys__'
-            ? 'В файле есть повторяющиеся ключи; выбор применяется ко всему файлу.'
-            : 'Один и тот же ключ изменён в Git и в совместном документе.',
-      })),
+      reason: 'merge-conflict', checkedAt: snapshot.checkedAt,
+      conflicts: this.serialiseGitConflicts(),
       message: 'Canonical Git update conflicts with live edits',
-    });
+    };
+  }
+
+  broadcastGitConflict(snapshot, conflicts) {
+    this.gitConflicts = conflicts;
+    for (const client of this.clients) {
+      if (client.readyState === WebSocket.OPEN) {
+        sendWithBackpressure(client, JSON.stringify(this.gitConflictStatusFor(client, snapshot)));
+      }
+    }
   }
 
   finishCanonicalSnapshot(snapshot, merged) {
     this.history.updateGitBase(snapshot.text);
     this.gitConflict = false;
+    this.gitConflicts = [];
     this.pendingGitSnapshot = null;
     this.gitConflictResolutions = {};
     this.gitBase = { ...snapshot };
@@ -312,6 +321,7 @@ export class DocumentRoom {
     );
     if (merged.conflicts.length > 0) {
       this.gitConflict = true;
+      this.gitConflicts = merged.conflicts;
       if (!continuingConflict) this.gitConflictResolutions = {};
       this.pendingGitSnapshot = { ...snapshot };
       this.broadcastGitConflict(snapshot, merged.conflicts);

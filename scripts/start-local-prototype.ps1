@@ -185,14 +185,8 @@ try {
     $startedProcesses.Add($notepadA)
     $startedProcesses.Add($notepadB)
 
-    $readyA = Wait-ForLogText -Path $agentAOutput -Pattern 'document ready' -TimeoutSeconds 20 -Process $agentA
-    $readyB = Wait-ForLogText -Path $agentBOutput -Pattern 'document ready' -TimeoutSeconds 20 -Process $agentB
-    if (-not ($readyA -and $readyB)) {
-        throw 'Notepad++ plugins did not open both collaborative documents. Check Agent logs.'
-    }
-
     $state = [pscustomobject]@{
-        Version = '0.8.7F4'
+        Version = '0.8.7F5'
         Status = 'running'
         SessionId = $sessionId
         StartedAt = [DateTime]::UtcNow.ToString('o')

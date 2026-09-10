@@ -85,7 +85,7 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     const origin = path.join(root, 'origin.git');
     const file = path.join(source, 'localisation', 'replace', 'russian', 'test.yml');
     await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, 'l_russian:\n canonical:0 "Git"\n');
+    await fs.writeFile(file, 'l_russian:\n canonical: "Git"\n');
     git(source, 'init', '-b', 'general-dev');
     git(source, 'config', 'user.name', 'Test');
     git(source, 'config', 'user.email', 'test@example.invalid');
@@ -111,7 +111,7 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     await waitForOutput(server, 'listening on');
     const stale = await connect(port, '0'.repeat(40), '1'.repeat(40));
     assert.equal(stale.synced.git.status, 'file-outdated');
-    assert.equal(stale.ydoc.getText('content').toString().replaceAll('\r\n', '\n'), 'l_russian:\n canonical:0 "Git"\n');
+    assert.equal(stale.ydoc.getText('content').toString().replaceAll('\r\n', '\n'), 'l_russian:\n canonical: "Git"\n');
     const update = new Y.Doc();
     update.getText('content').insert(0, 'stale overwrite');
     stale.socket.send(Y.encodeStateAsUpdate(update));
@@ -126,32 +126,36 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     const beforeEdit = Y.encodeStateVector(current.ydoc);
     const liveText = current.ydoc.getText('content');
     liveText.delete(0, liveText.length);
-    liveText.insert(0, 'l_russian:\n canonical:0 "Live"\n');
+    liveText.insert(0, 'l_russian:\n canonical: "Live"\n');
     current.socket.send(Y.encodeStateAsUpdate(current.ydoc, beforeEdit));
-    await fs.writeFile(file, 'l_russian:\n canonical:0 "Remote"\n');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const currentClosed = once(current.socket, 'close');
+    current.socket.close();
+    await currentClosed;
+    await fs.writeFile(file, 'l_russian:\n canonical: "Remote"\n');
     git(source, 'add', '.');
     git(source, 'commit', '-m', 'remote conflict');
     git(source, 'push', origin, 'general-dev');
-    const conflict = await waitForRecordedMessage(
-      current.messages,
-      ({ type, status }) => type === 'git-status' && status === 'conflict',
-      'canonical Git conflict',
-    );
-    assert.deepEqual(conflict.conflicts.map(({ key }) => key), ['canonical']);
-    current.socket.send(JSON.stringify({
+    const remoteCommit = git(source, 'rev-parse', 'HEAD');
+    const remoteBlob = git(source, 'rev-parse', 'HEAD:localisation/replace/russian/test.yml');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const conflicted = await connect(port, remoteCommit, remoteBlob);
+    assert.equal(conflicted.synced.git.status, 'conflict');
+    assert.deepEqual(conflicted.synced.git.conflicts.map(({ key }) => key), ['canonical']);
+    conflicted.socket.send(JSON.stringify({
       type: 'git-conflict-resolve', key: 'canonical', choice: 'external',
     }));
     await waitForRecordedMessage(
-      current.messages,
-      ({ type, status }) => type === 'git-status' && status === 'file-outdated',
-      'resolved file-outdated status',
+      conflicted.messages,
+      ({ type, status }) => type === 'git-status' && status === 'current',
+      'resolved current status',
     );
     for (let attempt = 0; attempt < 500
-      && !current.ydoc.getText('content').toString().includes('"Remote"'); attempt += 1) {
+      && !conflicted.ydoc.getText('content').toString().includes('"Remote"'); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    assert.match(current.ydoc.getText('content').toString(), /"Remote"/u);
-    current.socket.close();
+    assert.match(conflicted.ydoc.getText('content').toString(), /"Remote"/u);
+    conflicted.socket.close();
   } finally {
     await stopProcess(server);
     await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });

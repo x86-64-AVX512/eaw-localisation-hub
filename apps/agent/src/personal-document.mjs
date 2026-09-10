@@ -1,7 +1,44 @@
 import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
 import { applyUtf8ByteEdit, computeSingleReplace, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mjs';
-import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mjs';
+import {
+  localisationSelectionChanges,
+  mergeLocalisationThreeWay,
+  setLocalisationSelection,
+} from '../../../packages/shared/src/merge.mjs';
+
+function variantsPayload(binding) {
+  const git = binding.hub.readGitHeadText(binding.relativePath);
+  const shared = binding.text.toString();
+  const local = localFileText(binding) ?? binding.personalText;
+  const selection = localisationSelectionChanges(git, shared, local);
+  binding.personalSelectionRevision = crypto.randomUUID();
+  binding.personalSelectionGit = git;
+  binding.personalSelectionShared = shared;
+  return {
+    sharedBase64: Buffer.from(shared, 'utf8').toString('base64'),
+    mineBase64: Buffer.from(binding.personalText, 'utf8').toString('base64'),
+    gitBase64: Buffer.from(git, 'utf8').toString('base64'),
+    contributors: binding.personalContributors,
+    conflicts: binding.personalConflicts,
+    gitConflicts: binding.personalGitConflicts,
+    localSelections: selection.entries,
+    localSelectionBlocked: selection.blockedReason,
+    localSelectionRevision: binding.personalSelectionRevision,
+  };
+}
+
+export function emitDocumentVariants(binding, onlyClient = null) {
+  if (binding.ticketId || !binding.personalReady) return;
+  const payload = variantsPayload(binding);
+  for (const client of binding.clients) {
+    if (onlyClient && client !== onlyClient) continue;
+    for (const [absolutePath, state] of client.documents) {
+      if (state.binding !== binding || !state.initialised || client.kind !== 'review') continue;
+      client.send({ type: 'documentVariants', path: absolutePath, ...payload });
+    }
+  }
+}
 
 export function resetPersonalRequest(binding) {
   clearTimeout(binding.personalRequestTimer);
@@ -73,21 +110,14 @@ export function handlePersonalDocument(binding, message) {
   binding.personalConflicts = message.conflicts ?? [];
   binding.personalGitConflicts = message.gitConflicts ?? [];
   binding.initialiseAttachedClients();
+  const payload = variantsPayload(binding);
   for (const client of binding.clients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
       binding.reconcileInitialDisk(client, absolutePath, state);
       binding.syncClientView(client, absolutePath);
       if (client.kind === 'review') {
-        client.send({
-          type: 'documentVariants', path: absolutePath,
-          sharedBase64: Buffer.from(binding.text.toString(), 'utf8').toString('base64'),
-          mineBase64: Buffer.from(binding.personalText, 'utf8').toString('base64'),
-          gitBase64: Buffer.from(binding.hub.readGitHeadText(binding.relativePath), 'utf8').toString('base64'),
-          contributors: binding.personalContributors,
-          conflicts: binding.personalConflicts,
-          gitConflicts: binding.personalGitConflicts,
-        });
+        client.send({ type: 'documentVariants', path: absolutePath, ...payload });
         client.scheduleMaterialisation?.(absolutePath);
       }
     }
@@ -132,6 +162,7 @@ export function setPersonalMaterialisation(binding, mode, absolutePath) {
   if (binding.ticketId || !['git', 'mine'].includes(mode)) return;
   binding.personalMaterialisationMode = mode;
   binding.hub.savePersonalMode(binding.relativePath, mode).catch(() => {});
+  emitDocumentVariants(binding);
   for (const client of binding.clients) {
     const state = client.documents.get(absolutePath);
     if (!state || state.binding !== binding) continue;
@@ -144,6 +175,34 @@ export function setPersonalMaterialisation(binding, mode, absolutePath) {
         : 'Рабочий файл содержит Git HEAD и только ваши изменения.',
     });
   }
+}
+
+export function setPersonalSelection(binding, absolutePath, changeId, include, revision) {
+  if (binding.ticketId || !binding.synced || !binding.gitWritable || binding.personalGitConflicts?.length) return false;
+  const git = binding.hub.readGitHeadText(binding.relativePath);
+  const shared = binding.text.toString();
+  if (!revision || revision !== binding.personalSelectionRevision
+    || git !== binding.personalSelectionGit || shared !== binding.personalSelectionShared) return false;
+  const current = localFileText(binding);
+  if (current === null) return false;
+  let next;
+  try {
+    next = setLocalisationSelection(git, shared, current, changeId, include);
+  } catch {
+    requestPersonalDocument(binding);
+    return false;
+  }
+  binding.personalMaterialisationMode = 'mine';
+  binding.hub.savePersonalMode(binding.relativePath, 'mine').catch(() => {});
+  replacePersonalDocument(binding, next);
+  emitDocumentVariants(binding);
+  for (const client of binding.clients) {
+    const state = client.documents.get(absolutePath);
+    if (!state || state.binding !== binding) continue;
+    binding.syncClientView(client, absolutePath);
+    client.scheduleMaterialisation?.(absolutePath);
+  }
+  return true;
 }
 
 export function edit(binding, client, absolutePath, message) {
