@@ -195,6 +195,12 @@ function validateHistoryEntry(value) {
   serverString(entry.reason, 'History reason', 32);
   serverString(entry.createdAt, 'History creation date', 64);
   serverString(entry.updatedAt, 'History update date', 64);
+  if (entry.suggestionAuthor !== undefined) {
+    serverString(entry.suggestionAuthor, 'Suggestion author', 256);
+    serverString(entry.suggestionAuthorId ?? '', 'Suggestion author id', 256);
+    serverString(entry.suggestionColor ?? '', 'Suggestion author color', 32);
+    serverString(entry.suggestionId ?? '', 'Suggestion id', 256);
+  }
 }
 
 export function validateServerMessage(message) {

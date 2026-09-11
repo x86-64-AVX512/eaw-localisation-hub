@@ -114,6 +114,19 @@ function encodedRelative(position) {
   return Buffer.from(Y.encodeRelativePosition(position)).toString('base64');
 }
 
+function resolvedReservation(document, reservation) {
+  const text = document.getText('content');
+  const start = Y.createAbsolutePositionFromRelativePosition(
+    Y.decodeRelativePosition(Buffer.from(reservation.startRelative, 'base64')), document,
+  );
+  const end = Y.createAbsolutePositionFromRelativePosition(
+    Y.decodeRelativePosition(Buffer.from(reservation.endRelative, 'base64')), document,
+  );
+  assert.equal(start?.type, text);
+  assert.equal(end?.type, text);
+  return { start: Math.min(start.index, end.index), end: Math.max(start.index, end.index) };
+}
+
 function waitForJson(socket, predicate, timeout = 10000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -255,6 +268,16 @@ test('server restores CRDT text, reservations, comments, and suggestions after r
     legacyMetadata.savedAt = '2025-01-01T00:00:00.000Z';
     legacyMetadata.reservations[0].createdBy = 'Alice';
     legacyMetadata.reservations[0].createdAt = '2025-01-01T00:00:00.000Z';
+    const detached = new Y.Doc();
+    const detachedText = detached.getText('content');
+    detachedText.insert(0, expected);
+    legacyMetadata.reservations[0].startRelative = encodedRelative(
+      Y.createRelativePositionFromTypeIndex(detachedText, expected.indexOf('prototype_key'), -1),
+    );
+    legacyMetadata.reservations[0].endRelative = encodedRelative(
+      Y.createRelativePositionFromTypeIndex(detachedText, expected.length - 2, 0),
+    );
+    detached.destroy();
     await fs.writeFile(metadataPath, JSON.stringify(legacyMetadata));
 
     server = spawnServer(port, dataDirectory);
@@ -271,6 +294,10 @@ test('server restores CRDT text, reservations, comments, and suggestions after r
     assert.equal(second.synced.reservations[0].id, 'persistent-reservation');
     assert.equal(second.synced.reservations[0].assignee, 'Alice');
     assert.equal(second.synced.reservations[0].createdBy, 'Alice');
+    const repairedAtLoad = resolvedReservation(second.document, second.synced.reservations[0]);
+    assert.match(second.document.getText('content').toString().slice(
+      repairedAtLoad.start, repairedAtLoad.end,
+    ), /prototype_key/u, 'loading should repair a reservation whose old CRDT anchors no longer resolve');
     assert.equal(second.synced.commentThreads.length, 1);
     assert.equal(second.synced.commentThreads[0].messages[0].body, 'Постоянный комментарий');
     assert.equal(second.synced.commentThreads[0].color, '#ff6677');
@@ -281,6 +308,9 @@ test('server restores CRDT text, reservations, comments, and suggestions after r
     assert.equal(second.synced.suggestions[0].color, '#ff6677');
     assert.equal(second.synced.suggestions[0].traceJson, createdTrace);
     assert.ok(second.synced.history.length >= 2);
+    const acceptedHistory = second.synced.history.find((entry) => entry.reason === 'suggestion');
+    assert.equal(acceptedHistory.author, 'Bob');
+    assert.equal(acceptedHistory.suggestionAuthor, 'Alice');
     const baseline = second.synced.history.find((entry) => entry.reason === 'baseline');
     const historicalVersion = waitForJson(second.socket, (message) => message.type === 'history-version'
       && message.id === baseline.id);
@@ -288,14 +318,22 @@ test('server restores CRDT text, reservations, comments, and suggestions after r
     assert.equal(Buffer.from((await historicalVersion).textBase64, 'base64').toString('utf8'), expected);
     const restoredHistory = waitForJson(second.socket, (message) => message.type === 'history'
       && message.entries[0]?.reason === 'restore');
+    const restoredReservations = waitForJson(second.socket, (message) => message.type === 'reservations'
+      && message.reservations?.some((item) => item.id === 'persistent-reservation'));
     second.socket.send(JSON.stringify({
       type: 'history-restore', id: baseline.id, headId: second.synced.historyHeadId,
       author: 'Bob', color: '#6699ff',
     }));
     const restored = await restoredHistory;
+    const restoredReservation = (await restoredReservations).reservations
+      .find((item) => item.id === 'persistent-reservation');
     assert.equal(restored.entries[0].author, 'Bob');
     await new Promise((resolve) => setTimeout(resolve, 50));
     assert.equal(second.document.getText('content').toString(), expected);
+    const repairedAfterRestore = resolvedReservation(second.document, restoredReservation);
+    assert.match(second.document.getText('content').toString().slice(
+      repairedAfterRestore.start, repairedAfterRestore.end,
+    ), /prototype_key/u, 'history restoration should re-anchor reservations to their keys');
     assert.equal(second.synced.commentThreads.length, 1, 'text restoration does not remove comments');
   } finally {
     first?.socket.close();

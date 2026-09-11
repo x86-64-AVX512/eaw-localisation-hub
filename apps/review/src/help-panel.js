@@ -48,8 +48,8 @@ const SEGMENTS = [
   segment('history-diff', '10. История Hub и Git diff', [
     '«История» показывает совместные серверные версии документа: кто и когда менял текст. Восстановление создаёт новую версию и не уничтожает старую историю, комментарии, брони или правки.',
     '«Git diff» показывает историю коммитов именно этого файла и следует за переименованиями. Выберите независимо левый и правый коммиты – так можно одним сравнением увидеть путь от ранней версии до HEAD.',
-    'В Git diff скрыты большие неизменённые области, но оставлены строки контекста. Длинные строки переносятся. Для сложного сравнения используйте полноэкранную кнопку и раскрывайте скрытые области только там, где нужен дополнительный контекст.',
-  ]),
+    'Версии истории, Git diff, diff тикетов и сверка локализации кэшируются на этом компьютере и повторно открываются быстрее. Кэш ограничен по размеру и не заменяет исходные данные; удалить его можно в «Настройки → Локальный кэш диффов».',
+  ], 2),
   segment('notifications', '11. Уведомления без спама', [
     'Ответ на ваш комментарий или обсуждение правки приходит сразу. Принятие и отклонение ваших правок объединяются в один пакет через десять минут. Действия с вашим тикетом и собственно редактирование тикета идут отдельными десятиминутными сводками.',
     'Колокольчик «Уведомления» показывает непрочитанное число. Список и настройки хранятся локально на этом компьютере; сервер держит ограниченный журнал доставки, чтобы Review мог забрать пропущенные события после краткого отключения.',
@@ -79,6 +79,8 @@ export function createHelpPanel({ state, token, showToast }) {
   const progress = document.querySelector('#tutorial-progress');
   const enabled = document.querySelector('#notifications-enabled');
   const sound = document.querySelector('#notification-sound');
+  const cacheInfo = document.querySelector('#diff-cache-info');
+  const cacheClear = document.querySelector('#diff-cache-clear');
   let index = 0;
   let mandatory = false;
   let saving = false;
@@ -109,6 +111,29 @@ export function createHelpPanel({ state, token, showToast }) {
       return false;
     }
   }
+  function formatBytes(value) {
+    const bytes = Math.max(0, Number(value) || 0);
+    if (bytes < 1024) return `${bytes} Б`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  }
+  async function cacheRequest(method = 'GET') {
+    const response = await fetch('/api/diff-cache', {
+      method, headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    return payload;
+  }
+  async function refreshCacheInfo() {
+    cacheInfo.textContent = 'Подсчёт размера…';
+    try {
+      const stats = await cacheRequest();
+      cacheInfo.textContent = `${stats.entries} записей · ${formatBytes(stats.bytes)} из ${formatBytes(stats.maximumBytes)}`;
+    } catch (error) {
+      cacheInfo.textContent = `Не удалось прочитать кэш: ${error.message}`;
+    }
+  }
   function render() {
     const segment = SEGMENTS[index];
     heading.textContent = segment.title;
@@ -122,8 +147,23 @@ export function createHelpPanel({ state, token, showToast }) {
     index = force ? 0 : Math.max(0, SEGMENTS.findIndex((item) => completedRevision(item.id) < item.revision));
     render(); tutorial.showModal();
   }
-  document.querySelector('#help-open').addEventListener('click', () => help.showModal());
+  document.querySelector('#help-open').addEventListener('click', () => {
+    help.showModal();
+    void refreshCacheInfo();
+  });
   document.querySelector('#help-close').addEventListener('click', () => help.close());
+  cacheClear.addEventListener('click', async () => {
+    cacheClear.disabled = true;
+    try {
+      const result = await cacheRequest('DELETE');
+      const cleared = result.cleared ?? {};
+      cacheInfo.textContent = `0 записей · 0 Б из ${formatBytes(result.maximumBytes)}`;
+      showToast(`Кэш диффов очищен: удалено ${cleared.entries ?? 0} записей (${formatBytes(cleared.bytes)}).`);
+    } catch (error) {
+      showToast(`Не удалось очистить кэш диффов: ${error.message}`, true);
+      await refreshCacheInfo();
+    } finally { cacheClear.disabled = false; }
+  });
   document.querySelector('#tutorial-repeat').addEventListener('click', () => { help.close(); openTutorial(true); });
   document.querySelector('#tutorial-back').addEventListener('click', () => { if (index > 0) { index -= 1; render(); } });
   document.querySelector('#tutorial-next').addEventListener('click', async () => {

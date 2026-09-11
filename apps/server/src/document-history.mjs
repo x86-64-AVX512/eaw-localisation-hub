@@ -34,6 +34,38 @@ function actorFields(actor) {
   };
 }
 
+function suggestionFields(suggestion) {
+  if (!suggestion) return {};
+  return {
+    suggestionId: suggestion.id ? String(suggestion.id) : null,
+    suggestionAuthorId: suggestion.authorId ? String(suggestion.authorId) : null,
+    suggestionAuthor: String(suggestion.author ?? 'Unknown'),
+    suggestionColor: String(suggestion.color ?? '#8a8a8a'),
+  };
+}
+
+function appliesSuggestion(previous, current, suggestion) {
+  const original = String(suggestion.originalText ?? '');
+  const replacement = String(suggestion.replacementText ?? '');
+  if (!original && !replacement) return false;
+  if (!original) {
+    let index = current.indexOf(replacement);
+    while (index >= 0) {
+      if (`${current.slice(0, index)}${current.slice(index + replacement.length)}` === previous) return true;
+      index = current.indexOf(replacement, index + 1);
+    }
+    return false;
+  }
+  let index = previous.indexOf(original);
+  while (index >= 0) {
+    if (`${previous.slice(0, index)}${replacement}${previous.slice(index + original.length)}` === current) {
+      return true;
+    }
+    index = previous.indexOf(original, index + 1);
+  }
+  return false;
+}
+
 export class DocumentHistory {
   constructor(target) {
     this.target = target;
@@ -91,7 +123,7 @@ export class DocumentHistory {
     return this.record(text, null, 'baseline', { coalesce: false });
   }
 
-  record(text, actor, reason = 'edit', { coalesce = true } = {}) {
+  record(text, actor, reason = 'edit', { coalesce = true, suggestion = null } = {}) {
     if (byteLength(text) > MAX_TEXT_BYTES) return false;
     const now = new Date().toISOString();
     const identity = actorFields(actor);
@@ -121,7 +153,8 @@ export class DocumentHistory {
       delete previous.textGzipBase64;
     } else {
       this.entries.push({
-        id: crypto.randomUUID(), ...identity, reason, createdAt: now, updatedAt: now,
+        id: crypto.randomUUID(), ...identity, ...suggestionFields(suggestion),
+        reason, createdAt: now, updatedAt: now,
         _text: text,
       });
     }
@@ -165,9 +198,75 @@ export class DocumentHistory {
       .map((id) => ({ id, displayName: this.ownerNames.get(id) ?? 'Unknown' }));
   }
 
-  conflicts(gitText) {
+  reconcileSuggestionAttribution(suggestions) {
+    const accepted = (Array.isArray(suggestions) ? suggestions : [])
+      .filter(({ status }) => status === 'accepted');
+    let previous = this.entries[0]?._text ?? (this.entries[0] ? unpackText(this.entries[0]) : '');
+    let changed = false;
+    for (const entry of this.entries.slice(1)) {
+      const current = entry._text ?? unpackText(entry);
+      if (entry.reason !== 'suggestion' || entry.suggestionAuthor !== undefined) {
+        previous = current;
+        continue;
+      }
+      const creator = {
+        id: entry.authorId,
+        displayName: entry.author,
+        color: entry.color,
+      };
+      const candidates = accepted.filter((item) => (
+        (!creator.id || item.authorId === creator.id)
+        && appliesSuggestion(previous, current, item)
+      ));
+      const decisions = new Set(candidates.map((item) => `${item.decidedById ?? ''}\0${item.decidedBy ?? ''}`));
+      const matched = decisions.size === 1 ? candidates[0] : null;
+      Object.assign(entry, suggestionFields({
+        id: matched?.id,
+        authorId: creator.id,
+        author: creator.displayName,
+        color: creator.color,
+      }), matched?.decidedBy ? {
+        authorId: matched.decidedById ? String(matched.decidedById) : null,
+        author: String(matched.decidedBy),
+        color: '#8a8a8a',
+      } : {
+        authorId: null,
+        author: 'Unknown',
+        color: '#8a8a8a',
+      });
+      for (const [key, line] of captureLocalisationVariant(previous, current)) {
+        const creatorVariant = creator.id ? this.authorVariants.get(creator.id) : null;
+        const migratedCreatorLine = creatorVariant?.get(key) === line;
+        if (migratedCreatorLine) {
+          creatorVariant.delete(key);
+          this.rebaseConflicts.get(creator.id)?.delete(key);
+        }
+        if (migratedCreatorLine && this.ownership.get(key) === creator.id) {
+          if (entry.authorId) this.ownership.set(key, entry.authorId);
+          else this.ownership.delete(key);
+        }
+        if (entry.authorId) {
+          const accepterVariant = this.authorVariants.get(entry.authorId) ?? new Map();
+          if (!accepterVariant.has(key)) accepterVariant.set(key, line);
+          this.authorVariants.set(entry.authorId, accepterVariant);
+          this.ownerNames.set(entry.authorId, entry.author);
+        }
+      }
+      changed = true;
+      previous = current;
+    }
+    return changed;
+  }
+
+  conflicts(gitText, subjectAuthorId = '') {
     this.updateGitBase(String(gitText ?? ''));
-    return localisationVariantConflicts(String(gitText ?? ''), this.authorVariants, this.ownerNames);
+    const conflicts = localisationVariantConflicts(
+      String(gitText ?? ''), this.authorVariants, this.ownerNames,
+    );
+    const subject = String(subjectAuthorId ?? '');
+    return subject
+      ? conflicts.filter(({ variants }) => variants.some(({ authorId }) => authorId === subject))
+      : conflicts;
   }
 
   updateGitBase(nextGitText) {
@@ -242,9 +341,18 @@ export class DocumentHistory {
   anonymise(userId) {
     let changed = false;
     for (const entry of this.entries) {
-      if (entry.authorId !== userId) continue;
-      Object.assign(entry, { authorId: null, author: 'Deleted user', color: '#8a8a8a' });
-      changed = true;
+      if (entry.authorId === userId) {
+        Object.assign(entry, { authorId: null, author: 'Deleted user', color: '#8a8a8a' });
+        changed = true;
+      }
+      if (entry.suggestionAuthorId === userId) {
+        Object.assign(entry, {
+          suggestionAuthorId: null,
+          suggestionAuthor: 'Deleted user',
+          suggestionColor: '#8a8a8a',
+        });
+        changed = true;
+      }
     }
     for (const [key, ownerId] of this.ownership) {
       if (ownerId === userId) {
@@ -285,7 +393,7 @@ export class DocumentHistory {
     }));
     const gitBaseGzipBase64 = this.gitBaseText === null ? null : packedText(this.gitBaseText);
     const rebaseConflicts = [...this.rebaseConflicts].map(([authorId, conflicts]) => ({ authorId, conflicts: [...conflicts.values()] }));
-    const serialise = () => `${JSON.stringify({ schema: 4, entries: persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts }, null, 2)}\n`;
+    const serialise = () => `${JSON.stringify({ schema: 5, entries: persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts }, null, 2)}\n`;
     let value = serialise();
     while (this.entries.length > 2 && byteLength(value) > MAX_STORED_BYTES) {
       this.entries.shift();

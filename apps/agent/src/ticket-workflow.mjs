@@ -82,9 +82,17 @@ export class TicketWorkflow {
       return { ticket: payload.ticket, files: payload.ticket.files.map((file) => ({ path: file })) };
     }
     const snapshot = await this.snapshot(id, requestedFile);
-    return {
-      ticket: snapshot.ticket,
-      files: snapshot.files.map((file) => {
+    const cacheKey = JSON.stringify([
+      this.hub.options.server,
+      path.resolve(this.hub.options.repo),
+      id,
+      snapshot.ticket.baseCommit,
+      snapshot.files.map((file) => [
+        file.path, file.ticketHash ?? '', file.ticketInitialised !== false,
+      ]),
+    ]);
+    const create = async () => (
+      snapshot.files.map((file) => {
         const base = gitText(this.hub.options.repo, snapshot.ticket.baseCommit, file.path);
         const ticket = file.ticketInitialised === false ? base : withoutUtf8Bom(decode(file.ticketTextBase64));
         return {
@@ -93,8 +101,12 @@ export class TicketWorkflow {
           ticketTextBase64: encode(ticket),
           changed: base !== ticket,
         };
-      }),
-    };
+      })
+    );
+    const files = this.hub.diffCache
+      ? this.hub.diffCache.getOrCreate('ticket-diff', cacheKey, create)
+      : create();
+    return { ticket: snapshot.ticket, files: await files };
   }
 
   async apply(id) {

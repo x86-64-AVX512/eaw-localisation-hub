@@ -167,6 +167,7 @@ export class DocumentBinding {
       return;
     }
     if (message.type === 'history-version') {
+      this.hub.rememberHistoryVersion?.(this, message);
       for (const client of this.clients) {
         if (client.kind !== 'review') continue;
         for (const [absolutePath, state] of client.documents) {

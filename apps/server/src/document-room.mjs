@@ -23,6 +23,7 @@ import { parseSuggestionTrace } from '../../../packages/shared/src/suggestion-tr
 import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mjs';
 import { textChangeSummary } from './notification-summary.mjs';
 import { auditDocumentControl, auditDocumentEdit } from './document-audit.mjs';
+import { repairReservationAnchors } from './reservation-anchors.mjs';
 import {
   DISPLAY_VERSION,
   MAX_CLIENTS_PER_ROOM,
@@ -118,7 +119,7 @@ export class DocumentRoom {
         } catch { /* ticket may have been removed concurrently */ }
       }
       const historyChanged = this.history.record(
-        currentText, account, origin?.historyReason ?? 'edit',
+        currentText, account, origin?.historyReason ?? 'edit', { suggestion: origin?.suggestion },
       );
       this.schedulePersist();
       for (const client of this.clients) {
@@ -166,6 +167,7 @@ export class DocumentRoom {
       this.suggestions = (Array.isArray(metadata.suggestions) ? metadata.suggestions : [])
         .slice(0, MAX_SUGGESTIONS_PER_ROOM)
         .map(minimalSuggestion);
+      if (this.history.reconcileSuggestionAttribution(this.suggestions)) this.schedulePersist();
       if (metadata.gitBase && typeof metadata.gitBase === 'object') {
         this.gitBase = {
           branch: String(metadata.gitBase.branch ?? ''),
@@ -177,6 +179,7 @@ export class DocumentRoom {
           text: String(metadata.gitBase.text ?? ''),
         };
       }
+      if (repairReservationAnchors(this.document, this.reservations)) this.schedulePersist();
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
@@ -372,6 +375,9 @@ export class DocumentRoom {
       if (content.length) content.delete(0, content.length);
       if (prepared.value) content.insert(0, prepared.value);
     }, { actor, historyReason });
+    if (repairReservationAnchors(this.document, this.reservations, { force: true })) {
+      this.broadcastReservations();
+    }
     this.stateBudgetBytes = Y.encodeStateAsUpdate(this.document).byteLength;
     this.lastAccessAt = Date.now();
   }
@@ -902,9 +908,6 @@ export class DocumentRoom {
         documentId: this.documentId, suggestionId: suggestion.id, decision: 'accepted',
       });
       this.notifyTicketOwner('suggestion-accepted', actor, { suggestionId: suggestion.id });
-      const textActor = suggestion.authorId && this.authStore.required
-        ? this.authStore.findDirectoryUser(actor, suggestion.authorId) ?? actor
-        : actor;
       this.document.transact(() => {
         resolved.text.delete(resolved.start, resolved.end - resolved.start);
         if (suggestion.replacementText) resolved.text.insert(resolved.start, suggestion.replacementText);
@@ -914,7 +917,17 @@ export class DocumentRoom {
           resolved.start,
           resolved.start + suggestion.replacementText.length,
         );
-      }, { socket, historyReason: 'suggestion', actor: textActor });
+      }, {
+        socket,
+        historyReason: 'suggestion',
+        actor,
+        suggestion: {
+          id: suggestion.id,
+          authorId: suggestion.authorId,
+          author: suggestion.author,
+          color: suggestion.color,
+        },
+      });
       this.stateBudgetBytes = projectedBytes;
       this.schedulePersist();
       this.broadcastReview();
@@ -996,7 +1009,7 @@ export class DocumentRoom {
         subjectAuthorId,
         textBase64: Buffer.from(text, 'utf8').toString('base64'),
         contributors: this.history.contributors(),
-        conflicts: this.history.conflicts(baseText),
+        conflicts: this.history.conflicts(baseText, subjectAuthorId),
         gitConflicts: this.history.personalGitConflicts(subjectAuthorId),
       }));
       return;
@@ -1024,24 +1037,10 @@ export class DocumentRoom {
       const currentText = this.document.getText('content');
       if (currentText.toString() === restored) return;
       const actor = this.actorFor(socket, message, 'History restoration');
-      const candidate = new Y.Doc();
-      let projectedBytes;
-      try {
-        Y.applyUpdate(candidate, Y.encodeStateAsUpdate(this.document));
-        const candidateText = candidate.getText('content');
-        candidateText.delete(0, candidateText.length);
-        if (restored) candidateText.insert(0, restored);
-        projectedBytes = Y.encodeStateAsUpdate(candidate).byteLength;
-        if (projectedBytes > MAX_ROOM_STATE_BYTES) throw new ProtocolLimitError('Restored version is too large');
-        this.registry.assertStateBudget(this, projectedBytes);
-      } finally {
-        candidate.destroy();
-      }
-      this.document.transact(() => {
-        currentText.delete(0, currentText.length);
-        if (restored) currentText.insert(0, restored);
-      }, { socket, historyReason: 'restore', actor });
-      this.stateBudgetBytes = projectedBytes;
+      const prepared = this.prepareReplacement(restored);
+      if (prepared.stateBytes > MAX_ROOM_STATE_BYTES) throw new ProtocolLimitError('Restored version is too large');
+      this.registry.assertStateBudget(this, prepared.stateBytes);
+      this.replacePrepared(prepared, actor, 'restore');
       return;
     }
 

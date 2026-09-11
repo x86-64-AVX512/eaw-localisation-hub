@@ -20,7 +20,9 @@ function parseLocalisationSourceLine(content) {
   return null;
 }
 
-function escapeUnescapedQuotes(value) {
+const ASCII_DOUBLE_QUOTE = '\u0022';
+
+function escapeUnescapedAsciiQuotes(value) {
   let result = '';
   let consecutiveSlashes = 0;
   for (const character of value) {
@@ -29,7 +31,9 @@ function escapeUnescapedQuotes(value) {
       result += character;
       continue;
     }
-    if (character === '"' && consecutiveSlashes % 2 === 0) result += '\\';
+    // Paradox values are delimited only by the ASCII quote U+0022. Russian
+    // typographic quotes («», „“, and similar characters) are ordinary text.
+    if (character === ASCII_DOUBLE_QUOTE && consecutiveSlashes % 2 === 0) result += '\\';
     result += character;
     consecutiveSlashes = 0;
   }
@@ -64,9 +68,9 @@ export function parseKeyReplacementBatch(source) {
       continue;
     }
     const key = parsed.key;
-    const text = escapeUnescapedQuotes(parsed.value);
+    const text = escapeUnescapedAsciiQuotes(parsed.value);
     const roundTrip = parseReplacementLine(`${key}:0 "${text}"`);
-    if (!roundTrip || escapeUnescapedQuotes(roundTrip.value) !== text) {
+    if (!roundTrip || escapeUnescapedAsciiQuotes(roundTrip.value) !== text) {
       errors.push({ line: index + 1, message: 'Значение не удалось безопасно разобрать и собрать обратно.' });
       continue;
     }

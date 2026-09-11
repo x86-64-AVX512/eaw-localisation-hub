@@ -351,6 +351,9 @@ test('personal file controls expose per-key gutter and dialog selection with a v
   assert.match(variants, /type: 'personalFileSelectionSet'/u);
   assert.match(variants, /checkbox\.addEventListener\('change'/u);
   assert.match(variants, /GUTTER_GLYPH_MARGIN/u);
+  assert.match(variants, /isWholeLine: false/u,
+    'one local-file glyph must belong to one model line, not every visual wrap row');
+  assert.doesNotMatch(variants, /isWholeLine: true/u);
   assert.match(variants, /classList\?\.contains\('local-file-check'\)/u,
     'clicking another Monaco gutter decoration must not toggle local-file selection');
   assert.match(hub, /message\.type === 'personalFileSelectionSet'/u);

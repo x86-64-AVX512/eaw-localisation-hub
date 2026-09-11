@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
-  auditLocalisation, localisationDiffText, localisationInlineComments, localisationStructure,
+  auditLocalisation, localisationAuditCacheKey, localisationDiffText,
+  localisationInlineComments, localisationStructure,
 } from '../apps/agent/src/localisation-audit.mjs';
 
 test('structural lines compare comments and preserve every physical line', () => {
@@ -104,6 +105,22 @@ test('localisation audit keeps replace files inside the replace language pair', 
     assert.equal(result.russianDiffText, result.englishDiffText);
     assert.deepEqual(result.russianInlineComments, [{ line: 2, text: '#Done' }]);
     assert.deepEqual(result.englishInlineComments, [{ line: 2, text: '#Snow #First event' }]);
+  } finally { await fs.rm(repository, { recursive: true, force: true }); }
+});
+
+test('localisation audit cache identity changes when either paired file changes', async () => {
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-audit-cache-key-'));
+  const russian = path.join(repository, 'localisation', 'russian', 'sample_l_russian.yml');
+  const english = path.join(repository, 'localisation', 'english', 'sample_l_english.yml');
+  try {
+    await fs.mkdir(path.dirname(russian), { recursive: true });
+    await fs.mkdir(path.dirname(english), { recursive: true });
+    await fs.writeFile(russian, 'l_russian:\n key:0 "Да"\n');
+    await fs.writeFile(english, 'l_english:\n key:0 "Yes"\n');
+    const initial = await localisationAuditCacheKey(repository, russian);
+    assert.equal(await localisationAuditCacheKey(repository, russian), initial);
+    await fs.writeFile(english, 'l_english:\n key:0 "Changed"\n');
+    assert.notEqual(await localisationAuditCacheKey(repository, russian), initial);
   } finally { await fs.rm(repository, { recursive: true, force: true }); }
 });
 

@@ -6,6 +6,7 @@ import test from 'node:test';
 import { WebSocket } from 'ws';
 import { startReviewServer } from '../apps/agent/src/review-server.mjs';
 import { persistentReviewEndpoint } from '../apps/agent/src/review-endpoint.mjs';
+import { DiffCache } from '../apps/agent/src/diff-cache.mjs';
 
 function waitForOpen(socket) {
   return new Promise((resolve, reject) => {
@@ -84,6 +85,8 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       return { tickets: [] };
     },
   };
+  hub.diffCache = new DiffCache(path.join(state, 'diff-cache'));
+  await hub.diffCache.set('test', 'cached-diff', { left: 'a', right: 'b' });
   const review = await startReviewServer(hub, {
     repo: repository, state, workspace: 'test', user: 'Reviewer', color: '#abcdef',
   });
@@ -106,6 +109,19 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     const payload = await bootstrap.json();
     assert.equal(payload.path, tracked);
     assert.equal(Buffer.from(payload.textBase64, 'base64').toString('utf8').includes('REVIEW_KEY'), true);
+
+    const cacheUnauthorized = await fetch(`${discovery.origin}/api/diff-cache`);
+    assert.equal(cacheUnauthorized.status, 401);
+    const cacheStats = await fetch(`${discovery.origin}/api/diff-cache`, {
+      headers: { Authorization: `Bearer ${discovery.token}` },
+    });
+    assert.equal(cacheStats.status, 200);
+    assert.equal((await cacheStats.json()).entries, 1);
+    const cacheCleared = await fetch(`${discovery.origin}/api/diff-cache`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${discovery.token}` },
+    });
+    assert.equal(cacheCleared.status, 200);
+    assert.equal((await cacheCleared.json()).cleared.entries, 1);
 
     const replaceOriginal = await fetch(`${discovery.origin}/api/bootstrap?readonly=english&path=${encodeURIComponent(replaceEnglish)}`, {
       headers: { Authorization: `Bearer ${discovery.token}` },

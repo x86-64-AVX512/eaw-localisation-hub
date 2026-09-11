@@ -20,9 +20,10 @@ import { handleTicketReviewApi } from './ticket-review-api.mjs';
 import { persistentReviewEndpoint } from './review-endpoint.mjs';
 import { fileHistoryDiff, listFileHistory } from './git-file-history.mjs';
 import { runGitSync } from './git-executable.mjs';
-import { auditLocalisation } from './localisation-audit.mjs';
+import { auditLocalisation, localisationAuditCacheKey } from './localisation-audit.mjs';
 import { currentGitFileBlob } from './git-ticket-context.mjs';
 import { confirmDiskMaterialisation } from './disk-reconciliation.mjs';
+import { DiffCache } from './diff-cache.mjs';
 
 const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -209,6 +210,8 @@ function requestIsLoopback(request, port) {
 export async function startReviewServer(hub, options) {
   const endpoint = await persistentReviewEndpoint(options);
   const { token, port: preferredPort } = endpoint;
+  const diffCache = hub.diffCache ?? new DiffCache(path.join(options.state, 'diff-cache'));
+  await diffCache.initialise();
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'review-web');
   const server = http.createServer(async (request, response) => {
     const address = server.address();
@@ -222,6 +225,21 @@ export async function startReviewServer(hub, options) {
       requestUrl = new URL(request.url ?? '/', `http://127.0.0.1:${port}`);
     } catch {
       response.writeHead(400).end();
+      return;
+    }
+    if (requestUrl.pathname === '/api/diff-cache') {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      try {
+        let payload;
+        if (request.method === 'GET') payload = await diffCache.stats();
+        else if (request.method === 'DELETE') payload = { cleared: await diffCache.clear(), ...(await diffCache.stats()) };
+        else { response.writeHead(405).end(); return; }
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify(payload));
+      } catch (error) {
+        response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
       return;
     }
     if (requestUrl.pathname === '/api/bootstrap') {
@@ -297,15 +315,18 @@ export async function startReviewServer(hub, options) {
         const fromCommit = requestUrl.searchParams.get('from')
           ?? requestUrl.searchParams.get('commit') ?? '';
         const toCommit = requestUrl.searchParams.get('to') ?? 'HEAD';
-        const payload = fileHistoryDiff(
-          options.repo,
-          relativePath,
-          fromCommit,
-          requestUrl.searchParams.get('fromPath')
-            ?? requestUrl.searchParams.get('historicalPath') ?? relativePath,
-          toCommit,
-          requestUrl.searchParams.get('toPath') ?? relativePath,
-        );
+        const fromPath = requestUrl.searchParams.get('fromPath')
+          ?? requestUrl.searchParams.get('historicalPath') ?? relativePath;
+        const toPath = requestUrl.searchParams.get('toPath') ?? relativePath;
+        const cacheKey = JSON.stringify([
+          path.resolve(options.repo), hub.currentGitCommit(), relativePath,
+          fromCommit, fromPath, toCommit, toPath,
+        ]);
+        const payload = await diffCache.getOrCreate('git-history-diff', cacheKey, async () => (
+          fileHistoryDiff(
+            options.repo, relativePath, fromCommit, fromPath, toCommit, toPath,
+          )
+        ));
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify({
           ...payload,
@@ -323,7 +344,11 @@ export async function startReviewServer(hub, options) {
     if (requestUrl.pathname === '/api/localisation-audit' && request.method === 'GET') {
       if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
       try {
-        const payload = await auditLocalisation(options.repo, requestUrl.searchParams.get('path') ?? '');
+        const requested = requestUrl.searchParams.get('path') ?? '';
+        const cacheKey = await localisationAuditCacheKey(options.repo, requested);
+        const payload = await diffCache.getOrCreate('localisation-audit', cacheKey, () => (
+          auditLocalisation(options.repo, requested)
+        ));
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify(payload));
       } catch (error) {

@@ -7,7 +7,7 @@ const MAX_DISCUSSION_MESSAGES = 100;
 
 export function minimalReservation(reservation) {
   const assignee = String(reservation.assignee ?? reservation.createdBy ?? 'Unknown');
-  return {
+  const result = {
     id: String(reservation.id),
     assigneeId: reservation.assigneeId ? String(reservation.assigneeId) : null,
     assignee,
@@ -19,6 +19,8 @@ export function minimalReservation(reservation) {
     endRelative: String(reservation.endRelative),
     initialKeys: Array.isArray(reservation.initialKeys) ? reservation.initialKeys.map(String) : [],
   };
+  if (reservation.orphaned === true) result.orphaned = true;
+  return result;
 }
 
 export function minimalDiscussionMessage(message) {

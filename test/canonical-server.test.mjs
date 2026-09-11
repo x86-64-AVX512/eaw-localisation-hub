@@ -77,6 +77,23 @@ async function connect(port, head, blob) {
   return { socket, ydoc, messages, synced };
 }
 
+function encodedRelative(position) {
+  return Buffer.from(Y.encodeRelativePosition(position)).toString('base64');
+}
+
+function reservationText(document, reservation) {
+  const text = document.getText('content');
+  const start = Y.createAbsolutePositionFromRelativePosition(
+    Y.decodeRelativePosition(Buffer.from(reservation.startRelative, 'base64')), document,
+  );
+  const end = Y.createAbsolutePositionFromRelativePosition(
+    Y.decodeRelativePosition(Buffer.from(reservation.endRelative, 'base64')), document,
+  );
+  assert.equal(start?.type, text);
+  assert.equal(end?.type, text);
+  return text.toString().slice(Math.min(start.index, end.index), Math.max(start.index, end.index));
+}
+
 test('server seeds rooms from Git and blocks only an outdated file blob', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-canonical-server-'));
   let server;
@@ -129,6 +146,20 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     liveText.insert(0, 'l_russian:\n canonical: "Live"\n');
     current.socket.send(Y.encodeStateAsUpdate(current.ydoc, beforeEdit));
     await new Promise((resolve) => setTimeout(resolve, 100));
+    const canonicalStart = liveText.toString().indexOf('canonical');
+    const reservationCreated = waitForRecordedMessage(
+      current.messages,
+      ({ type, reservations }) => type === 'reservations'
+        && reservations?.some(({ id }) => id === 'canonical-reservation'),
+      'canonical reservation creation',
+    );
+    current.socket.send(JSON.stringify({
+      type: 'reservation-create', id: 'canonical-reservation', assignee: 'Alice', createdBy: 'Alice',
+      color: '#ff6677', initialKeys: ['canonical'],
+      startRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(liveText, canonicalStart, -1)),
+      endRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(liveText, liveText.length, 0)),
+    }));
+    await reservationCreated;
     const currentClosed = once(current.socket, 'close');
     current.socket.close();
     await currentClosed;
@@ -142,6 +173,12 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     const conflicted = await connect(port, remoteCommit, remoteBlob);
     assert.equal(conflicted.synced.git.status, 'conflict');
     assert.deepEqual(conflicted.synced.git.conflicts.map(({ key }) => key), ['canonical']);
+    const refreshedReservations = waitForRecordedMessage(
+      conflicted.messages,
+      ({ type, reservations }) => type === 'reservations'
+        && reservations?.some(({ id }) => id === 'canonical-reservation'),
+      'reservation re-anchor after Git refresh',
+    );
     conflicted.socket.send(JSON.stringify({
       type: 'git-conflict-resolve', key: 'canonical', choice: 'external',
     }));
@@ -155,6 +192,9 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.match(conflicted.ydoc.getText('content').toString(), /"Remote"/u);
+    const refreshedReservation = (await refreshedReservations).reservations
+      .find(({ id }) => id === 'canonical-reservation');
+    assert.match(reservationText(conflicted.ydoc, refreshedReservation), /canonical: "Remote"/u);
     conflicted.socket.close();
   } finally {
     await stopProcess(server);

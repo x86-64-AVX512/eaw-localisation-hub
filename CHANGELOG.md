@@ -1,6 +1,19 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F5` form; package metadata uses `0.8.7-beta.5`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F7` form; package metadata uses `0.8.7-beta.7`.
+
+## 0.8.7F7 – 2026-09-11
+
+- Desktop Agent now keeps a bounded, compressed local cache for immutable Hub history versions, Git history comparisons, ticket file diffs, and localisation audits. Cache keys include the source revision or content fingerprint, so changed inputs cannot reuse stale comparisons.
+- Review settings show the cache entry count and disk usage and can clear the cache immediately. Cached data remains local, contains no credentials, is capped at 256 MiB and can always be recreated from its original sources.
+
+## 0.8.7F6 – 2026-09-10
+
+- Per-key local-file glyphs are anchored to the first visual row of each real Monaco model line, so wrapping a long localisation value no longer repeats the checkbox on every display row.
+- Personal-variant conflicts are returned only to authors who participate in them. Unrelated users no longer see other contributors' collisions presented as conflicts with their own working file.
+- Batch key replacement escapes only ASCII double quotes used by Paradox localisation syntax; Russian guillemets such as `«текст»` are preserved verbatim.
+- Git refreshes and history restores re-anchor every reservation to its saved localisation keys after replacing the CRDT text. Existing collapsed reservations are repaired when their room is loaded; reservations whose keys were actually removed are reported as orphaned instead of as empty ranges at the start of the file.
+- Accepted-suggestion history now records and displays the proposal creator separately from the person who accepted it. Personal-file ownership follows the accepter; legacy entries are reconciled with retained suggestion decisions where possible and no longer attribute accepted shared text to the proposal creator.
 
 ## 0.8.7F5 – 2026-09-10
 

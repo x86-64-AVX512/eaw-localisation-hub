@@ -64,3 +64,53 @@ test('Agent applies a ticket without writing collaborative ticket text into the 
     await fs.rm(repository, { recursive: true, force: true });
   }
 });
+
+test('ticket diff caches immutable file pairs without freezing current ticket metadata', async () => {
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-ticket-diff-cache-'));
+  const relativePath = 'localisation/russian/test_l_russian.yml';
+  const absolutePath = path.join(repository, ...relativePath.split('/'));
+  const base = 'l_russian:\n key_one:0 "Base"\n';
+  const ticketText = 'l_russian:\n key_one:0 "Ticket"\n';
+  try {
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, base);
+    git(repository, 'init');
+    git(repository, 'config', 'user.email', 'test@example.invalid');
+    git(repository, 'config', 'user.name', 'Test');
+    git(repository, 'add', '.');
+    git(repository, 'commit', '-m', 'base');
+    const commit = git(repository, 'rev-parse', 'HEAD');
+    let status = 'open';
+    let created = 0;
+    let cached;
+    const hub = {
+      options: { repo: repository, server: 'wss://hub.invalid' },
+      diffCache: {
+        async getOrCreate(_namespace, _key, create) {
+          if (!cached) { created += 1; cached = await create(); }
+          return cached;
+        },
+      },
+      async ticketRequest() {
+        return {
+          ticket: { id: 'ticket-id', baseCommit: commit, status },
+          files: [{
+            path: relativePath,
+            ticketHash: hash(ticketText),
+            ticketInitialised: true,
+            ticketTextBase64: Buffer.from(ticketText).toString('base64'),
+          }],
+        };
+      },
+    };
+    const workflow = new TicketWorkflow(hub);
+    assert.equal((await workflow.diff('ticket-id', relativePath)).ticket.status, 'open');
+    status = 'review';
+    const second = await workflow.diff('ticket-id', relativePath);
+    assert.equal(second.ticket.status, 'review');
+    assert.equal(created, 1);
+    assert.equal(Buffer.from(second.files[0].ticketTextBase64, 'base64').toString('utf8'), ticketText);
+  } finally {
+    await fs.rm(repository, { recursive: true, force: true });
+  }
+});

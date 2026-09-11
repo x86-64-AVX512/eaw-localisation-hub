@@ -24,6 +24,7 @@ test('automatic training waits for a server-confirmed incomplete account', (t) =
     '#help-dialog', '#tutorial-dialog', '#tutorial-content', '#tutorial-heading',
     '#tutorial-progress', '#notifications-enabled', '#notification-sound', '#tutorial-back',
     '#tutorial-next', '#help-open', '#help-close', '#tutorial-repeat', '#version-notice',
+    '#diff-cache-info', '#diff-cache-clear',
   ];
   const elements = new Map(selectors.map((selector) => [selector, fakeElement()]));
   const stored = new Map();
@@ -40,7 +41,7 @@ test('automatic training waits for a server-confirmed incomplete account', (t) =
   });
 
   const state = {
-    version: '0.8.7F5', serverVersion: '0.8.7F5',
+    version: '0.8.7F7', serverVersion: '0.8.7F7',
     trainingProgress: {}, trainingProgressConfirmed: false,
   };
   const panel = createHelpPanel({ state, token: 'local', showToast() {} });
@@ -54,7 +55,7 @@ test('automatic training waits for a server-confirmed incomplete account', (t) =
 
   tutorial.close();
   state.trainingProgress = Object.fromEntries(SEGMENT_IDS.map((id) => [
-    id, ['personal-file', 'agent-plugin'].includes(id) ? 2 : 1,
+    id, ['personal-file', 'history-diff', 'agent-plugin'].includes(id) ? 2 : 1,
   ]));
   panel.refresh();
   assert.equal(tutorial.opens, 1, 'server-confirmed completed training stays closed');
@@ -77,8 +78,10 @@ test('the disabled Notepad++ integration is mandatory training revision 2', () =
   });
 
   const state = {
-    version: '0.8.7F5', serverVersion: '0.8.7F5', trainingProgressConfirmed: true,
-    trainingProgress: Object.fromEntries(SEGMENT_IDS.map((id) => [id, id === 'personal-file' ? 2 : 1])),
+    version: '0.8.7F7', serverVersion: '0.8.7F7', trainingProgressConfirmed: true,
+    trainingProgress: Object.fromEntries(SEGMENT_IDS.map((id) => [
+      id, ['personal-file', 'history-diff'].includes(id) ? 2 : 1,
+    ])),
   };
   const panel = createHelpPanel({ state, token: 'local', showToast() {} });
   panel.refresh();
@@ -105,9 +108,9 @@ test('per-key local-file selection is mandatory training revision 2', () => {
   });
 
   const state = {
-    version: '0.8.7F5', serverVersion: '0.8.7F5', trainingProgressConfirmed: true,
+    version: '0.8.7F7', serverVersion: '0.8.7F7', trainingProgressConfirmed: true,
     trainingProgress: Object.fromEntries(SEGMENT_IDS.map((id) => [
-      id, id === 'agent-plugin' ? 2 : 1,
+      id, ['history-diff', 'agent-plugin'].includes(id) ? 2 : 1,
     ])),
   };
   const panel = createHelpPanel({ state, token: 'local', showToast() {} });
@@ -121,7 +124,7 @@ test('per-key local-file selection is mandatory training revision 2', () => {
 test('Agent distinguishes local startup from server-confirmed training progress', () => {
   const messages = [];
   const context = {
-    identity: null, serverVersion: '0.8.7F5',
+    identity: null, serverVersion: '0.8.7F7',
     options: { user: 'Alice', color: '#abcdef', workspace: 'general-dev' },
     clients: new Set(),
   };

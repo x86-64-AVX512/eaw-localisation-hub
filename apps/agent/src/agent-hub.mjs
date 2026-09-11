@@ -19,6 +19,7 @@ import { resolveReviewAnchors } from './review-document.mjs';
 import { serverHttpUrl } from './server-http-url.mjs';
 import { transitionWorkspace } from './workspace-transition.mjs';
 import { runGitSync } from './git-executable.mjs';
+import { DiffCache } from './diff-cache.mjs';
 
 function sendLine(socket, message) {
   if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
@@ -134,6 +135,7 @@ class PluginClient {
 export class AgentHub {
   constructor(options) {
     this.options = options;
+    this.diffCache = new DiffCache(path.join(options.state, 'diff-cache'));
     this.clients = new Set();
     this.clientsById = new Map();
     this.presenceClientId = `agent-presence-${process.pid}-${crypto.randomUUID()}`;
@@ -652,9 +654,11 @@ export class AgentHub {
     else if (message.type === 'suggestionRevert') state.binding.decideSuggestion(client, absolutePath, message, 'revert');
     else if (message.type === 'suggestionReject') state.binding.decideSuggestion(client, absolutePath, message, 'reject');
     else if (message.type === 'suggestionDelete') state.binding.deleteReviewItem(client, absolutePath, message, 'suggestion');
-    else if (message.type === 'historyRequest') state.binding.socket?.send(JSON.stringify({
-      type: 'history-get', id: message.id,
-    }));
+    else if (message.type === 'historyRequest') {
+      this.requestHistoryVersion(client, absolutePath, state.binding, message.id).catch(() => {
+        state.binding.socket?.send(JSON.stringify({ type: 'history-get', id: message.id }));
+      });
+    }
     else if (message.type === 'historyRestore') state.binding.socket?.send(JSON.stringify({
       type: 'history-restore', id: message.id, headId: message.headId,
       author: this.options.user, color: this.options.color,
@@ -688,6 +692,26 @@ export class AgentHub {
     }
     else if (message.type === 'externalConflictResolve') state.binding.resolveExternalConflict(client, absolutePath, message);
     else throw new Error(`Unknown plugin message type: ${message.type}`);
+  }
+
+  historyCacheKey(binding, id) {
+    return JSON.stringify([this.options.server, binding.documentId, String(id)]);
+  }
+
+  rememberHistoryVersion(binding, message) {
+    const value = { id: String(message.id), textBase64: String(message.textBase64) };
+    this.diffCache.set('document-history', this.historyCacheKey(binding, message.id), value).catch(() => {});
+  }
+
+  async requestHistoryVersion(client, absolutePath, binding, id) {
+    const cached = await this.diffCache.get('document-history', this.historyCacheKey(binding, id));
+    const state = client.documents.get(absolutePath);
+    if (!state || state.binding !== binding) return;
+    if (cached?.id === String(id) && typeof cached.textBase64 === 'string') {
+      client.send({ type: 'historyVersion', path: absolutePath, ...cached });
+      return;
+    }
+    binding.socket?.send(JSON.stringify({ type: 'history-get', id }));
   }
 
   async updateAvatar(client, avatarBase64) {

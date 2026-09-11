@@ -25,6 +25,19 @@ test('batch key parser safely escapes ordinary quotes inside a value', () => {
   assert.equal(changed.text, 'l_russian:\n EYE_desc:0 "\\"Доброжелательность\\" и обещания \\"свободы\\"."\n');
 });
 
+test('batch key parser preserves Russian guillemets and escapes only ASCII quotes', () => {
+  const parsed = parseKeyReplacementBatch(
+    'EYE_quote:0 "Он сказал: «да», а затем "нет"."',
+  );
+  assert.deepEqual(parsed.errors, []);
+  assert.equal(parsed.entries[0].text, 'Он сказал: «да», а затем \\"нет\\".');
+  const changed = replaceLocalisationValues('l_russian:\n EYE_quote:0 "Старый текст"\n', new Map([
+    ['EYE_quote', parsed.entries[0].text],
+  ]));
+  assert.equal(changed.text, 'l_russian:\n EYE_quote:0 "Он сказал: «да», а затем \\"нет\\"."\n');
+  assert.doesNotMatch(changed.text, /\\[«»]/u);
+});
+
 test('batch key parser round-trips the reported EYE value without duplication', () => {
   const input = 'EYE_all_well_take_back_desc:0 ""Доброжелательность" чужеземцев – лишь тонкая вуаль, скрывающая неудержимую жажду грабежа и порабощения; их обещания "свободы" – жалкое оправдание для уничтожения самой самобытности йети. Мы не потерпим такого унижения."';
   const parsed = parseKeyReplacementBatch(input);

@@ -105,6 +105,7 @@ function resolveAnchoredRange(binding, item) {
 }
 
 export function resolveReservation(binding, reservation) {
+  if (reservation.orphaned) return null;
   return resolveAnchoredRange(binding, reservation);
 }
 

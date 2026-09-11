@@ -76,7 +76,53 @@ test('schema-3 histories retain unproven variants but require a choice before wr
   const currentGit = baseline.replace('"Git"', '"New"');
   assert.match(restored.personalProjection('alice', currentGit), /"Old"/u);
   assert.equal(restored.personalGitConflicts('alice')[0].reason, 'legacy-base-unknown');
-  assert.equal(JSON.parse(restored.serialise()).schema, 4);
+  assert.equal(JSON.parse(restored.serialise()).schema, 5);
+});
+
+test('accepted suggestions separate creator from accepter and belong only to the accepter projection', () => {
+  const history = new DocumentHistory('unused');
+  history.ensureBaseline(baseline);
+  const accepted = baseline.replace('key:0 "Git"', 'key:0 "Proposed"');
+  history.record(accepted, bob, 'suggestion', {
+    suggestion: { id: 'suggestion-1', authorId: 'alice', author: 'Alice', color: '#f00' },
+  });
+
+  const entry = history.summaries()[0];
+  assert.equal(entry.author, 'Bob');
+  assert.equal(entry.suggestionAuthor, 'Alice');
+  assert.equal(entry.suggestionId, 'suggestion-1');
+  assert.equal(history.personalProjection('alice', baseline), baseline);
+  assert.equal(history.personalProjection('bob', baseline), accepted);
+});
+
+test('legacy suggestion attribution migrates away from its creator without losing unrelated personal edits', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-history-suggestion-migrate-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const target = path.join(directory, 'history.json');
+  const history = new DocumentHistory(target);
+  history.ensureBaseline(baseline);
+  const accepted = baseline.replace('key:0 "Git"', 'key:0 "Proposed"');
+  history.record(accepted, alice, 'suggestion');
+  const withOwnEdit = accepted.replace('other:0 "Keep"', 'other:0 "Alice own"');
+  history.record(withOwnEdit, alice, 'edit');
+  const legacy = JSON.parse(history.serialise());
+  legacy.schema = 4;
+  await fs.writeFile(target, JSON.stringify(legacy));
+
+  const restored = new DocumentHistory(target);
+  await restored.load();
+  assert.equal(restored.reconcileSuggestionAttribution([{
+    id: 'suggestion-1', status: 'accepted', authorId: 'alice', author: 'Alice', color: '#f00',
+    decidedById: 'bob', decidedBy: 'Bob', originalText: '"Git"', replacementText: '"Proposed"',
+  }]), true);
+  const entry = restored.summaries().find(({ reason }) => reason === 'suggestion');
+  assert.equal(entry.author, 'Bob');
+  assert.equal(entry.suggestionAuthor, 'Alice');
+  assert.equal(restored.personalProjection('alice', baseline),
+    baseline.replace('other:0 "Keep"', 'other:0 "Alice own"'));
+  assert.equal(restored.personalProjection('bob', baseline), accepted);
+  assert.equal(restored.reconcileSuggestionAttribution([]), false);
+  assert.equal(JSON.parse(restored.serialise()).schema, 5);
 });
 
 test('personal projections retain moved blank lines, comments, key order, and an empty file', () => {
@@ -169,6 +215,10 @@ test('same-key author variants remain separate and are reported as conflicts', a
         { authorId: 'bob', author: 'Bob', line: ' shared:0 "Bob"' },
       ],
     }]);
+    assert.equal(history.conflicts(git, 'alice').length, 1,
+      'an involved author sees the personal-variant conflict');
+    assert.deepEqual(history.conflicts(git, 'unrelated-user'), [],
+      'an unrelated user is not warned about other authors\' personal variants');
     await fs.writeFile(target, history.serialise());
     const restored = new DocumentHistory(target);
     await restored.load();

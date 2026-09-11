@@ -248,12 +248,18 @@ dialog input {
 .history-item { display: grid; width: 100%; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; border-left: 4px solid var(--history-color); text-align: left; }
 .history-item strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-item span { min-width: 0; overflow: hidden; color: #aeb8c8; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.history-item.suggestion-attribution span { grid-row: 2; grid-column: 1 / -1; margin-top: 2px; }
 .history-item .history-author { grid-row: 2; grid-column: 1 / -1; }
 .history-item small { grid-column: 1 / -1; margin-top: 3px; color: #7f8998; }
 .history-item.selected, .history-item.selected-from, .history-item.selected-to { border-color: var(--history-color); background: #303848; }
 .history-item.selected-from::after { content: "слева"; color: #8db7ff; font-size: 10px; }
 .version-notice { background: #143b2b; border-color: #2d9e67; color: #c7f7df; }
-.simple-dialog-shell { display: grid; gap: 14px; width: min(900px, 88vw); max-height: 82vh; padding: 18px; overflow: auto; }
+.simple-dialog-shell { display: grid; gap: 14px; width: 100%; max-height: 82vh; padding: 18px; overflow: auto; }
+.simple-dialog-shell > hr { width: 100%; margin: 0; border: 0; border-top: 1px solid #303746; }
+.help-dialog .simple-dialog-shell > label { display: flex; align-items: center; gap: 8px; margin: 0; }
+.help-dialog input[type="checkbox"] { width: auto; }
+.settings-cache-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; }
+.settings-cache-row .dialog-hint { margin: 4px 0 0; }
 .localisation-audit-dialog { width: min(1320px, calc(100vw - 32px)); height: min(860px, calc(100vh - 32px)); max-width: none; max-height: none; }
 .localisation-audit-shell { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); width: 100%; height: 100%; overflow: hidden; }
 .localisation-audit-shell .history-toolbar { flex-wrap: wrap; }
@@ -475,6 +481,10 @@ dialog textarea {
   .actions { justify-self: stretch; justify-content: flex-start; }
   .status { display: none; }
   #toast { left: 258px; max-width: calc(100vw - 540px); }
+}
+@media (max-width: 520px) {
+  .settings-cache-row { grid-template-columns: minmax(0, 1fr); }
+  .settings-cache-row button { justify-self: start; }
 }
 /* Monaco marks lines missing on one side of a diff with a striped filler.
    Collapsed Git history is easier to scan when those placeholders stay plain. */

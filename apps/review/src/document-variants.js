@@ -77,7 +77,9 @@ export function createDocumentVariants({
       ? entries.filter((entry) => entry.kind !== 'structure').map((entry) => ({
         range: new monaco.Range(entry.lineNumber, 1, entry.lineNumber, 1),
         options: {
-          isWholeLine: true,
+          // Keep the glyph anchored to column 1 of the model line. A whole-line
+          // decoration is repeated by Monaco for every visual word-wrap row.
+          isWholeLine: false,
           glyphMarginClassName: `local-file-check ${entry.state}`,
           glyphMarginHoverMessage: { value: entry.state === 'included'
             ? 'Изменение включено в локальный файл. Нажмите, чтобы вернуть Git-вариант.'
@@ -210,7 +212,7 @@ export function createDocumentVariants({
     message.textContent = gitConflicts.length
       ? `Запись личной версии приостановлена: конфликтов с Git – ${gitConflicts.length}. Выберите вариант для каждого конфликта.`
       : conflictCount
-      ? `Рабочий файл изолирован от чужих изменений. Конфликтующих ключей: ${conflictCount}.`
+      ? `Ваши персональные изменения пересекаются с вариантами других участников. Конфликтующих ключей: ${conflictCount}.`
       : 'Рабочий файл содержит только Git и ваши изменения; совместная версия хранится отдельно.';
     dialog.classList.toggle('has-conflicts', conflictCount > 0 || gitConflicts.length > 0);
     openButton.classList.toggle('has-conflicts', conflictCount > 0 || gitConflicts.length > 0);

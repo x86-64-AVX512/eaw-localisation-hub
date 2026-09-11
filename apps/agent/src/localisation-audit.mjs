@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { normaliseTrackedPath, withoutUtf8Bom } from '../../../packages/shared/src/text.mjs';
@@ -93,6 +94,20 @@ export function localisationInlineComments(text) {
     const key = /^([^#\s][^:]*)\s*:/u.exec(content)?.[1]?.trim();
     return key ? [{ line: index + 1, text: parts.comment.trim() }] : [];
   });
+}
+
+export async function localisationAuditCacheKey(repository, requestedPath) {
+  const sourcePath = normaliseTrackedPath(repository, path.resolve(repository, requestedPath));
+  const otherPath = counterpart(sourcePath);
+  const [source, other] = await Promise.all([
+    fs.readFile(path.resolve(repository, sourcePath)),
+    fs.readFile(path.resolve(repository, otherPath)),
+  ]).catch((error) => { throw new Error(`Не удалось найти парный файл: ${otherPath}. ${error.message}`); });
+  const digest = crypto.createHash('sha256')
+    .update(sourcePath).update('\0').update(source)
+    .update('\0').update(otherPath).update('\0').update(other)
+    .digest('hex');
+  return JSON.stringify([sourcePath, otherPath, digest]);
 }
 
 export async function auditLocalisation(repository, requestedPath) {
