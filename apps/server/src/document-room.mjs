@@ -25,6 +25,12 @@ import { textChangeSummary } from './notification-summary.mjs';
 import { auditDocumentControl, auditDocumentEdit } from './document-audit.mjs';
 import { repairReservationAnchors } from './reservation-anchors.mjs';
 import {
+  captureReviewAnchor,
+  captureReviewAnchors,
+  repairReviewAnchors,
+  resolveReviewRange,
+} from './review-anchors.mjs';
+import {
   DISPLAY_VERSION,
   MAX_CLIENTS_PER_ROOM,
   MAX_CRDT_UPDATE_BYTES,
@@ -180,6 +186,19 @@ export class DocumentRoom {
         };
       }
       if (repairReservationAnchors(this.document, this.reservations)) this.schedulePersist();
+      const reviewItems = [...this.commentThreads, ...this.suggestions];
+      let reviewMetadataChanged = false;
+      for (const item of reviewItems) {
+        const resolved = resolveReviewRange(this.document, item);
+        if (!item.anchorLocator && resolved?.start === 0 && resolved.end === 0) {
+          item.orphaned = true;
+          reviewMetadataChanged = true;
+        } else if (!item.anchorLocator && captureReviewAnchor(this.document, item)) {
+          reviewMetadataChanged = true;
+        }
+      }
+      if (repairReviewAnchors(this.document, reviewItems)) reviewMetadataChanged = true;
+      if (reviewMetadataChanged) this.schedulePersist();
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
@@ -335,7 +354,8 @@ export class DocumentRoom {
 
   async refreshCanonical() {
     if (!this.canonicalSource?.enabled || this.clients.size === 0) return;
-    await this.applyCanonicalSnapshot(await this.canonicalSource.snapshot(this.documentId, { force: true }));
+    const snapshot = await this.canonicalSource.snapshot(this.documentId, { force: true });
+    await this.enqueueMessage(() => this.applyCanonicalSnapshot(snapshot));
   }
 
   broadcastDirectory() {
@@ -370,6 +390,8 @@ export class DocumentRoom {
   }
 
   replacePrepared(prepared, actor, historyReason = 'ticket-operation') {
+    const reviewItems = [...this.commentThreads, ...this.suggestions];
+    captureReviewAnchors(this.document, reviewItems);
     this.document.transact(() => {
       const content = this.document.getText('content');
       if (content.length) content.delete(0, content.length);
@@ -378,6 +400,8 @@ export class DocumentRoom {
     if (repairReservationAnchors(this.document, this.reservations, { force: true })) {
       this.broadcastReservations();
     }
+    repairReviewAnchors(this.document, reviewItems, { force: true });
+    this.broadcastReview();
     this.stateBudgetBytes = Y.encodeStateAsUpdate(this.document).byteLength;
     this.lastAccessAt = Date.now();
   }
@@ -443,6 +467,7 @@ export class DocumentRoom {
   }
 
   resolveRelativeRange(item) {
+    if (item.orphaned) return null;
     try {
       const start = Y.createAbsolutePositionFromRelativePosition(
         Y.decodeRelativePosition(Buffer.from(item.startRelative, 'base64')),
@@ -467,6 +492,8 @@ export class DocumentRoom {
     suggestion.endRelative = Buffer.from(Y.encodeRelativePosition(
       Y.createRelativePositionFromTypeIndex(text, end, -1),
     )).toString('base64');
+    delete suggestion.orphaned;
+    captureReviewAnchor(this.document, suggestion);
   }
 
   appendDiscussionMessage(target, actor, message) {
@@ -506,16 +533,20 @@ export class DocumentRoom {
     }
   }
 
-  receiveBinary(socket, update) {
+  receiveBinary(socket, update, authorise = () => {}) {
     const incoming = Uint8Array.from(update);
     if (incoming.byteLength === 0 || incoming.byteLength > MAX_CRDT_UPDATE_BYTES) {
       throw new ProtocolLimitError('CRDT update exceeds the per-message limit');
     }
 
-    return this.enqueueMessage(() => auditDocumentEdit(this, socket, incoming, () => this.applyBinary(socket, incoming)));
+    return this.enqueueMessage(() => {
+      authorise();
+      return auditDocumentEdit(this, socket, incoming, () => this.applyBinary(socket, incoming, authorise));
+    });
   }
 
-  async applyBinary(socket, incoming) {
+  async applyBinary(socket, incoming, authorise = () => {}) {
+    authorise();
     if (this.destroyed || socket.readyState !== WebSocket.OPEN) return;
 
     let projectedBytes = this.stateBudgetBytes + incoming.byteLength;
@@ -540,6 +571,7 @@ export class DocumentRoom {
       throw error;
     }
     if (this.destroyed || socket.readyState !== WebSocket.OPEN) return;
+    authorise();
     if (projectedBytes > MAX_ROOM_STATE_BYTES) throw new ProtocolLimitError('Document state exceeds the per-room limit');
     this.registry.assertStateBudget(this, projectedBytes);
 
@@ -548,8 +580,11 @@ export class DocumentRoom {
     this.lastAccessAt = Date.now();
   }
 
-  receiveJson(socket, message) {
-    return this.enqueueMessage(() => auditDocumentControl(this, socket, message, () => this.applyJson(socket, message)));
+  receiveJson(socket, message, authorise = () => {}) {
+    return this.enqueueMessage(() => {
+      authorise();
+      return auditDocumentControl(this, socket, message, () => this.applyJson(socket, message));
+    });
   }
 
   enqueueMessage(operation) {
@@ -709,6 +744,7 @@ export class DocumentRoom {
           endRelative: controlledString(message.endRelative, 'Comment end', 4096, { required: true }),
           messages: [],
         };
+        captureReviewAnchor(this.document, thread);
         this.commentThreads.push(thread);
         try {
           this.appendDiscussionMessage(thread, actor, message);
@@ -782,7 +818,7 @@ export class DocumentRoom {
         if (!originalText && !replacementText) {
           throw new ProtocolLimitError('Suggestion must insert or delete text');
         }
-        this.suggestions.push({
+        const suggestion = {
           id,
           authorId: actor.id,
           author: actor.displayName,
@@ -797,7 +833,9 @@ export class DocumentRoom {
           replacementText,
           traceJson,
           messages: [],
-        });
+        };
+        captureReviewAnchor(this.document, suggestion);
+        this.suggestions.push(suggestion);
         try {
           this.assertMetadataBudget();
         } catch (error) {
@@ -855,12 +893,17 @@ export class DocumentRoom {
         originalText: suggestion.originalText,
         replacementText: suggestion.replacementText,
         traceJson: suggestion.traceJson ?? '',
+        anchorLocator: suggestion.anchorLocator,
+        orphaned: suggestion.orphaned,
       };
       Object.assign(suggestion, next);
+      delete suggestion.orphaned;
+      captureReviewAnchor(this.document, suggestion);
       try {
         this.assertMetadataBudget();
       } catch (error) {
         Object.assign(suggestion, previous);
+        if (!previous.orphaned) delete suggestion.orphaned;
         throw error;
       }
       this.schedulePersist();

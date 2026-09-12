@@ -28,6 +28,20 @@ function resultMap(ticket, body) {
   return results;
 }
 
+function assertSameMutableTicket(ticketStore, original) {
+  const current = ticketStore.get(original.id);
+  if (current.archivedAt || ['applied', 'closed'].includes(current.status)) {
+    throw new AuthError('Ticket is no longer writable', 409, 'ticket_read_only');
+  }
+  if (current.baseBranch !== original.baseBranch
+      || current.baseCommit !== original.baseCommit
+      || current.files.length !== original.files.length
+      || current.files.some((file, index) => file !== original.files[index])) {
+    throw new AuthError('Ticket changed during operation', 409, 'ticket_revision_changed');
+  }
+  return current;
+}
+
 export class TicketService {
   constructor(ticketStore, roomRegistry) {
     this.ticketStore = ticketStore;
@@ -40,6 +54,12 @@ export class TicketService {
 
   mainDocument(ticket, file) {
     return `${ticket.baseBranch}:${file}`;
+  }
+
+  withRoomsLocked(rooms, operation) {
+    return this.roomRegistry.withRoomsLocked
+      ? this.roomRegistry.withRoomsLocked(rooms, operation)
+      : operation();
   }
 
   async snapshot(id, requestedFile = '') {
@@ -72,26 +92,37 @@ export class TicketService {
       throw new AuthError('Ticket cannot be applied now', 409, 'ticket_read_only');
     }
     const supplied = resultMap(ticket, body);
-    const prepared = [];
+    const roomPairs = [];
     for (const file of ticket.files) {
-      const item = supplied.get(file);
       const ticketRoom = await this.roomRegistry.get(this.ticketDocument(ticket, file));
       const mainRoom = await this.roomRegistry.get(this.mainDocument(ticket, file));
-      if (digest(ticketRoom.currentText()) !== String(item.ticketHash)
-        || digest(mainRoom.currentText()) !== String(item.mainHash)) {
-        throw new AuthError('Ticket or main document changed during apply', 409, 'ticket_revision_changed');
-      }
-      const replacement = mainRoom.prepareReplacement(decodedText(item.textBase64, 'Applied text'));
-      prepared.push({ file, mainRoom, replacement });
+      roomPairs.push({ file, ticketRoom, mainRoom });
     }
-    this.roomRegistry.assertBatchStateBudget(prepared.map((item) => ({
-      room: item.mainRoom, stateBytes: item.replacement.stateBytes,
-    })));
-    for (const item of prepared) item.mainRoom.replacePrepared(item.replacement, actor, 'ticket-apply');
-    await Promise.all(prepared.map((item) => item.mainRoom.flush()));
-    const applied = await this.ticketStore.systemStatus(actor, id, 'applied', 'applied', {
-      files: prepared.length, baseCommit: ticket.baseCommit,
+    let prepared;
+    let applied;
+    await this.withRoomsLocked(roomPairs.flatMap(({ ticketRoom, mainRoom }) => [ticketRoom, mainRoom]), async () => {
+      assertSameMutableTicket(this.ticketStore, ticket);
+      prepared = roomPairs.map(({ file, ticketRoom, mainRoom }) => {
+        const item = supplied.get(file);
+        if (digest(ticketRoom.currentText()) !== String(item.ticketHash)
+          || digest(mainRoom.currentText()) !== String(item.mainHash)) {
+          throw new AuthError('Ticket or main document changed during apply', 409, 'ticket_revision_changed');
+        }
+        return {
+          file,
+          mainRoom,
+          replacement: mainRoom.prepareReplacement(decodedText(item.textBase64, 'Applied text')),
+        };
+      });
+      this.roomRegistry.assertBatchStateBudget(prepared.map((item) => ({
+        room: item.mainRoom, stateBytes: item.replacement.stateBytes,
+      })));
+      for (const item of prepared) item.mainRoom.replacePrepared(item.replacement, actor, 'ticket-apply');
+      applied = await this.ticketStore.systemStatus(actor, id, 'applied', 'applied', {
+        files: prepared.length, baseCommit: ticket.baseCommit,
+      });
     });
+    await Promise.all(prepared.map((item) => item.mainRoom.flush()));
     return { ticket: applied };
   }
 
@@ -101,24 +132,37 @@ export class TicketService {
       throw new AuthError('Ticket cannot be rebased now', 409, 'ticket_read_only');
     }
     const supplied = resultMap(ticket, body);
-    const prepared = [];
+    const verifiedBase = this.ticketStore.verifyBase
+      ? await this.ticketStore.verifyBase(body.baseBranch, body.baseCommit)
+      : null;
+    const rooms = [];
     for (const file of ticket.files) {
-      const item = supplied.get(file);
       const ticketRoom = await this.roomRegistry.get(this.ticketDocument(ticket, file));
-      if (digest(ticketRoom.currentText()) !== String(item.ticketHash)) {
-        throw new AuthError('Ticket changed during rebase', 409, 'ticket_revision_changed');
-      }
-      prepared.push({
-        room: ticketRoom,
-        replacement: ticketRoom.prepareReplacement(decodedText(item.textBase64, 'Rebased text')),
-      });
+      rooms.push({ file, room: ticketRoom });
     }
-    this.roomRegistry.assertBatchStateBudget(prepared.map((item) => ({
-      room: item.room, stateBytes: item.replacement.stateBytes,
-    })));
-    for (const item of prepared) item.room.replacePrepared(item.replacement, actor, 'ticket-rebase');
+    let prepared;
+    let rebased;
+    await this.withRoomsLocked(rooms.map(({ room }) => room), async () => {
+      assertSameMutableTicket(this.ticketStore, ticket);
+      prepared = rooms.map(({ file, room }) => {
+        const item = supplied.get(file);
+        if (digest(room.currentText()) !== String(item.ticketHash)) {
+          throw new AuthError('Ticket changed during rebase', 409, 'ticket_revision_changed');
+        }
+        return {
+          room,
+          replacement: room.prepareReplacement(decodedText(item.textBase64, 'Rebased text')),
+        };
+      });
+      this.roomRegistry.assertBatchStateBudget(prepared.map((item) => ({
+        room: item.room, stateBytes: item.replacement.stateBytes,
+      })));
+      for (const item of prepared) item.room.replacePrepared(item.replacement, actor, 'ticket-rebase');
+      rebased = verifiedBase
+        ? await this.ticketStore.setVerifiedBase(actor, id, verifiedBase)
+        : await this.ticketStore.setBase(actor, id, body.baseBranch, body.baseCommit);
+    });
     await Promise.all(prepared.map((item) => item.room.flush()));
-    const rebased = await this.ticketStore.setBase(actor, id, body.baseBranch, body.baseCommit);
     return { ticket: rebased };
   }
 

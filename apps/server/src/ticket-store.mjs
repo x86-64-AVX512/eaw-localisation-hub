@@ -207,19 +207,28 @@ export class TicketStore {
     return publicTicket(ticket);
   }
 
-  async setBase(actor, id, baseBranch, baseCommit) {
-    const ticket = this.mutable(id);
-    const previousCommit = ticket.baseCommit;
+  async verifyBase(baseBranch, baseCommit) {
     const verifiedBranch = validBranch(baseBranch);
     const verifiedCommit = validCommit(baseCommit);
     await this.commitVerifier?.verify(verifiedBranch, verifiedCommit);
-    ticket.baseBranch = verifiedBranch;
-    ticket.baseCommit = verifiedCommit;
+    return { branch: verifiedBranch, commit: verifiedCommit };
+  }
+
+  async setVerifiedBase(actor, id, verifiedBase) {
+    const ticket = this.mutable(id);
+    const previousCommit = ticket.baseCommit;
+    ticket.baseBranch = validBranch(verifiedBase.branch);
+    ticket.baseCommit = validCommit(verifiedBase.commit);
     ticket.status = 'in_progress';
     this.addEvent(ticket, actor, 'rebased', { previousCommit, baseCommit: ticket.baseCommit });
     this.touch(ticket, actor);
     await this.persist();
     return publicTicket(ticket);
+  }
+
+  async setBase(actor, id, baseBranch, baseCommit) {
+    this.mutable(id);
+    return this.setVerifiedBase(actor, id, await this.verifyBase(baseBranch, baseCommit));
   }
 
   async archive(actor, id) {

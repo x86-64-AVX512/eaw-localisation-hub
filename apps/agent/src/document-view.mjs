@@ -88,6 +88,7 @@ export function syncClientView(binding, client, absolutePath) {
 }
 
 function resolveAnchoredRange(binding, item) {
+  if (item.orphaned) return null;
   try {
     const start = Y.createAbsolutePositionFromRelativePosition(
       decodeRelativePosition(item.startRelative),

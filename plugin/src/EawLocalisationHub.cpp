@@ -22,7 +22,7 @@
 #include "VisualStyle.h"
 namespace {
 
-constexpr wchar_t kPluginName[] = L"EaW Localisation Hub 0.8.7F7";
+constexpr wchar_t kPluginName[] = L"EaW Localisation Hub 0.8.7F8";
 constexpr std::int64_t kProtocolVersion = EAW_HUB_PROTOCOL_VERSION;
 constexpr size_t kMaximumIpcMessageBytes = 12 * 1024 * 1024;
 constexpr ULONGLONG kPresenceHeartbeatMilliseconds = 10 * 1000;
@@ -1079,7 +1079,7 @@ void EnsurePanel(bool show) {
         g_panelDockData.pszName = L"Правки и комментарии";
         g_panelDockData.dlgID = 0;
         g_panelDockData.uMask = DWS_DF_CONT_LEFT;
-        g_panelDockData.pszAddInfo = L"EaW Hub 0.8.7F7";
+        g_panelDockData.pszAddInfo = L"EaW Hub 0.8.7F8";
         g_panelDockData.pszModuleName = L"EawLocalisationHub.dll";
         SendMessageW(
             g_nppData._nppHandle,
@@ -1219,7 +1219,7 @@ void HandleAgentLine(const std::string& json) {
         EnterCriticalSection(&g_outboundLock); g_outbound.clear(); ResetEvent(g_writeEvent); LeaveCriticalSection(&g_outboundLock); g_ipcAuthenticated.store(true);
         WritePipeLine(
             "{\"type\":\"hello\",\"clientId\":\"" + JsonEscape(g_clientId)
-            + "\",\"version\":\"0.8.7F7\",\"protocol\":" + std::to_string(kProtocolVersion) + ",\"proof\":\""
+            + "\",\"version\":\"0.8.7F8\",\"protocol\":" + std::to_string(kProtocolVersion) + ",\"proof\":\""
             + HmacSha256(g_ipcSecret, "plugin:" + nonce) + "\"}",
             true);
         SetEvent(g_writeEvent);

@@ -20,7 +20,7 @@ import { handleTicketReviewApi } from './ticket-review-api.mjs';
 import { persistentReviewEndpoint } from './review-endpoint.mjs';
 import { fileHistoryDiff, listFileHistory } from './git-file-history.mjs';
 import { runGitSync } from './git-executable.mjs';
-import { auditLocalisation, localisationAuditCacheKey } from './localisation-audit.mjs';
+import { prepareLocalisationAudit } from './localisation-audit.mjs';
 import { currentGitFileBlob } from './git-ticket-context.mjs';
 import { confirmDiskMaterialisation } from './disk-reconciliation.mjs';
 import { DiffCache } from './diff-cache.mjs';
@@ -345,10 +345,12 @@ export async function startReviewServer(hub, options) {
       if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
       try {
         const requested = requestUrl.searchParams.get('path') ?? '';
-        const cacheKey = await localisationAuditCacheKey(options.repo, requested);
-        const payload = await diffCache.getOrCreate('localisation-audit', cacheKey, () => (
-          auditLocalisation(options.repo, requested)
-        ));
+        const prepared = await prepareLocalisationAudit(options.repo, requested);
+        let payload = await diffCache.get('localisation-audit', prepared.cacheKey);
+        if (payload === undefined) {
+          payload = prepared.create();
+          await diffCache.set('localisation-audit', prepared.cacheKey, payload).catch(() => false);
+        }
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify(payload));
       } catch (error) {

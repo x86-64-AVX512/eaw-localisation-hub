@@ -96,13 +96,17 @@ export function localisationInlineComments(text) {
   });
 }
 
-export async function localisationAuditCacheKey(repository, requestedPath) {
+async function readAuditPair(repository, requestedPath) {
   const sourcePath = normaliseTrackedPath(repository, path.resolve(repository, requestedPath));
   const otherPath = counterpart(sourcePath);
   const [source, other] = await Promise.all([
     fs.readFile(path.resolve(repository, sourcePath)),
     fs.readFile(path.resolve(repository, otherPath)),
   ]).catch((error) => { throw new Error(`Не удалось найти парный файл: ${otherPath}. ${error.message}`); });
+  return { sourcePath, otherPath, source, other };
+}
+
+function auditCacheKey({ sourcePath, otherPath, source, other }) {
   const digest = crypto.createHash('sha256')
     .update(sourcePath).update('\0').update(source)
     .update('\0').update(otherPath).update('\0').update(other)
@@ -110,13 +114,13 @@ export async function localisationAuditCacheKey(repository, requestedPath) {
   return JSON.stringify([sourcePath, otherPath, digest]);
 }
 
-export async function auditLocalisation(repository, requestedPath) {
-  const sourcePath = normaliseTrackedPath(repository, path.resolve(repository, requestedPath));
-  const otherPath = counterpart(sourcePath);
-  const [source, other] = await Promise.all([
-    fs.readFile(path.resolve(repository, sourcePath), 'utf8'),
-    fs.readFile(path.resolve(repository, otherPath), 'utf8'),
-  ]).catch((error) => { throw new Error(`Не удалось найти парный файл: ${otherPath}. ${error.message}`); });
+export async function localisationAuditCacheKey(repository, requestedPath) {
+  return auditCacheKey(await readAuditPair(repository, requestedPath));
+}
+
+function auditPair({ sourcePath, otherPath, source: sourceBuffer, other: otherBuffer }) {
+  const source = sourceBuffer.toString('utf8');
+  const other = otherBuffer.toString('utf8');
   const sourceEntries = entries(withoutUtf8Bom(source));
   const otherEntries = entries(withoutUtf8Bom(other));
   const sourceKeys = grouped(sourceEntries);
@@ -166,4 +170,13 @@ export async function auditLocalisation(repository, requestedPath) {
     englishInlineComments: localisationInlineComments(englishText),
     rows,
   };
+}
+
+export async function prepareLocalisationAudit(repository, requestedPath) {
+  const pair = await readAuditPair(repository, requestedPath);
+  return { cacheKey: auditCacheKey(pair), create: () => auditPair(pair) };
+}
+
+export async function auditLocalisation(repository, requestedPath) {
+  return auditPair(await readAuditPair(repository, requestedPath));
 }

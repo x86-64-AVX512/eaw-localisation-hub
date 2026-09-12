@@ -23,6 +23,7 @@ export class RoomRegistry {
     this.persistencePromise = Promise.resolve();
     this.evictionTimer = null;
     this.canonicalTimer = null;
+    this.persistenceGenerations = new Map();
   }
 
   async initialise() {
@@ -91,6 +92,24 @@ export class RoomRegistry {
     }
   }
 
+  async withRoomsLocked(rooms, operation) {
+    const unique = [...new Set(rooms)].filter(Boolean);
+    const predecessors = unique.map((room) => room.messageQueue ?? Promise.resolve());
+    const releases = [];
+    for (const [index, room] of unique.entries()) {
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+      releases.push(release);
+      room.messageQueue = predecessors[index].catch(() => {}).then(() => gate);
+    }
+    await Promise.all(predecessors.map((pending) => pending.catch(() => {})));
+    try {
+      return await operation();
+    } finally {
+      for (const release of releases) release();
+    }
+  }
+
   async get(documentId) {
     const existing = this.rooms.get(documentId);
     if (existing) {
@@ -110,6 +129,7 @@ export class RoomRegistry {
     this.rooms.set(documentId, loading);
     try {
       const room = await loading;
+      room.persistenceGeneration = this.persistenceGenerations.get(hash) ?? 0;
       this.rooms.set(documentId, room);
       this.assertStateBudget(room, room.stateBudgetBytes);
       return room;
@@ -122,7 +142,10 @@ export class RoomRegistry {
   }
 
   async persistRoom(room, update, metadata, history) {
+    room.persistenceGeneration ??= this.persistenceGenerations.get(room.hash) ?? 0;
+    const generation = room.persistenceGeneration;
     const operation = this.persistencePromise.catch(() => {}).then(async () => {
+      if (room.destroyed || (this.persistenceGenerations.get(room.hash) ?? 0) !== generation) return false;
       const nextBytes = update.length + byteLength(metadata) + byteLength(history);
       const previousBytes = this.persisted.get(room.hash) ?? 0;
       const projected = this.persistedTotalBytes - previousBytes + nextBytes;
@@ -136,6 +159,7 @@ export class RoomRegistry {
       this.persisted.set(room.hash, nextBytes);
       this.persistedTotalBytes = projected;
       room.persistedBytes = nextBytes;
+      return true;
     });
     this.persistencePromise = operation;
     await operation;
@@ -161,8 +185,10 @@ export class RoomRegistry {
   }
 
   async deleteDocuments(documentIds, closeReason = 'Ticket deleted') {
+    const removals = [];
     for (const documentId of documentIds) {
       const hash = crypto.createHash('sha256').update(documentId).digest('hex');
+      this.persistenceGenerations.set(hash, (this.persistenceGenerations.get(hash) ?? 0) + 1);
       const loaded = this.rooms.get(documentId);
       if (loaded) {
         const room = await loaded;
@@ -170,15 +196,22 @@ export class RoomRegistry {
         this.rooms.delete(documentId);
         room.destroy();
       }
-      const previousBytes = this.persisted.get(hash) ?? 0;
-      await Promise.all([
-        fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.update`), { force: true }),
-        fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.json`), { force: true }),
-        fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.history.json`), { force: true }),
-      ]);
-      this.persisted.delete(hash);
-      this.persistedTotalBytes = Math.max(0, this.persistedTotalBytes - previousBytes);
+      removals.push(hash);
     }
+    const operation = this.persistencePromise.catch(() => {}).then(async () => {
+      for (const hash of removals) {
+        const previousBytes = this.persisted.get(hash) ?? 0;
+        await Promise.all([
+          fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.update`), { force: true }),
+          fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.json`), { force: true }),
+          fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.history.json`), { force: true }),
+        ]);
+        this.persisted.delete(hash);
+        this.persistedTotalBytes = Math.max(0, this.persistedTotalBytes - previousBytes);
+      }
+    });
+    this.persistencePromise = operation;
+    await operation;
   }
 
   async close() {

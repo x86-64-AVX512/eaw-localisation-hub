@@ -1,6 +1,12 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F7` form; package metadata uses `0.8.7-beta.7`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F8` form; package metadata uses `0.8.7-beta.8`.
+
+## 0.8.7F8 – 2026-09-12
+
+- Git refreshes and history restores preserve comment and suggestion locations using bounded key-and-context fallback anchors. Unrecoverable discussions are reported as orphaned instead of silently moving to the beginning of the file.
+- Ticket apply and rebase operations lock every participating room and recheck revisions immediately before replacement. Rebase verifies the requested Git commit before changing ticket documents, and queued CRDT updates repeat their write-authorisation check before application.
+- Deleted ticket rooms cannot be recreated by an already queued persistence write. Late disk reads from detached Review bindings are ignored, and localisation audit cache keys and results are now computed from the same immutable pair of file snapshots.
 
 ## 0.8.7F7 – 2026-09-11
 

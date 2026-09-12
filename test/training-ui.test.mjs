@@ -41,7 +41,7 @@ test('automatic training waits for a server-confirmed incomplete account', (t) =
   });
 
   const state = {
-    version: '0.8.7F7', serverVersion: '0.8.7F7',
+    version: '0.8.7F8', serverVersion: '0.8.7F8',
     trainingProgress: {}, trainingProgressConfirmed: false,
   };
   const panel = createHelpPanel({ state, token: 'local', showToast() {} });
@@ -78,7 +78,7 @@ test('the disabled Notepad++ integration is mandatory training revision 2', () =
   });
 
   const state = {
-    version: '0.8.7F7', serverVersion: '0.8.7F7', trainingProgressConfirmed: true,
+    version: '0.8.7F8', serverVersion: '0.8.7F8', trainingProgressConfirmed: true,
     trainingProgress: Object.fromEntries(SEGMENT_IDS.map((id) => [
       id, ['personal-file', 'history-diff'].includes(id) ? 2 : 1,
     ])),
@@ -108,7 +108,7 @@ test('per-key local-file selection is mandatory training revision 2', () => {
   });
 
   const state = {
-    version: '0.8.7F7', serverVersion: '0.8.7F7', trainingProgressConfirmed: true,
+    version: '0.8.7F8', serverVersion: '0.8.7F8', trainingProgressConfirmed: true,
     trainingProgress: Object.fromEntries(SEGMENT_IDS.map((id) => [
       id, ['history-diff', 'agent-plugin'].includes(id) ? 2 : 1,
     ])),
@@ -124,7 +124,7 @@ test('per-key local-file selection is mandatory training revision 2', () => {
 test('Agent distinguishes local startup from server-confirmed training progress', () => {
   const messages = [];
   const context = {
-    identity: null, serverVersion: '0.8.7F7',
+    identity: null, serverVersion: '0.8.7F8',
     options: { user: 'Alice', color: '#abcdef', workspace: 'general-dev' },
     clients: new Set(),
   };

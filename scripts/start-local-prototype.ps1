@@ -186,7 +186,7 @@ try {
     $startedProcesses.Add($notepadB)
 
     $state = [pscustomobject]@{
-        Version = '0.8.7F7'
+        Version = '0.8.7F8'
         Status = 'running'
         SessionId = $sessionId
         StartedAt = [DateTime]::UtcNow.ToString('o')

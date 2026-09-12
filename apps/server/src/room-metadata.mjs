@@ -34,8 +34,22 @@ export function minimalDiscussionMessage(message) {
   };
 }
 
-export function minimalCommentThread(thread) {
+function minimalAnchorLocator(locator) {
+  if (!locator || typeof locator !== 'object') return null;
   return {
+    empty: locator.empty === true,
+    startKey: String(locator.startKey ?? '').slice(0, 512),
+    endKey: String(locator.endKey ?? '').slice(0, 512),
+    startOffset: Math.max(0, Number.isSafeInteger(locator.startOffset) ? locator.startOffset : 0),
+    endOffset: Math.max(0, Number.isSafeInteger(locator.endOffset) ? locator.endOffset : 0),
+    before: String(locator.before ?? '').slice(-96),
+    after: String(locator.after ?? '').slice(0, 96),
+    selected: String(locator.selected ?? '').slice(0, 512),
+  };
+}
+
+export function minimalCommentThread(thread) {
+  const result = {
     id: String(thread.id),
     authorId: thread.authorId ? String(thread.authorId) : null,
     author: String(thread.author ?? 'Unknown'),
@@ -48,11 +62,15 @@ export function minimalCommentThread(thread) {
       .slice(0, MAX_DISCUSSION_MESSAGES)
       .map(minimalDiscussionMessage),
   };
+  const anchorLocator = minimalAnchorLocator(thread.anchorLocator);
+  if (anchorLocator) result.anchorLocator = anchorLocator;
+  if (thread.orphaned === true) result.orphaned = true;
+  return result;
 }
 
 export function minimalSuggestion(suggestion) {
   const statuses = new Set(['open', 'accepted', 'rejected', 'stale']);
-  return {
+  const result = {
     id: String(suggestion.id),
     authorId: suggestion.authorId ? String(suggestion.authorId) : null,
     author: String(suggestion.author ?? 'Unknown'),
@@ -70,6 +88,10 @@ export function minimalSuggestion(suggestion) {
       .slice(0, MAX_DISCUSSION_MESSAGES)
       .map(minimalDiscussionMessage),
   };
+  const anchorLocator = minimalAnchorLocator(suggestion.anchorLocator);
+  if (anchorLocator) result.anchorLocator = anchorLocator;
+  if (suggestion.orphaned === true) result.orphaned = true;
+  return result;
 }
 
 async function metadataFiles(dataDirectory) {

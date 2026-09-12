@@ -101,6 +101,12 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
     return;
   }
   const externalText = await binding.readDiskText(absolutePath);
+  if (binding.paused || state.binding !== binding
+      || client.documents.get(absolutePath) !== state) return;
+  if (binding.hub.gitOperationInProgress?.()) {
+    binding.scheduleDiskCheck(client, absolutePath, state, 300);
+    return;
+  }
   const personal = binding.localFileText();
   if (!binding.synced || !binding.gitWritable) return;
 
