@@ -41,7 +41,7 @@ import {
   requireManager,
 } from './management-policy.mjs';
 import { updateTrainingProgress } from './training-progress.mjs';
-
+import { addSpellingWord, spellingWords } from './auth-spelling.mjs';
 export { ACCOUNT_ROLES, AuthError };
 const scryptAsync = promisify(crypto.scrypt);
 const SCRYPT_PARAMETERS = Object.freeze({ N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 });
@@ -64,7 +64,7 @@ export class AuthStore {
     this.atomicWrite = atomicWrite;
     this.statePath = path.join(dataDirectory, 'auth.json');
     this.bootstrapPath = path.join(dataDirectory, 'bootstrap-invite.txt');
-    this.state = { schema: 6, users: [], invites: [], sessions: [], backupTokens: [] };
+    this.state = { schema: 6, users: [], invites: [], sessions: [], backupTokens: [], spellingWords: [] };
     this.recoveryCodes = new RecoveryCodeHasher(dataDirectory, atomicWrite);
     this.persistPromise = Promise.resolve();
     this.passwordWorkPromise = Promise.resolve();
@@ -422,7 +422,8 @@ export class AuthStore {
   }
 
   async updateTrainingProgress(actor, segmentId, revision) { return updateTrainingProgress(this, actor, segmentId, revision); }
-
+  spellingWords(actor) { return spellingWords(this, actor); }
+  async addSpellingWord(actor, value) { return addSpellingWord(this, actor, value); }
   async issueRecoveryCode(actor) { return issueRecoveryCode(this, actor); }
   async confirmRecoveryCode(actor, code) { return confirmRecoveryCode(this, actor, code); }
   async discardPendingRecoveryCode(actor) { return discardPendingRecoveryCode(this, actor); }
@@ -433,13 +434,11 @@ export class AuthStore {
   async setTemporaryPassword(actor, userId, password) { return setTemporaryPassword(this, actor, userId, password); }
 
   async removeBootstrapInvite() { await fs.rm(this.bootstrapPath, { force: true }); }
-
   requirePermanentPassword(user) {
     if (user?.temporaryPassword) {
       throw new AuthError('A permanent password must be set before collaboration', 403, 'temporary_password_change_required');
     }
   }
-
   async createInvite(actor, options = {}) {
     const roles = normaliseRoles(options.roles ?? options.role);
     assertCanCreateInvite(actor, roles);

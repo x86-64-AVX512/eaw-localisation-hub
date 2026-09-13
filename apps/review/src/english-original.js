@@ -1,9 +1,9 @@
-function keyAtCursor(editor) {
+export function keyAtCursor(editor) {
   const model = editor.getModel();
   const position = editor.getPosition();
   if (!model || !position) return '';
   const line = model.getLineContent(position.lineNumber);
-  const match = /^\s*([^#\s][^:]*?):\d+\s/u.exec(line);
+  const match = /^\s*([^#\s][^:]*?):(?:\d+)?\s/u.exec(line);
   return match?.[1]?.trim() ?? '';
 }
 

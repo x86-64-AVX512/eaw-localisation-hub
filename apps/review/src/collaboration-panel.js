@@ -34,10 +34,12 @@ export function createCollaborationPanel({
   const presenceList = document.querySelector('#presence-list');
   const reservationList = document.querySelector('#reservation-list');
   const reservationTarget = document.querySelector('#reservation-target');
+  const conflictSection = document.querySelector('.conflicts-section');
   const conflictList = document.querySelector('#conflict-list');
   const deleteReservation = document.querySelector('#reservation-delete');
   const keepCollaborative = document.querySelector('#conflict-collaborative');
   const useExternal = document.querySelector('#conflict-external');
+  const reservationNodes = new Map();
 
   function jumpToConflict(conflict) {
     const model = editor.getModel();
@@ -86,25 +88,52 @@ export function createCollaborationPanel({
   }
 
   function renderReservations() {
-    reservationList.replaceChildren();
+    const previousScrollTop = reservationList.scrollTop;
     const values = [...state.reservations.values()].sort((left, right) => left.startByte - right.startByte);
-    if (!values.length) emptyList(reservationList, 'Броней нет.');
+    const live = new Set();
+    const nodes = [];
     for (const item of values) {
+      live.add(item.id);
       const details = [
         `${item.keyCount} ключ(а/ей)`, item.status === 'orphaned' ? 'границы потеряны' : item.status,
         item.createdBy && item.createdBy !== item.assignee ? `создал ${item.createdBy}` : '', item.comment,
       ].filter(Boolean).join(' · ');
-      reservationList.append(listButton(item.assignee, details, item.color,
-        state.selectedReservation === item.id, () => {
+      const fingerprint = JSON.stringify([
+        item.assignee, details, item.color, state.selectedReservation === item.id,
+        state.reservationTargets.find((target) => target.id === item.assigneeId)?.avatarBase64 ?? '',
+      ]);
+      let cached = reservationNodes.get(item.id);
+      if (!cached || cached.fingerprint !== fingerprint) {
+        const button = listButton(item.assignee, details, item.color,
+          state.selectedReservation === item.id, () => {
+          const current = state.reservations.get(item.id);
+          if (!current) return;
           state.selectedReservation = item.id;
           deleteReservation.disabled = false;
           renderReservations();
-          if (item.status !== 'orphaned') {
-            try { jumpToBytes(item.startByte, item.endByte); }
+          if (current.status !== 'orphaned') {
+            try { jumpToBytes(current.startByte, current.endByte); }
             catch { showToast('Границы брони обновляются.', true); }
           }
-        }, state.reservationTargets.find((target) => target.id === item.assigneeId)?.avatarBase64 ?? ''));
+        }, state.reservationTargets.find((target) => target.id === item.assigneeId)?.avatarBase64 ?? '');
+        cached = { fingerprint, button };
+        reservationNodes.set(item.id, cached);
+      }
+      nodes.push(cached.button);
     }
+    for (const id of reservationNodes.keys()) if (!live.has(id)) reservationNodes.delete(id);
+    if (!nodes.length) {
+      if (!reservationList.firstElementChild?.classList.contains('empty-list')) {
+        reservationList.replaceChildren(); emptyList(reservationList, 'Броней нет.');
+      }
+    } else {
+      nodes.forEach((node, index) => {
+        const current = reservationList.children[index] ?? null;
+        if (current !== node) reservationList.insertBefore(node, current);
+      });
+      while (reservationList.children.length > nodes.length) reservationList.lastElementChild.remove();
+    }
+    reservationList.scrollTop = previousScrollTop;
     document.querySelector('#reservation-count').textContent = String(values.length);
     if (!state.reservations.has(state.selectedReservation)) {
       state.selectedReservation = '';
@@ -116,7 +145,7 @@ export function createCollaborationPanel({
     const previousScrollTop = conflictList.scrollTop;
     conflictList.replaceChildren();
     const values = [...state.externalConflicts.values()];
-    if (!values.length) emptyList(conflictList, 'Конфликтов нет.');
+    conflictSection.hidden = values.length === 0;
     for (const item of values) {
       const identity = `${item.source || 'disk'}:${item.key}`;
       conflictList.append(listButton(item.label, item.detail, '#ff9b57', state.selectedConflict === identity, () => {

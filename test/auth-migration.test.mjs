@@ -24,6 +24,7 @@ test('schema 1 authentication migrates without retaining personal audit metadata
       createdAt: '2025-01-01T00:00:00.000Z',
       lastSeenAt: '2025-01-02T00:00:00.000Z',
       deviceName: 'Personal PC',
+      spellingWords: ['Эквестрия'],
     }],
     invites: [],
     sessions: [{
@@ -49,7 +50,10 @@ test('schema 1 authentication migrates without retaining personal audit metadata
     assert.equal((await auth.authenticate(migratedLogin.token)).displayName, 'Legacy Admin');
     await assert.rejects(fs.access(path.join(directory, 'bootstrap-invite.txt')), { code: 'ENOENT' });
     const persisted = await fs.readFile(path.join(directory, 'auth.json'), 'utf8');
-    assert.equal(JSON.parse(persisted).schema, 6);
+    const migratedState = JSON.parse(persisted);
+    assert.equal(migratedState.schema, 6);
+    assert.deepEqual(migratedState.spellingWords, ['эквестрия']);
+    assert.equal('spellingWords' in migratedState.users[0], false);
     for (const forbidden of [
       'createdAt', 'lastSeenAt', 'deviceName', 'displayNameKey', 'Personal PC',
       bootstrapCode, recovery.code, 'Legacy-admin-new-password-932!',

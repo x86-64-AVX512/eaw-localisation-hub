@@ -29,3 +29,9 @@ test('scroll synchronisation maps localisation keys instead of raw line numbers'
   assert.equal(lineForKey(english, 'SECOND_KEY'), 5);
   assert.equal(lineForKey(english, 'MISSING_KEY'), 0);
 });
+
+test('scroll synchronisation recognises localisation keys without a version number', () => {
+  const model = modelFrom(['l_russian:', ' previous:0 "До"', ' event.20.t: "Название"']);
+  assert.equal(keyAtLine(model, 3), 'event.20.t');
+  assert.equal(lineForKey(model, 'event.20.t'), 3);
+});

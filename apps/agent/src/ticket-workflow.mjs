@@ -35,7 +35,7 @@ function changedLineCounts(before, after) {
   for (const [line, count] of right) added += Math.max(0, count - (left.get(line) ?? 0));
   for (const [line, count] of left) removed += Math.max(0, count - (right.get(line) ?? 0));
   const keys = (text) => new Map(text.split(/\r?\n/u).map((line) => {
-    const match = /^\s*([^#\s][^:]*?):\d+\s/u.exec(line);
+    const match = /^\s*([^#\s][^:]*?):(?:\d+)?\s/u.exec(line);
     return match ? [match[1].trim(), line] : null;
   }).filter(Boolean));
   const beforeKeys = keys(before);

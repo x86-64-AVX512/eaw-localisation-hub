@@ -1,11 +1,16 @@
 {
   "name": "eaw-localisation-hub",
   "private": true,
-  "version": "0.8.7-beta.8",
+  "version": "0.8.7-beta.9",
   "description": "EaW collaborative localisation early beta",
   "license": "GPL-2.0-only",
   "author": "EaW Localisation Hub contributors",
-  "keywords": ["equestria-at-war", "localisation", "notepad-plus-plus", "collaboration"],
+  "keywords": [
+    "equestria-at-war",
+    "localisation",
+    "notepad-plus-plus",
+    "collaboration"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -40,13 +45,16 @@
     "build": "npm run build:client && npm run build:installer"
   },
   "dependencies": {
+    "dictionary-ru": "^3.0.0",
     "monaco-editor": "0.56.0",
+    "nspell": "^2.1.5",
+    "spell-checker-js": "1.2.3",
     "ws": "^8.21.3",
     "yjs": "^13.6.27"
   },
   "eawHub": {
-    "displayVersion": "0.8.7F8",
-    "windowsFileVersion": "0.8.7.8"
+    "displayVersion": "0.8.7F9",
+    "windowsFileVersion": "0.8.7.9"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

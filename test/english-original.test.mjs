@@ -5,6 +5,15 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { englishOriginal } from '../apps/agent/src/git-ticket-context.mjs';
+import { keyAtCursor } from '../apps/review/src/english-original.js';
+
+test('Review identifies a versionless localisation key under the cursor', () => {
+  const editor = {
+    getPosition: () => ({ lineNumber: 1 }),
+    getModel: () => ({ getLineContent: () => ' mandate_kravash.20.t: "Title"' }),
+  };
+  assert.equal(keyAtCursor(editor), 'mandate_kravash.20.t');
+});
 
 test('English original lookup resolves an exact key from the ticket base commit', async () => {
   const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-english-'));
@@ -15,6 +24,7 @@ test('English original lookup resolves an exact key from the ticket base commit'
     await fs.writeFile(path.join(repository, relative), [
       'l_english:',
       ' TEST_KEY:0 "The original line"',
+      ' VERSIONLESS_EVENT.20.t: "Versionless title"',
       ' TEST_KEY_LONG:0 "Different key"',
       '',
     ].join('\n'));
@@ -32,6 +42,9 @@ test('English original lookup resolves an exact key from the ticket base commit'
     assert.equal(result.commit, commit);
     assert.deepEqual(result.matches, [{
       file: relative, line: 2, key: 'TEST_KEY', text: 'The original line',
+    }]);
+    assert.deepEqual((await englishOriginal(hub, 'VERSIONLESS_EVENT.20.t', 'ticket-id')).matches, [{
+      file: relative, line: 3, key: 'VERSIONLESS_EVENT.20.t', text: 'Versionless title',
     }]);
     await assert.rejects(englishOriginal(hub, 'BAD KEY', ''), /ключ/u);
   } finally {

@@ -175,6 +175,36 @@ async function waitForOutput(child, pattern, timeout = 10000) {
   throw new Error(`Timed out waiting for ${pattern}:\n${child.output}`);
 }
 
+async function startAuthenticatedServer(dataDirectory) {
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const port = await freePort();
+    const server = spawn(process.execPath, [
+      'apps/server/src/main.mjs', '--port', String(port), '--data', dataDirectory, '--auth', 'required',
+    ], {
+      cwd: projectRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    server.output = '';
+    server.stdout.setEncoding('utf8');
+    server.stderr.setEncoding('utf8');
+    server.stdout.on('data', (chunk) => { server.output += chunk; });
+    server.stderr.on('data', (chunk) => { server.output += chunk; });
+    try {
+      await waitForOutput(server, /\[server\] listening/u, 3000);
+      await waitForHealth(port);
+      return { server, port };
+    } catch (error) {
+      lastError = error;
+      const retryableBindFailure = /listen (?:EACCES|EADDRINUSE)/u.test(server.output);
+      await stop(server);
+      if (!retryableBindFailure) throw error;
+    }
+  }
+  throw lastError;
+}
+
 async function connectFakePlugin(pipe, filePath, initialText, ipcSecret) {
   const socket = net.createConnection(pipePath(pipe));
   await once(socket, 'connect');
@@ -226,26 +256,15 @@ async function connectFakePlugin(pipe, filePath, initialText, ipcSecret) {
 test('password auth supports multiple roles, private reset, identity enforcement, and revocation', { timeout: 60000 }, async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-auth-'));
   const dataDirectory = path.join(temporary, 'data');
-  const port = await freePort();
-  const server = spawn(process.execPath, [
-    'apps/server/src/main.mjs', '--port', String(port), '--data', dataDirectory, '--auth', 'required',
-  ], {
-    cwd: projectRoot,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
-  server.output = '';
-  server.stdout.setEncoding('utf8');
-  server.stderr.setEncoding('utf8');
-  server.stdout.on('data', (chunk) => { server.output += chunk; });
-  server.stderr.on('data', (chunk) => { server.output += chunk; });
+  let port;
+  let server;
   let aliceSocket;
   let adminSocket;
   let aliceAgent;
   let agentPlugin;
   const ipcSecret = `auth-test-ipc-secret-${crypto.randomBytes(16).toString('hex')}`;
   try {
-    await waitForHealth(port);
+    ({ server, port } = await startAuthenticatedServer(dataDirectory));
     const bootstrapCode = (await fs.readFile(path.join(dataDirectory, 'bootstrap-invite.txt'), 'utf8')).trim();
     const adminRedeem = await api(port, 'POST', '/api/auth/redeem', {
       body: { inviteCode: bootstrapCode, displayName: 'Admin', password: 'Admin-only-password-947!' },

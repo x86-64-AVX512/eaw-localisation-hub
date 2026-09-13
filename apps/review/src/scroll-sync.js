@@ -1,6 +1,6 @@
 export function keyAtLine(model, lineNumber) {
   for (let line = Math.max(1, lineNumber); line >= Math.max(1, lineNumber - 8); line -= 1) {
-    const match = /^\s*([^#\s][^:]*?):\d+\s/u.exec(model.getLineContent(line));
+    const match = /^\s*([^#\s][^:]*?):(?:\d+)?\s/u.exec(model.getLineContent(line));
     if (match) return match[1].trim();
   }
   return '';
@@ -8,7 +8,7 @@ export function keyAtLine(model, lineNumber) {
 
 export function lineForKey(model, key) {
   for (let line = 1; line <= model.getLineCount(); line += 1) {
-    const match = /^\s*([^#\s][^:]*?):\d+\s/u.exec(model.getLineContent(line));
+    const match = /^\s*([^#\s][^:]*?):(?:\d+)?\s/u.exec(model.getLineContent(line));
     if (match?.[1]?.trim() === key) return line;
   }
   return 0;

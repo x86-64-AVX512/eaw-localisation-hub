@@ -72,7 +72,7 @@ export async function englishOriginal(hub, key, ticketId = '') {
     const value = line.startsWith(prefix) ? line.slice(prefix.length) : line;
     const match = /^(localisation\/(?:english|replace\/english)\/[^:]+):(\d+):(.*)$/u.exec(value);
     if (!match) continue;
-    const entry = /^\s*([^#\s][^:]*?):\d+\s+"((?:[^"\\]|\\.)*)"/u.exec(match[3]);
+    const entry = /^\s*([^#\s][^:]*?):(?:\d+)?\s+"((?:[^"\\]|\\.)*)"/u.exec(match[3]);
     if (!entry || entry[1].trim() !== localisationKey) continue;
     matches.push({ file: match[1], line: Number(match[2]), key: localisationKey, text: entry[2] });
     if (matches.length >= 20) break;

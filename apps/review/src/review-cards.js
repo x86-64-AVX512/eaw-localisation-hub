@@ -2,6 +2,7 @@ import { decodeBase64, encodeBase64, safeColor } from './review-utilities.js';
 import { cardButton, cardHeader, renderMessages } from './review-card-elements.js';
 import { suggestionTraceParts } from '../../../packages/shared/src/suggestion-trace.mjs';
 import { confirmAction } from './confirm-action.js';
+import { createReviewCardLayout } from './review-card-layout.js';
 
 export function visibleComparisonText(text) {
   const value = String(text ?? '');
@@ -19,6 +20,8 @@ export function createReviewCards({
   const count = document.querySelector('#review-count');
   const connectors = document.querySelector('#connectors');
   const showAccepted = document.querySelector('#show-accepted-suggestions');
+  const lane = document.querySelector('#review-lane');
+  const cardLayout = createReviewCardLayout({ state, editor, rangeFromBytes, cards, connectors, lane });
   const cardCache = new Map();
   let focusTimer;
 
@@ -129,38 +132,10 @@ export function createReviewCards({
       if (current !== node) cards.insertBefore(node, current);
     });
     while (cards.children.length > nodes.length) cards.lastElementChild.remove();
-    requestAnimationFrame(layout);
+    requestAnimationFrame(cardLayout.layout);
   }
 
   showAccepted.addEventListener('change', render);
-
-  function layout() {
-    if (!state.path) return;
-    const editorRect = document.querySelector('#editor').getBoundingClientRect();
-    const workspaceRect = document.querySelector('#workspace').getBoundingClientRect();
-    const laneRect = document.querySelector('#review-lane').getBoundingClientRect();
-    connectors.replaceChildren();
-    for (const card of cards.children) {
-      let position;
-      try { position = rangeFromBytes(Number(card.dataset.startByte), Number(card.dataset.startByte)).getStartPosition(); }
-      catch { continue; }
-      const visible = editor.getScrolledVisiblePosition(position);
-      if (!visible || visible.top < -30 || visible.top > editorRect.height) continue;
-      const cardRect = card.getBoundingClientRect();
-      if (cardRect.bottom < laneRect.top + 38 || cardRect.top > laneRect.bottom) continue;
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      const startX = editorRect.right - workspaceRect.left - 8;
-      const startY = visible.top + visible.height / 2;
-      const endX = laneRect.left - workspaceRect.left + 10;
-      const endY = cardRect.top - workspaceRect.top + Math.min(30, card.offsetHeight / 2);
-      line.setAttribute('d', `M ${startX} ${startY} C ${startX + 28} ${startY}, ${endX - 28} ${endY}, ${endX} ${endY}`);
-      line.setAttribute('fill', 'none');
-      line.setAttribute('stroke', getComputedStyle(card).getPropertyValue('--author-color'));
-      line.setAttribute('stroke-width', '1.5');
-      line.setAttribute('opacity', '.8');
-      connectors.append(line);
-    }
-  }
 
   function focusCard(kind, id) {
     const card = [...cards.children]
@@ -172,9 +147,9 @@ export function createReviewCards({
     card.scrollIntoView({ block: 'center', behavior: 'smooth' });
     card.focus({ preventScroll: true });
     focusTimer = setTimeout(() => card.classList.remove('review-card-focused'), 1800);
-    requestAnimationFrame(layout);
+    requestAnimationFrame(cardLayout.layout);
     return true;
   }
 
-  return { render, layout, focusCard };
+  return { render, layout: cardLayout.layout, syncScroll: cardLayout.syncScroll, focusCard };
 }

@@ -1,4 +1,4 @@
-﻿param([string]$FilePath)
+﻿param([string]$FilePath, [string]$Ticket)
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -22,7 +22,7 @@ if ([string]::IsNullOrWhiteSpace($FilePath)) {
     $dialog.Title = 'Open localisation in EaW Hub Review'
     $dialog.Filter = 'Localisation files (*.yml)|*.yml'
     $dialog.InitialDirectory = Join-Path ([string]$session.repository) 'localisation\russian'
-    if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { exit 0 }
+    if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
     $FilePath = $dialog.FileName
 }
 $resolvedFile = [System.IO.Path]::GetFullPath($FilePath)
@@ -34,4 +34,7 @@ $hostPath = $hostCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType
 if (-not $hostPath) { throw 'EaWReview.exe was not found. Build or reinstall the client first.' }
 $url = ([string]$session.origin) + '/#token=' `
     + [Uri]::EscapeDataString([string]$session.token) + '&path=' + [Uri]::EscapeDataString($resolvedFile)
+if (-not [string]::IsNullOrWhiteSpace($Ticket)) {
+    $url += '&ticket=' + [Uri]::EscapeDataString($Ticket)
+}
 Start-Process -FilePath $hostPath -ArgumentList @($url) -WorkingDirectory (Split-Path -Parent $hostPath)

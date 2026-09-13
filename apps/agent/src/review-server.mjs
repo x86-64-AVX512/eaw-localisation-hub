@@ -31,6 +31,7 @@ const STATIC_FILES = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/app.css', ['app.css', 'text/css; charset=utf-8']],
   ['/editor.worker.js', ['editor.worker.js', 'text/javascript; charset=utf-8']],
+  ['/spellcheck-worker.js', ['spellcheck-worker.js', 'text/javascript; charset=utf-8']],
 ]);
 
 function tokenMatches(actual, expected) {
@@ -62,12 +63,45 @@ function normaliseEnglishPath(repository, absolutePath) {
   return relative;
 }
 
-async function readJsonBody(request) {
+async function listLocalisationFiles(repository) {
+  const result = [];
+  async function visit(directory) {
+    let entries = [];
+    try { entries = await fsPromises.readdir(directory, { withFileTypes: true }); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; return; }
+    for (const entry of entries) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) await visit(absolute);
+      else if (entry.isFile() && /\.ya?ml$/iu.test(entry.name)) {
+        try {
+          const relativePath = normaliseTrackedPath(repository, absolute);
+          result.push({ path: absolute, relativePath });
+        } catch { /* A file outside the canonical repository is omitted. */ }
+      }
+      if (result.length >= 10_000) return;
+    }
+  }
+  await visit(path.join(repository, 'localisation'));
+  return result.sort((left, right) => left.relativePath.localeCompare(right.relativePath, 'ru'));
+}
+
+async function writeLastReview(options, value) {
+  const target = path.join(options.state, 'last-review.json');
+  const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  await fsPromises.mkdir(path.dirname(target), { recursive: true });
+  try {
+    await fsPromises.writeFile(temporary, `${JSON.stringify(value)}\n`, { encoding: 'utf8', mode: 0o600 });
+    await fsPromises.rename(temporary, target);
+    await fsPromises.chmod(target, 0o600).catch(() => {});
+  } finally { await fsPromises.rm(temporary, { force: true }).catch(() => {}); }
+}
+
+async function readJsonBody(request, maximumBytes = 64 * 1024) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 64 * 1024) throw new Error('Request body is too large');
+    if (size > maximumBytes) throw new Error('Request body is too large');
     chunks.push(chunk);
   }
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
@@ -212,6 +246,7 @@ export async function startReviewServer(hub, options) {
   const { token, port: preferredPort } = endpoint;
   const diffCache = hub.diffCache ?? new DiffCache(path.join(options.state, 'diff-cache'));
   await diffCache.initialise();
+  let spellingDictionaryPromise = null;
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'review-web');
   const server = http.createServer(async (request, response) => {
     const address = server.address();
@@ -238,6 +273,43 @@ export async function startReviewServer(hub, options) {
         response.end(JSON.stringify(payload));
       } catch (error) {
         response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+    if (requestUrl.pathname === '/api/localisation-files' && request.method === 'GET') {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      try {
+        const files = await listLocalisationFiles(options.repo);
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify({ files }));
+      } catch (error) {
+        response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+    if (requestUrl.pathname.startsWith('/api/spelling/')) {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!['GET', 'PUT'].includes(request.method)) { response.writeHead(405).end(); return; }
+      try {
+        const body = request.method === 'GET' ? undefined : await readJsonBody(request, 128 * 1024);
+        const fetchRemote = () => hub.authRequest(requestUrl.pathname, {
+          method: request.method, body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        if (request.method === 'GET' && requestUrl.pathname === '/api/spelling/dictionary'
+          && !spellingDictionaryPromise) {
+          spellingDictionaryPromise = fetchRemote().catch((error) => {
+            spellingDictionaryPromise = null;
+            throw error;
+          });
+        }
+        const payload = request.method === 'GET' && requestUrl.pathname === '/api/spelling/dictionary'
+          ? await spellingDictionaryPromise : await fetchRemote();
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify(payload));
+      } catch (error) {
+        response.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ error: error.message }));
       }
       return;
@@ -269,6 +341,12 @@ export async function startReviewServer(hub, options) {
           text = englishReadOnly
             ? withoutUtf8Bom(await fsPromises.readFile(absolutePath, 'utf8'))
             : ticketBootstrap?.text ?? withoutUtf8Bom(await readTrackedTextFile(options.repo, absolutePath));
+        }
+        if (!englishReadOnly) {
+          await writeLastReview(options, {
+            schema: 1, path: absolutePath, relativePath,
+            ticket: ticketBootstrap?.ticket?.id ?? '', updatedAt: new Date().toISOString(),
+          }).catch(() => {});
         }
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify({

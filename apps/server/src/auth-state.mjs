@@ -33,6 +33,10 @@ export function migrateAuthState(loaded, {
         .filter(([id, revision]) => /^[a-z0-9-]{1,64}$/u.test(id)
           && Number.isInteger(Number(revision)) && Number(revision) > 0)
         .map(([id, revision]) => [id, Number(revision)])),
+      spellingWords: [...new Set((Array.isArray(user.spellingWords) ? user.spellingWords : [])
+        .map((word) => String(word).toLocaleLowerCase('ru'))
+        .filter((word) => word.length <= 64 && /^[а-яё]{2,}(?:-[а-яё]{2,})*$/u.test(word)))]
+        .slice(0, 1000),
     })).filter((user) => user.displayName && (loaded.schema !== 1 || user.id));
   const assignedUsers = [];
   for (const user of users) {
@@ -48,10 +52,17 @@ export function migrateAuthState(loaded, {
     }
     assignedUsers.push(user);
   }
+  const spellingWords = [...new Set([
+    ...(Array.isArray(loaded.spellingWords) ? loaded.spellingWords : []),
+    ...users.flatMap((user) => user.spellingWords ?? []),
+  ].map((word) => String(word).toLocaleLowerCase('ru'))
+    .filter((word) => word.length <= 64 && /^[а-яё]{2,}(?:-[а-яё]{2,})*$/u.test(word)))].slice(0, 100_000);
+  for (const user of users) delete user.spellingWords;
   const userIds = new Set(users.map(({ id }) => id));
   return {
     schema: 6,
     users,
+    spellingWords,
     invites: (Array.isArray(loaded.invites) ? loaded.invites : [])
       .filter((invite) => /^[0-9a-f]{64}$/u.test(String(invite.codeHash ?? '')))
       .map((invite) => ({

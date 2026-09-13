@@ -1,6 +1,14 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F8` form; package metadata uses `0.8.7-beta.8`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F9` form; package metadata uses `0.8.7-beta.9`.
+
+## 0.8.7F9 – 2026-09-13
+
+- Versionless Paradox localisation keys now work consistently in batch replacement, English-original lookup, scroll synchronisation, editor highlighting and Git ticket summaries. Regression tests cover both `key:0 "value"` and `key: "value"` forms.
+- Reservation updates use keyed atomic snapshots, preserving existing UI nodes and scroll position instead of flashing on every document edit. The reservation list expands to the window boundary before scrolling.
+- Review cards are anchored beside their source text with collision handling and connecting guides. Editor settings add dark, light and high-contrast themes plus font family, size and line-height controls.
+- Russian spellchecking runs locally in a background worker over only the visible text. The server distributes the LibreOffice dictionary plus a compact index of over two million additional Russian word forms and surnames, and every authenticated participant can extend one shared team dictionary. Files and fragments are never sent for checking, and replacements remain explicit user actions.
+- Persistent file tabs, repository localisation search, cursor/scroll restoration and a unified Review launcher reduce repeated navigation. The launcher starts Agent when needed and restores the most recently reviewed document.
 
 ## 0.8.7F8 – 2026-09-12
 

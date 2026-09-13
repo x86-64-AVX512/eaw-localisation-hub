@@ -19,6 +19,14 @@ test('Agent exposes a full colour picker and an explicit tray close action', () 
   assert.match(agentUi, /\$exitTrayItem = \$trayMenu\.Items\.Add\('Закрыть Agent'\)/u);
 });
 
+test('Agent can launch Review from its main window', () => {
+  assert.match(agentUi, /\$reviewButton\.Text = 'Запустить Review'/u);
+  assert.match(agentUi, /\$reviewButton\.Enabled = \$false/u);
+  assert.match(agentUi, /\$reviewButton\.Add_Click\([\s\S]*start-hub\.ps1/u,
+    'the Agent button must use the same remembered-workspace launcher as the desktop shortcut');
+  assert.match(agentUi, /\$reviewButton\.Enabled = \$script:agentProcess -and -not \$script:agentProcess\.HasExited/u);
+});
+
 test('Russian client UI does not use the hybrid recovery-code wording', () => {
   assert.doesNotMatch(`${agentUi}\n${adminUi}`, /recovery-код/iu);
   assert.match(agentUi, /Приглашение \/ код восстановления:/u);

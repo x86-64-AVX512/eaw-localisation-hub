@@ -235,12 +235,9 @@ export function emitReservations(binding, onlyClient = null) {
   for (const client of recipients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
-      client.send({ type: 'reservationReset', path: absolutePath });
-      for (const reservation of binding.reservations.values()) {
+      const reservations = [...binding.reservations.values()].map((reservation) => {
         const resolved = binding.resolveReservation(reservation);
-        client.send({
-          type: 'reservation',
-          path: absolutePath,
+        return {
           id: reservation.id,
           assignee: reservation.assignee,
           assigneeId: reservation.assigneeId ?? '',
@@ -252,6 +249,14 @@ export function emitReservations(binding, onlyClient = null) {
           status: resolved ? (resolved.start === resolved.end ? 'empty' : 'active') : 'orphaned',
           startByte: resolved ? utf16IndexToUtf8ByteOffset(canonical, resolved.start) : 0,
           endByte: resolved ? utf16IndexToUtf8ByteOffset(canonical, resolved.end) : 0,
+        };
+      });
+      if (client.kind === 'review') {
+        client.send({ type: 'reservationSnapshot', path: absolutePath, reservations });
+      } else {
+        client.send({ type: 'reservationReset', path: absolutePath });
+        for (const reservation of reservations) client.send({
+          type: 'reservation', path: absolutePath, ...reservation,
         });
       }
     }

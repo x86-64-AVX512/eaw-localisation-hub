@@ -20,6 +20,7 @@ import { GitBranchCache } from './git-branch-cache.mjs';
 import { EventJournal } from './event-journal.mjs';
 import { watchTicketCatalog } from './ticket-catalog.mjs';
 import { AuditLog } from './audit-log.mjs';
+import { handleSpellingHttp } from './spelling-http.mjs';
 import {
   DISPLAY_VERSION,
   MAX_CONNECTIONS_PER_USER,
@@ -225,6 +226,9 @@ async function handleHttp(request, response) {
     sendJson(response, 200, eventJournal.list(actor.id, url.searchParams.get('after'), url.searchParams.get('limit')));
     return;
   }
+  if (await handleSpellingHttp({
+    request, response, url, authStore, authenticatedUser, readJsonBody, sendJson,
+  })) return;
   if (await handleTicketHttp({
     request, response, url, auditLog,
     readJsonBody: (incoming) => readJsonBody(incoming, 12 * 1024 * 1024),

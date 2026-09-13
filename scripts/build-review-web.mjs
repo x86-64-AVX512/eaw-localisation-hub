@@ -28,6 +28,14 @@ await Promise.all([
     target: ['chrome120'],
     outfile: path.join(outputRoot, 'editor.worker.js'),
   }),
+  esbuild.build({
+    entryPoints: [path.join(sourceRoot, 'spellcheck-worker.js')],
+    bundle: true,
+    minify: true,
+    format: 'esm',
+    target: ['chrome120'],
+    outfile: path.join(outputRoot, 'spellcheck-worker.js'),
+  }),
   fs.copyFile(path.join(sourceRoot, 'index.html'), path.join(outputRoot, 'index.html')),
 ]);
 console.log(`[review-web] ${outputRoot}`);

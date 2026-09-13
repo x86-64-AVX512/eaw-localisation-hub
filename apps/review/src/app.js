@@ -1,8 +1,7 @@
 import * as monaco from 'monaco-editor'; import './style.css';
 import { createAvatarProfile } from './avatar-profile.js'; import { createCollaborationPanel } from './collaboration-panel.js';
 import { createDecorationRenderer } from './editor-decorations.js'; import { applyDocumentStatus } from './document-status.js';
-import { createEditingModeController } from './editing-mode.js';
-import { createEditorCoordinates } from './editor-coordinates.js';
+import { createEditingModeController } from './editing-mode.js'; import { createEditorCoordinates } from './editor-coordinates.js';
 import { createEnglishOriginal } from './english-original.js';
 import { createGitHistoryPanel, createHistoryPanel } from './history-panel.js';
 import { createKeyReplacementPanel } from './key-replacement-panel.js';
@@ -19,7 +18,7 @@ import { createDocumentVariants } from './document-variants.js';
 import { createRemoteDocument } from './remote-document.js';
 import { createLocalisationAuditPanel } from './localisation-audit-panel.js'; import { createHelpPanel } from './help-panel.js';
 import { createNotificationCenter } from './notification-center.js';
-import { createAppbarLayout } from './appbar-layout.js';
+import { createAppbarLayout } from './appbar-layout.js'; import { createEditorSettings } from './editor-settings.js'; import { createSpellcheck } from './spellcheck.js'; import { createWorkspaceTabs } from './workspace-tabs.js';
 import {
   createDialogController, decodeBase64, encodeBase64, utf16ToByte,
 } from './review-utilities.js';
@@ -45,9 +44,10 @@ function showToast(text, error = false) { clearTimeout(toastTimer); toastElement
   toastElement.classList.toggle('error', error); toastElement.classList.add('visible');
   toastTimer = setTimeout(() => toastElement.classList.remove('visible'), 4200);
 }
+const workspaceTabs = createWorkspaceTabs({ token, requestedPath, requestedTicket, readOnlyMode, showToast });
 monaco.languages.register({ id: 'eaw-yaml' });
 monaco.languages.setMonarchTokensProvider('eaw-yaml', { tokenizer: { root: [
-  [/^\s*l_[a-z_]+:/, 'keyword'], [/^\s*[^#\s][^:]*?(?=:\d+\s)/, 'type.identifier'],
+  [/^\s*l_[a-z_]+:/, 'keyword'], [/^\s*[^#\s][^:]*?(?=:(?:\d+)?\s)/, 'type.identifier'],
   [/:\d+/, 'number'], [/"(?:[^"\\]|\\.)*"/, 'string'], [/#.*$/, 'comment'],
 ] } });
 const editor = monaco.editor.create(document.querySelector('#editor'), {
@@ -56,6 +56,8 @@ const editor = monaco.editor.create(document.querySelector('#editor'), {
   wordWrap: 'on', glyphMargin: true, padding: { top: 12, bottom: 40 }, scrollBeyondLastLine: false,
   renderWhitespace: 'selection', roundedSelection: false,
 }); let agentConnection;
+createEditorSettings({ monaco, editor, showToast });
+const spellcheck = createSpellcheck({ monaco, editor, token, showToast });
 function send(message) { agentConnection?.send(state.reviewDocument?.anchor(message) ?? message); }
 const { rangeFromBytes, selectionBytes, jumpToBytes } = createEditorCoordinates({ monaco, state, editor });
 let editingMode;
@@ -162,6 +164,9 @@ function handleMessage(message) {
   else if (message.type === 'presence') state.presences.set(message.clientId, message);
   else if (message.type === 'reservationReset') state.reservations.clear();
   else if (message.type === 'reservation') state.reservations.set(message.id, message);
+  else if (message.type === 'reservationSnapshot') {
+    state.reservations = new Map((message.reservations ?? []).map((item) => [item.id, item]));
+  }
   else if (message.type === 'reservationTargetReset') state.reservationTargets = [];
   else if (message.type === 'reservationTarget') state.reservationTargets.push(message);
   else if (message.type === 'externalConflictReset') resetExternalConflicts(state, message.source);
@@ -220,7 +225,7 @@ const reviewNavigation = createReviewNavigation({
     editingMode.editSuggestion(suggestion);
   },
 });
-editor.onDidScrollChange(reviewCards.layout);
+editor.onDidScrollChange(reviewCards.syncScroll);
 document.querySelector('#review-lane').addEventListener('scroll', reviewCards.layout);
 window.addEventListener('resize', reviewCards.layout);
 document.querySelector('#comment-create').addEventListener('click', async () => {
@@ -246,6 +251,7 @@ async function start() {
     path: data.path, relativePath: data.relativePath, workspace: data.workspace,
     ticket: data.ticket, user: data.user, color: data.color,
   }); gitHistoryPanel.setAvailable(true);
+  workspaceTabs.confirmPath(data.path, data.relativePath, data.ticket);
   const ticketReadOnly = ['applied', 'closed'].includes(state.ticket?.status);
   for (const id of [
     'mode-edit', 'mode-suggest', 'undo', 'redo', 'comment-create',
@@ -257,6 +263,7 @@ async function start() {
   const contextName = data.ticket ? `тикет «${data.ticket.title}»` : data.workspace;
   document.querySelector('#document-name').textContent = `${data.relativePath} · ${contextName}`;
   editor.setValue(decodeBase64(data.textBase64));
+  if (!requestedLine) workspaceTabs.restore(editor, data.path);
   if (data.readOnly) {
     configureReadOnlyReview({ data, editor, requestedLine, setStatus });
     return;
@@ -281,18 +288,12 @@ async function start() {
 }
 start().catch((error) => setStatus(error.message, true));
 window.addEventListener('beforeunload', () => {
+  workspaceTabs.remember(editor);
   void closeActiveDocument({ flush: false });
-  ticketPanel.dispose();
-  keyReplacementPanel.dispose(); localisationAuditPanel.dispose(); helpPanel.dispose();
-  notificationCenter.dispose();
-  editingMode.flushSuggestion();
-  editingMode.dispose();
-  state.reviewDocument.dispose();
-  presenceController.dispose();
+  ticketPanel.dispose(); keyReplacementPanel.dispose(); localisationAuditPanel.dispose(); helpPanel.dispose();
+  notificationCenter.dispose(); editingMode.flushSuggestion(); editingMode.dispose();
+  state.reviewDocument.dispose(); presenceController.dispose();
   historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();
-  scrollSync.dispose(); reviewRefresh.dispose();
-  reviewNavigation.dispose();
-  appbarLayout.dispose();
-  agentConnection?.dispose();
-  gitConflictDiff.dispose();
+  scrollSync.dispose(); reviewRefresh.dispose(); spellcheck.dispose();
+  reviewNavigation.dispose(); appbarLayout.dispose(); agentConnection?.dispose(); gitConflictDiff.dispose();
 });

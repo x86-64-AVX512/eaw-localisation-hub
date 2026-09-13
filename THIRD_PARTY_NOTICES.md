@@ -8,6 +8,9 @@ EaW Localisation Hub is licensed under GPL-2.0-only. It uses or redistributes th
 | nlohmann/json | Native JSON handling | MIT | `vendor/nlohmann-json` |
 | Node.js | Bundled JavaScript runtime | MIT and bundled third-party notices | <https://nodejs.org/> |
 | Monaco Editor | Review editor | MIT | <https://github.com/microsoft/monaco-editor> |
+| nspell | Local Hunspell-compatible spelling engine | MIT | <https://github.com/wooorm/nspell> |
+| dictionary-ru | Server-distributed Russian spelling dictionary for local Review checking | BSD-3-Clause | <https://github.com/wooorm/dictionaries/tree/main/dictionaries/ru> |
+| spell-checker-js Russian word lists | Supplemental Russian word forms and surnames, distributed as a compact probabilistic index | MIT | <https://github.com/danakt/russian-words> |
 | Yjs, lib0, isomorphic.js | Collaborative document model | MIT | package metadata in `node_modules` / `package-lock.json` |
 | ws | WebSocket transport | MIT | <https://github.com/websockets/ws> |
 | ssh2 and its dependencies | Deployer SSH/SFTP transport | MIT-compatible licenses recorded in package metadata | <https://github.com/mscdex/ssh2> |

@@ -38,6 +38,18 @@ test('structural diff displays localisation-shaped lines together with comments'
   ].join('\n'));
 });
 
+test('localisation audit parses versioned and versionless entries identically', () => {
+  assert.deepEqual(localisationStructure([
+    'l_russian:',
+    ' event.without_version.t: "Событие"',
+    ' event.with_version.t:0 "Событие"',
+  ].join('\n')), [
+    '◆ ЗАГОЛОВОК ЛОКАЛИЗАЦИИ',
+    'КЛЮЧ event.without_version.t',
+    'КЛЮЧ event.with_version.t',
+  ]);
+});
+
 test('structural comparison reports standalone comments but ignores inline comment differences', () => {
   const russian = localisationStructure('l_russian:\n# один\n key:0 "Да" # старый\n');
   const english = localisationStructure('l_english:\n# два\n key:0 "Yes" # новый\n');

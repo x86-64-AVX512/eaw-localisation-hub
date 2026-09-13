@@ -84,6 +84,12 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       if (options.method === 'POST') return { ticket: { id: 'ticket-created' } };
       return { tickets: [] };
     },
+    async authRequest(route, options = {}) {
+      received.push({ type: 'authRequest', route, options });
+      if (route === '/api/spelling/dictionary') return { version: 'test', affBase64: 'YQ==', dicBase64: 'ZA==' };
+      if (route === '/api/spelling/words') return { words: ['эквестрия'] };
+      throw new Error('Unexpected auth route');
+    },
   };
   hub.diffCache = new DiffCache(path.join(state, 'diff-cache'));
   await hub.diffCache.set('test', 'cached-diff', { left: 'a', right: 'b' });
@@ -109,6 +115,36 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     const payload = await bootstrap.json();
     assert.equal(payload.path, tracked);
     assert.equal(Buffer.from(payload.textBase64, 'base64').toString('utf8').includes('REVIEW_KEY'), true);
+    const lastReview = JSON.parse(await fs.readFile(path.join(state, 'last-review.json'), 'utf8'));
+    assert.equal(lastReview.path, tracked);
+    const listed = await fetch(`${discovery.origin}/api/localisation-files`, {
+      headers: { Authorization: `Bearer ${discovery.token}` },
+    });
+    assert.equal(listed.status, 200);
+    assert.deepEqual((await listed.json()).files.map(({ relativePath }) => relativePath), [
+      'localisation/replace/english/review_l_english.yml',
+      'localisation/russian/review_l_russian.yml',
+    ]);
+
+    const spellingUnauthorized = await fetch(`${discovery.origin}/api/spelling/dictionary`);
+    assert.equal(spellingUnauthorized.status, 401);
+    const spelling = await fetch(`${discovery.origin}/api/spelling/dictionary`, {
+      headers: { Authorization: `Bearer ${discovery.token}` },
+    });
+    assert.equal(spelling.status, 200);
+    assert.equal((await spelling.json()).version, 'test');
+    assert.ok(received.some(({ type, route }) => type === 'authRequest' && route === '/api/spelling/dictionary'));
+    const spellingAgain = await fetch(`${discovery.origin}/api/spelling/dictionary`, {
+      headers: { Authorization: `Bearer ${discovery.token}` },
+    });
+    assert.equal(spellingAgain.status, 200);
+    assert.equal(received.filter(({ type, route }) => (
+      type === 'authRequest' && route === '/api/spelling/dictionary'
+    )).length, 1, 'Agent must cache the immutable base dictionary for all Review windows');
+    const remoteCheckForbidden = await fetch(`${discovery.origin}/api/spelling/check`, {
+      method: 'POST', headers: { Authorization: `Bearer ${discovery.token}` },
+    });
+    assert.equal(remoteCheckForbidden.status, 405, 'document text must never be proxied for spellchecking');
 
     const cacheUnauthorized = await fetch(`${discovery.origin}/api/diff-cache`);
     assert.equal(cacheUnauthorized.status, 401);

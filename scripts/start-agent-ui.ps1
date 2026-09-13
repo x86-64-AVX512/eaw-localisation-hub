@@ -395,6 +395,12 @@ $logoutButton.Text = 'Выйти и удалить токен'
 $logoutButton.Location = [System.Drawing.Point]::new(429, 441)
 $logoutButton.Size = [System.Drawing.Size]::new(210, 38)
 $form.Controls.Add($logoutButton)
+$reviewButton = [System.Windows.Forms.Button]::new()
+$reviewButton.Text = 'Запустить Review'
+$reviewButton.Location = [System.Drawing.Point]::new(27, 487)
+$reviewButton.Size = [System.Drawing.Size]::new(391, 32)
+$reviewButton.Enabled = $false
+$form.Controls.Add($reviewButton)
 $changePasswordButton = [System.Windows.Forms.Button]::new()
 $changePasswordButton.Text = 'Изменить мой пароль…'
 $changePasswordButton.Location = [System.Drawing.Point]::new(429, 487)
@@ -497,8 +503,10 @@ function Update-AgentStateView {
         [void](Sync-AgentProcessReference)
         if ($script:agentProcess -and -not $script:agentProcess.HasExited) {
             Set-StateText $agentState "Agent: запущен (PID $($script:agentProcess.Id))" ([System.Drawing.Color]::ForestGreen)
+            $reviewButton.Enabled = $true
         } else {
             Set-StateText $agentState 'Agent: остановлен' ([System.Drawing.Color]::DimGray)
+            $reviewButton.Enabled = $false
         }
 
         Set-StateText $serverState 'Сервер: проверка…' ([System.Drawing.Color]::DimGray)
@@ -738,6 +746,20 @@ $resetPasswordButton.Add_Click({
 
 $startButton.Add_Click({ try { Start-AgentProcess } catch { $status.Text = "Ошибка запуска: $($_.Exception.Message)" } })
 $stopButton.Add_Click({ try { Stop-AgentProcess } catch { $status.Text = "Ошибка остановки: $($_.Exception.Message)" } })
+$reviewButton.Add_Click({
+    try {
+        $reviewButton.Enabled = $false
+        $status.Text = 'Открытие Review…'
+        $form.Refresh()
+        & (Join-Path $PSScriptRoot 'start-hub.ps1')
+        $status.Text = 'Review запущен.'
+    } catch {
+        $status.Text = "Ошибка запуска Review: $($_.Exception.Message)"
+    } finally {
+        [void](Sync-AgentProcessReference)
+        $reviewButton.Enabled = $script:agentProcess -and -not $script:agentProcess.HasExited
+    }
+})
 $logoutButton.Add_Click({
     $remoteStatus = ''
     $credentialTarget = Get-EawHubCredentialTarget -Server $serverBox.Text.Trim() -Kind 'AgentToken'

@@ -1,4 +1,4 @@
-const LOCALISATION_PREFIX = /^(\s*)([^#\s][^:]*?)(:\d+)(\s+")/u;
+const LOCALISATION_PREFIX = /^(\s*)([^#\s][^:]*?)(:(?:\d+)?)(\s+")/u;
 
 function parseLocalisationSourceLine(content) {
   const prefix = LOCALISATION_PREFIX.exec(content);

@@ -3,8 +3,8 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
-$packageRoot = Join-Path $projectRoot 'dist\EaW-Hub-Client-0.8.7F8'
-$archivePath = Join-Path $projectRoot 'dist\EaW-Hub-Client-0.8.7F8.zip'
+$packageRoot = Join-Path $projectRoot 'dist\EaW-Hub-Client-0.8.7F9'
+$archivePath = Join-Path $projectRoot 'dist\EaW-Hub-Client-0.8.7F9.zip'
 $checksumPath = "$archivePath.sha256"
 $required = @(
     'node.exe',
@@ -21,6 +21,7 @@ $required = @(
     'apps\agent\src\main.mjs',
     'packages\shared\src\constants.mjs',
     'scripts\start-agent-ui.ps1',
+    'scripts\start-hub.ps1',
     'scripts\agent-status.ps1',
     'scripts\start-review.ps1',
     'scripts\credential-store.ps1',
@@ -39,6 +40,7 @@ $required = @(
     'apps\agent\review-web\app.js',
     'apps\agent\review-web\app.css',
     'apps\agent\review-web\editor.worker.js',
+    'apps\agent\review-web\spellcheck-worker.js',
     'node_modules\ws\package.json',
     'node_modules\yjs\package.json'
 )
@@ -48,7 +50,7 @@ foreach ($relative in $required) {
     }
 }
 $version = (Get-Content -LiteralPath (Join-Path $packageRoot 'VERSION') -Raw -Encoding utf8).Trim()
-if ($version -ne '0.8.7F8') { throw "Unexpected client package version: $version" }
+if ($version -ne '0.8.7F9') { throw "Unexpected client package version: $version" }
 if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) { throw "Client archive is missing: $archivePath" }
 if ((Get-Item -LiteralPath $archivePath).Length -lt 1MB) { throw 'Client archive is unexpectedly small.' }
 if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) { throw "Client checksum is missing: $checksumPath" }

@@ -32,8 +32,8 @@
         <button id="mode-edit" aria-pressed="true">Редактирование</button>
         <button id="mode-suggest" aria-pressed="false">Правки</button>
       </div>
-      <button id="undo" title="Совместная отмена (Ctrl+Z)">↶ Отменить</button>
-      <button id="redo" title="Совместный повтор (Ctrl+Y)">↷ Повторить</button>
+      <button id="undo" title="Совместная отмена">↶ Отменить</button>
+      <button id="redo" title="Совместный повтор">↷ Повторить</button>
       <button id="comment-create">Комментарий</button>
       <button id="key-replace-open">Изменить по ключам</button>
       <select id="document-view" aria-label="Представление документа" disabled>
@@ -51,6 +51,10 @@
       <label id="scroll-sync-control" class="scroll-sync-control" hidden><input id="scroll-sync-enabled" type="checkbox" checked> Синхронизация прокрутки</label>
     </div>
   </header>
+  <nav id="document-tabs" class="document-tabs" aria-label="Открытые файлы">
+    <div id="document-tab-list" class="document-tab-list"></div>
+    <button id="document-tab-add" title="Открыть ещё один файл">+</button>
+  </nav>
   <div id="recovery-banner" class="recovery-banner" role="alert" hidden>
     <strong>Нет действующего кода восстановления.</strong>
     <span id="recovery-message"></span>
@@ -85,7 +89,7 @@
           <button id="reservation-delete" class="danger" disabled>Удалить выбранную</button>
         </div>
       </section>
-      <section class="side-section conflicts-section">
+      <section class="side-section conflicts-section" hidden>
         <div class="section-heading"><strong>Конфликты Git</strong><span id="conflict-count">0</span></div>
         <div id="conflict-list" class="item-list scroll-list"></div>
         <div class="side-actions two-columns">
@@ -296,6 +300,16 @@
       <label><input id="notifications-enabled" type="checkbox" checked> Показывать уведомления</label>
       <label><input id="notification-sound" type="checkbox" checked> Звуковые уведомления</label>
       <hr>
+      <section class="editor-settings-grid" aria-label="Внешний вид редактора">
+        <strong>Внешний вид редактора</strong>
+        <label>Тема<select id="editor-theme"><option value="dark">Тёмная</option><option value="midnight">Полуночная</option><option value="plum">Сливовая</option><option value="forest">Лесная</option><option value="sepia">Сепия</option><option value="light">Светлая</option><option value="contrast">Высокая контрастность</option></select></label>
+        <label>Шрифт<select id="editor-font-family"><option>Consolas</option><option>Cascadia Mono</option><option>Segoe UI</option><option>Arial</option></select></label>
+        <label>Размер<input id="editor-font-size" type="number" min="12" max="30" value="15"></label>
+        <label>Высота строки<input id="editor-line-height" type="number" min="18" max="48" value="23"></label>
+        <label class="settings-wide"><input id="spellcheck-enabled" type="checkbox" checked> Подчёркивать возможные ошибки в русском тексте</label>
+        <p class="dialog-hint settings-wide">Проверяется локально и в фоне только видимая область; сервер отдаёт расширенный словарь и хранит общий список слов команды, но не получает текст файла. Любой участник может пополнить общий словарь через меню быстрых исправлений; замены применяются только по вашему выбору. Автоматической замены нет.</p>
+      </section>
+      <hr>
       <div class="settings-cache-row">
         <div><strong>Локальный кэш диффов</strong><p id="diff-cache-info" class="dialog-hint">Подсчёт размера…</p></div>
         <button id="diff-cache-clear">Очистить кэш</button>
@@ -303,6 +317,13 @@
       <hr>
       <button id="tutorial-repeat">Повторить обучение…</button>
       <p class="dialog-hint">Кнопка обучения намеренно спрятана в этом окне, чтобы её нельзя было нажать случайно.</p>
+    </div>
+  </dialog>
+  <dialog id="file-picker-dialog" class="file-picker-dialog">
+    <div class="simple-dialog-shell">
+      <div class="history-toolbar"><h2>Открыть файл</h2><button id="file-picker-close">Закрыть</button></div>
+      <input id="file-picker-search" type="search" placeholder="Поиск по имени или пути">
+      <div id="file-picker-files" class="file-picker-files"></div>
     </div>
   </dialog>
   <dialog id="tutorial-dialog" class="tutorial-dialog">

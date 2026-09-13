@@ -84,3 +84,14 @@ test('localisation replacement changes only quoted values', () => {
   ]));
   assert.equal(changed.text, 'l_russian:\n key:0 "новое" # note\n key_desc:12 "описание"\n');
 });
+
+test('source parser replaces versionless entries and detects mixed-version duplicates', () => {
+  const source = 'l_russian:\n key: "old"\n duplicate:0 "first"\n duplicate: "second"\n';
+  assert.deepEqual(localisationEntries(source).map(({ key, text }) => ({ key, text })), [
+    { key: 'key', text: 'old' },
+    { key: 'duplicate', text: 'first' },
+    { key: 'duplicate', text: 'second' },
+  ]);
+  const changed = replaceLocalisationValues(source, new Map([['key', 'новое']]));
+  assert.equal(changed.text, 'l_russian:\n key: "новое"\n duplicate:0 "first"\n duplicate: "second"\n');
+});

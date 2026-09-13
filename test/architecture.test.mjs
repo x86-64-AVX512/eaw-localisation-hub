@@ -38,6 +38,7 @@ test('security and collaboration boundaries have dedicated modules', () => {
   const requiredModules = [
     'apps/server/src/auth-model.mjs',
     'apps/server/src/auth-recovery.mjs',
+    'apps/server/src/auth-spelling.mjs',
     'apps/server/src/recovery-code.mjs',
     'apps/server/src/protocol-limits.mjs',
     'apps/server/src/document-socket.mjs',
@@ -47,6 +48,8 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/server/src/ticket-store.mjs',
     'apps/server/src/ticket-http.mjs',
     'apps/server/src/ticket-service.mjs',
+    'apps/server/src/spelling-dictionary.mjs',
+    'apps/server/src/spelling-http.mjs',
     'apps/server/src/git-commit-verifier.mjs',
     'apps/server/src/document-history.mjs',
     'apps/agent/src/document-actions.mjs',
@@ -68,11 +71,18 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/review/src/avatar-profile.js',
     'apps/review/src/avatar-view.js',
     'apps/review/src/editor-decorations.js',
+    'apps/review/src/editor-settings.js',
+    'apps/review/src/spellcheck.js',
+    'apps/review/src/spellcheck-worker.js',
+    'packages/shared/src/spelling-issues.mjs',
+    'packages/shared/src/spelling-bloom.mjs',
+    'apps/review/src/workspace-tabs.js',
     'apps/review/src/editing-mode.js',
     'apps/review/src/english-original.js',
     'apps/review/src/presence-cursors.js',
     'apps/review/src/presence-controller.js',
     'apps/review/src/review-cards.js',
+    'apps/review/src/review-card-layout.js',
     'apps/review/src/review-navigation.js',
     'apps/review/src/review-card-elements.js',
     'apps/review/src/recovery-banner.js',
@@ -306,16 +316,79 @@ test('Review keeps inserted and deleted suggestion text visible without hover', 
     'a completed replacement must be displayed after its struck original');
 });
 
-test('Review lane keeps every card in a scrollable vertical list', () => {
+test('Review lane anchors cards beside their text and resolves vertical collisions', () => {
   const cards = source('apps/review/src/review-cards.js');
+  const layout = source('apps/review/src/review-card-layout.js');
   const styles = source('apps/review/src/style.css');
-  assert.doesNotMatch(cards, /top \+ card\.offsetHeight|card\.classList\.add\('hidden'\)/u);
+  assert.match(layout, /desiredTop = editor\.getTopForLineNumber/u);
+  assert.match(layout, /nextTop = top \+ card\.offsetHeight/u);
   assert.match(styles, /#review-lane[\s\S]*overflow-y: auto/u);
-  assert.match(styles, /#cards[\s\S]*flex-direction: column/u);
+  assert.match(styles, /#cards[\s\S]*position: relative/u);
+  assert.match(styles, /\.review-card[\s\S]*position: absolute/u);
   assert.match(styles, /\.comparison \.empty-marker[\s\S]*white-space: nowrap/u,
     'the insertion/deletion marker must never collapse into a vertical word');
   assert.match(cards, /visibleComparisonText\(part\.text\)/u,
     'a newline-only suggestion must not render as an empty card');
+});
+
+test('Review editor preferences and spelling remain explicit user-controlled aids', () => {
+  const markup = source('apps/review/src/index.html');
+  const settings = source('apps/review/src/editor-settings.js');
+  const spelling = source('apps/review/src/spellcheck.js');
+  const spellingWorker = source('apps/review/src/spellcheck-worker.js');
+  const spellingHttp = source('apps/server/src/spelling-http.mjs');
+  assert.match(markup, /id="editor-theme"/u);
+  for (const theme of ['midnight', 'plum', 'forest', 'sepia']) {
+    assert.match(markup, new RegExp(`<option value="${theme}">`, 'u'));
+    assert.match(settings, new RegExp(`  ${theme}: \\{`, 'u'));
+  }
+  assert.match(settings, /THEME_IDS\.has\(theme\.value\)/u);
+  assert.match(markup, /id="editor-font-family"/u);
+  assert.match(markup, /id="spellcheck-enabled"/u);
+  assert.match(settings, /localStorage\.setItem/u);
+  assert.match(spelling, /registerCodeActionProvider/u);
+  assert.match(spelling, /kind: 'quickfix'/u);
+  assert.match(spelling, /editor\.action\.quickFix/u);
+  assert.match(spelling, /KeyCode\.Period/u);
+  assert.match(spelling, /browserEvent[\s\S]*key\.key !== '\.'/u,
+    'the quick-fix shortcut must also work when a non-English layout reports another physical key');
+  assert.match(spelling, /MAX_CHECKED_LINES = 240/u);
+  assert.match(spelling, /\/api\/spelling\/dictionary/u);
+  assert.match(spelling, /общий словарь сервера/u);
+  assert.match(spelling, /new Worker\('\/spellcheck-worker\.js'/u);
+  assert.match(spellingWorker, /spellingIssues/u);
+  assert.match(spellingWorker, /checker\.suggest/u);
+  assert.doesNotMatch(spellingHttp, /body\.text|spellingIssues|suggestRussianSpelling/u,
+    'the server must distribute dictionaries, not process user documents');
+  assert.doesNotMatch(spelling, /executeEdits|applyEdits|pushEditOperations/u,
+    'spellcheck must never replace text without the user choosing a quick fix');
+  assert.doesNotMatch(source('apps/review/src/app.js'), /KeyCode\.(?:Equal|NumpadAdd)/u,
+    'the application zoom shortcut must remain available');
+});
+
+test('Review hides the Git conflict section unless unresolved conflicts exist', () => {
+  const markup = source('apps/review/src/index.html');
+  const panel = source('apps/review/src/collaboration-panel.js');
+  const styles = source('apps/review/src/style.css');
+  assert.match(markup, /class="side-section conflicts-section" hidden/u,
+    'the empty section must not flash while Review is loading');
+  assert.match(panel, /conflictSection\.hidden = values\.length === 0/u);
+  assert.doesNotMatch(panel, /emptyList\(conflictList, 'Конфликтов нет\.'/u);
+  assert.match(styles, /\.conflicts-section\[hidden\] \{ display: none; \}/u,
+    'the flex display rule must not override the hidden attribute');
+});
+
+test('Review workspace tabs persist document position and the launcher restores the last file', () => {
+  const tabs = source('apps/review/src/workspace-tabs.js');
+  const launcher = source('scripts/start-hub.ps1');
+  const cmd = source('Launch EaW Hub Review.cmd');
+  assert.match(tabs, /eaw-hub-workspace-tabs-v1/u);
+  assert.match(tabs, /line: position\.lineNumber/u);
+  assert.match(tabs, /scrollTop: editor\.getScrollTop\(\)/u);
+  assert.match(tabs, /\/api\/localisation-files/u);
+  assert.match(launcher, /last-review\.json/u);
+  assert.match(launcher, /Launch EaW Hub Agent\.cmd/u);
+  assert.match(cmd, /start-hub\.ps1/u);
 });
 
 test('Review collaboration sections scroll instead of overlapping at short window heights', () => {
@@ -325,7 +398,8 @@ test('Review collaboration sections scroll instead of overlapping at short windo
   assert.match(lane, /#collaboration-lane[\s\S]*overflow-y: auto/u);
   assert.match(lane, /#collaboration-lane[\s\S]*min-height: 0/u);
   assert.match(lane, /\.side-section \{ flex: 0 0 auto/u);
-  assert.match(lane, /\.conflicts-section \{ min-height: 155px; flex: 1 0 155px/u);
+  assert.match(lane, /\.reservations-section \{[\s\S]*min-height: 330px[\s\S]*overflow: hidden/u);
+  assert.match(styles, /#reservation-list \{[^}]*overflow-y: auto/u);
 });
 
 test('Review header grows when its actions wrap instead of clipping the ticket switcher', () => {
