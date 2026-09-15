@@ -1,6 +1,12 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F9` form; package metadata uses `0.8.7-beta.9`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F10` form; package metadata uses `0.8.7-beta.10`.
+
+## 0.8.7F10 – 2026-09-14
+
+- The server builds its large supplemental Russian dictionary in an isolated worker, so a cold dictionary request can no longer block authentication or collaborative document WebSockets.
+- Review waits for `documentReady` before loading spellchecking assets, keeping document startup ahead of optional editor assistance.
+- Spelling markers remain visible while an updated viewport result is being calculated, eliminating flashes during typing and scrolling. Hovering a marked word opens nothing; its right-click menu offers direct shared-dictionary insertion and the explicit quick-fix panel.
 
 ## 0.8.7F9 – 2026-09-13
 

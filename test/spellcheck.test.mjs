@@ -5,14 +5,27 @@ import dictionary from 'dictionary-ru';
 import { spellingIssues } from '../packages/shared/src/spelling-issues.mjs';
 import { AuthStore } from '../apps/server/src/auth.mjs';
 import { russianDictionaryPayload } from '../apps/server/src/spelling-dictionary.mjs';
+import { spellingIssueAtPosition } from '../apps/review/src/spellcheck.js';
 import {
   SPELLING_BLOOM_BYTES, addSpellingBloom, hasSpellingBloom,
 } from '../packages/shared/src/spelling-bloom.mjs';
 
 const checker = nspell(dictionary);
 
-test('server dictionary payload contains only dictionary assets', async () => {
+test('server builds its dictionary without blocking authentication and document sockets', async () => {
+  let previousTick = performance.now();
+  let maximumPause = 0;
+  let ticks = 0;
+  const timer = setInterval(() => {
+    const now = performance.now();
+    maximumPause = Math.max(maximumPause, now - previousTick);
+    previousTick = now;
+    ticks += 1;
+  }, 20);
   const payload = await russianDictionaryPayload();
+  clearInterval(timer);
+  assert.ok(ticks >= 5, `main event loop only advanced ${ticks} times while building the dictionary`);
+  assert.ok(maximumPause < 500, `dictionary build blocked the main event loop for ${maximumPause} ms`);
   assert.match(payload.version, /^dictionary-ru@/u);
   assert.ok(Buffer.from(payload.affBase64, 'base64').length > 10_000);
   assert.ok(Buffer.from(payload.dicBase64, 'base64').length > 1_000_000);
@@ -52,6 +65,16 @@ test('spellcheck offsets a bounded visible fragment without calculating suggesti
   assert.equal(checked, 1);
   assert.deepEqual(issues, [{ word: 'Ашибка', lineNumber: 100, startColumn: 8, endColumn: 14 }]);
   assert.equal('suggestions' in issues[0], false);
+});
+
+test('spellcheck context action belongs only to the underlined word under the pointer', () => {
+  const issues = [
+    { word: 'Ашибка', lineNumber: 7, startColumn: 10, endColumn: 16 },
+  ];
+  assert.equal(spellingIssueAtPosition(issues, { lineNumber: 7, column: 12 })?.word, 'Ашибка');
+  assert.equal(spellingIssueAtPosition(issues, { lineNumber: 7, column: 9 }), null);
+  assert.equal(spellingIssueAtPosition(issues, { lineNumber: 7, column: 16 }), null);
+  assert.equal(spellingIssueAtPosition(issues, { lineNumber: 8, column: 12 }), null);
 });
 
 test('all authenticated users share additions to the server dictionary', async () => {

@@ -1,33 +1,24 @@
-import dictionary from 'dictionary-ru';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { createRequire } from 'node:module';
-import {
-  SPELLING_BLOOM_BYTES, addSpellingBloom,
-} from '../../../packages/shared/src/spelling-bloom.mjs';
+import { Worker } from 'node:worker_threads';
 
-const require = createRequire(import.meta.url);
 let payloadPromise = null;
 
-async function buildPayload() {
-  const packageRoot = path.dirname(require.resolve('spell-checker-js/package.json'));
-  const decoder = new TextDecoder('windows-1251');
-  const bloom = new Uint8Array(SPELLING_BLOOM_BYTES);
-  let supplementalWordCount = 0;
-  for (const name of ['russian.txt', 'russian_surnames.txt']) {
-    const source = decoder.decode(await fs.readFile(path.join(packageRoot, 'dictionaries', 'ru', name)));
-    for (const word of source.split(/\r?\n/u)) {
-      if (!/^[А-ЯЁа-яё]{2,}(?:-[А-ЯЁа-яё]{2,})*$/u.test(word)) continue;
-      addSpellingBloom(bloom, word);
-      supplementalWordCount += 1;
-    }
-  }
-  return Object.freeze({
-    version: 'dictionary-ru@3.0.0+spell-checker-js@1.2.3',
-    affBase64: Buffer.from(dictionary.aff).toString('base64'),
-    dicBase64: Buffer.from(dictionary.dic).toString('base64'),
-    supplementalBloomBase64: Buffer.from(bloom).toString('base64'),
-    supplementalWordCount,
+function buildPayload() {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./spelling-dictionary-worker.mjs', import.meta.url));
+    let settled = false;
+    const finish = (action, value) => {
+      if (settled) return;
+      settled = true;
+      action(value);
+    };
+    worker.once('message', (message) => {
+      if (message?.error) finish(reject, new Error(message.error));
+      else finish(resolve, Object.freeze(message.payload));
+    });
+    worker.once('error', (error) => finish(reject, error));
+    worker.once('exit', (code) => {
+      if (code !== 0) finish(reject, new Error(`Dictionary worker stopped with code ${code}`));
+    });
   });
 }
 

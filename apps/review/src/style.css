@@ -33,6 +33,40 @@ button {
   cursor: pointer;
 }
 button:hover { background: #303848; }
+.spelling-error {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: #d16969;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.spelling-quick-fix-panel {
+  position: fixed;
+  z-index: 10000;
+  display: grid;
+  min-width: 230px;
+  max-width: min(360px, calc(100vw - 16px));
+  gap: 3px;
+  border: 1px solid var(--theme-border, #465167);
+  border-radius: 8px;
+  padding: 7px;
+  color: var(--theme-text, #e9edf4);
+  background: var(--theme-control, #242b37);
+  box-shadow: 0 10px 34px #0009;
+}
+.spelling-quick-fix-panel strong { padding: 4px 7px 7px; font-size: 12px; }
+.spelling-quick-fix-panel button {
+  width: 100%;
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 8px;
+  background: transparent;
+  text-align: left;
+}
+.spelling-quick-fix-panel button:hover,
+.spelling-quick-fix-panel button:focus { background: var(--theme-hover, #303848); outline: none; }
+.spelling-quick-fix-empty { padding: 6px 8px; color: var(--theme-muted, #9da9ba); font-size: 12px; }
+.spelling-quick-fix-add { margin-top: 4px; border-top: 1px solid var(--theme-border, #465167) !important; }
 button:disabled { opacity: .45; cursor: default; }
 button.primary { border-color: #517bdc; background: #315db8; }
 .scroll-sync-control { align-self: center; color: #aeb8c8; font-size: 12px; white-space: nowrap; }

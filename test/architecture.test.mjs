@@ -49,6 +49,7 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/server/src/ticket-http.mjs',
     'apps/server/src/ticket-service.mjs',
     'apps/server/src/spelling-dictionary.mjs',
+    'apps/server/src/spelling-dictionary-worker.mjs',
     'apps/server/src/spelling-http.mjs',
     'apps/server/src/git-commit-verifier.mjs',
     'apps/server/src/document-history.mjs',
@@ -337,6 +338,8 @@ test('Review editor preferences and spelling remain explicit user-controlled aid
   const spelling = source('apps/review/src/spellcheck.js');
   const spellingWorker = source('apps/review/src/spellcheck-worker.js');
   const spellingHttp = source('apps/server/src/spelling-http.mjs');
+  const spellingDictionary = source('apps/server/src/spelling-dictionary.mjs');
+  const styles = source('apps/review/src/style.css');
   assert.match(markup, /id="editor-theme"/u);
   for (const theme of ['midnight', 'plum', 'forest', 'sepia']) {
     assert.match(markup, new RegExp(`<option value="${theme}">`, 'u'));
@@ -356,12 +359,33 @@ test('Review editor preferences and spelling remain explicit user-controlled aid
   assert.match(spelling, /\/api\/spelling\/dictionary/u);
   assert.match(spelling, /общий словарь сервера/u);
   assert.match(spelling, /new Worker\('\/spellcheck-worker\.js'/u);
+  assert.match(spelling, /start\(\)[\s\S]*started = true[\s\S]*schedule\(\)/u,
+    'spellcheck must wait until the collaborative document is ready');
+  assert.match(source('apps/review/src/app.js'), /documentReady[\s\S]*spellcheck\.start\(\)/u);
+  assert.doesNotMatch(spelling, /onDidChangeModelContent\([^)]*clear/u,
+    'typing must keep the previous markers visible until the replacement result is ready');
+  assert.doesNotMatch(spelling, /onDidScrollChange[\s\S]{0,240}clear\(\)/u,
+    'scrolling must not flash markers while the next viewport check is pending');
   assert.match(spellingWorker, /spellingIssues/u);
   assert.match(spellingWorker, /checker\.suggest/u);
+  assert.match(spellingWorker, /new TextDecoder\('utf-8'\)[\s\S]*nspell\(\{ aff: decodeBase64Text/u,
+    'nspell dictionaries must be decoded as text so browser suggestions are not silently empty');
+  assert.match(spelling, /createDecorationsCollection/u);
+  assert.match(spelling, /onMouseDown[\s\S]*rightButton/u);
+  assert.match(spelling, /addAction\([\s\S]*Добавить слово в общий словарь/u);
+  assert.match(spelling, /addAction\([\s\S]*Открыть быстрые исправления/u);
+  assert.match(spelling, /Открыть быстрые исправления[\s\S]*openQuickFixPanel\(issue\)/u,
+    'the context action must open the application-owned quick-fix panel');
+  assert.match(spelling, /button\.addEventListener\('click', \(\) => replaceIssue\(issue, suggestion\)\)/u,
+    'a replacement must run only after the user chooses that suggestion');
+  assert.doesNotMatch(spelling, /setModelMarkers|hoverMessage/u,
+    'spelling underlines must not open anything on pointer hover');
+  assert.match(styles, /\.spelling-error[\s\S]*text-decoration-style: wavy/u);
+  assert.match(styles, /\.spelling-quick-fix-panel[\s\S]*position: fixed/u);
+  assert.match(spellingDictionary, /new Worker/u,
+    'building the large supplemental dictionary must not block authentication or document sockets');
   assert.doesNotMatch(spellingHttp, /body\.text|spellingIssues|suggestRussianSpelling/u,
     'the server must distribute dictionaries, not process user documents');
-  assert.doesNotMatch(spelling, /executeEdits|applyEdits|pushEditOperations/u,
-    'spellcheck must never replace text without the user choosing a quick fix');
   assert.doesNotMatch(source('apps/review/src/app.js'), /KeyCode\.(?:Equal|NumpadAdd)/u,
     'the application zoom shortcut must remain available');
 });

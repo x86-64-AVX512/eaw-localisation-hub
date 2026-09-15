@@ -147,7 +147,7 @@ function handleMessage(message) {
   } else if (message.type === 'documentStatus') {
     applyDocumentStatus(message, state, editor, setStatus);
   } else if (message.type === 'documentReady') {
-    state.ready = true;
+    state.ready = true; spellcheck.start();
     state.reviewDocument.replay();
     send({ type: 'activate', path: state.path, positionByte: 0, anchorByte: 0 });
     ticketPanel.refresh();

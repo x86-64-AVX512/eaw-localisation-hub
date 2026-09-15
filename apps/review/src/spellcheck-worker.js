@@ -8,11 +8,15 @@ let ignoredWords = new Set();
 let supplementalBloom = null;
 const correctness = new Map();
 
-function decodeBase64(value) {
+function decodeBase64Bytes(value) {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return bytes;
+}
+
+function decodeBase64Text(value) {
+  return new TextDecoder('utf-8').decode(decodeBase64Bytes(value));
 }
 
 function cachedChecker() {
@@ -32,8 +36,8 @@ self.onmessage = ({ data }) => {
   try {
     let result;
     if (type === 'initialise') {
-      checker = nspell({ aff: decodeBase64(data.affBase64), dic: decodeBase64(data.dicBase64) });
-      supplementalBloom = decodeBase64(data.supplementalBloomBase64);
+      checker = nspell({ aff: decodeBase64Text(data.affBase64), dic: decodeBase64Text(data.dicBase64) });
+      supplementalBloom = decodeBase64Bytes(data.supplementalBloomBase64);
       ignoredWords = new Set(data.words ?? []);
       correctness.clear();
       result = { ready: true };
