@@ -94,14 +94,14 @@ export async function readDiskText(binding, absolutePath) {
 }
 
 export async function checkDiskChange(binding, client, absolutePath, state) {
-  if (binding.ticketId) return;
+  if (binding.ticketId || binding.closing) return;
   if (binding.paused || state.binding !== binding || !client.documents.has(absolutePath)) return;
   if (binding.hub.gitOperationInProgress?.()) {
     binding.scheduleDiskCheck(client, absolutePath, state, 300);
     return;
   }
   const externalText = await binding.readDiskText(absolutePath);
-  if (binding.paused || state.binding !== binding
+  if (binding.paused || binding.closing || state.binding !== binding
       || client.documents.get(absolutePath) !== state) return;
   if (binding.hub.gitOperationInProgress?.()) {
     binding.scheduleDiskCheck(client, absolutePath, state, 300);

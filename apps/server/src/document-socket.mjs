@@ -10,11 +10,11 @@ export function attachDocumentSocket({
 }) {
   const writableError = (isBinary, control) => {
     if (!ticketStore.documentWritable(documentId)
-      && (isBinary || !['presence', 'history-get', 'personal-projection-get'].includes(control?.type))) {
+      && (isBinary || !['presence', 'history-get', 'personal-projection-get', 'sync-flush'].includes(control?.type))) {
       return 'Ticket is read-only';
     }
     if (!room.clientWritable(socket)
-      && (isBinary || !['presence', 'history-get', 'personal-projection-get', 'git-conflict-resolve'].includes(control?.type))) {
+      && (isBinary || !['presence', 'history-get', 'personal-projection-get', 'git-conflict-resolve', 'sync-flush'].includes(control?.type))) {
       return 'The local Git version of this file is not canonical';
     }
     return '';
@@ -35,7 +35,13 @@ export function attachDocumentSocket({
           if (message) throw new Error(message);
         };
         consumeInboundBudget(socket, byteLength(data), isBinary);
-        if (isBinary) await room.receiveBinary(socket, data, recheckWritable);
+        if (!isBinary && control?.type === 'sync-flush') {
+          if (typeof control.requestId !== 'string' || !/^[0-9a-f-]{36}$/u.test(control.requestId)) {
+            throw new Error('Invalid sync flush request');
+          }
+          await room.flush();
+          sendWithBackpressure(socket, JSON.stringify({ type: 'sync-flushed', requestId: control.requestId }));
+        } else if (isBinary) await room.receiveBinary(socket, data, recheckWritable);
         else await room.receiveJson(socket, control, recheckWritable);
       } catch (error) {
         console.error('[server] rejected a document message');

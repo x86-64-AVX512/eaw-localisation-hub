@@ -335,5 +335,9 @@ export function validateServerMessage(message) {
     serverString(message.message ?? '', 'Server error', 64 * 1024);
     return message;
   }
+  if (type === 'sync-flushed') {
+    serverString(message.requestId, 'Sync flush request id', 128);
+    return message;
+  }
   throw new TypeError(`Unknown server message type: ${type}`);
 }

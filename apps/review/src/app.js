@@ -10,7 +10,7 @@ import { createReviewNavigation } from './review-navigation.js';
 import { createReviewRefresh } from './review-refresh.js';
 import { createRecoveryBanner } from './recovery-banner.js';
 import { createTicketPanel } from './ticket-panel.js';
-import { createScrollSync } from './scroll-sync.js';
+import { createScrollSync } from './scroll-sync.js'; import { createSyntaxDiagnostics } from './syntax-diagnostics.js';
 import { configureReadOnlyReview } from './read-only-review.js';
 import { createAgentConnection } from './agent-connection.js';
 import { createGitConflictDiff } from './git-conflict-diff.js'; import { resetExternalConflicts, storeExternalConflict } from './git-conflict-state.js';
@@ -57,7 +57,7 @@ const editor = monaco.editor.create(document.querySelector('#editor'), {
   renderWhitespace: 'selection', roundedSelection: false,
 }); let agentConnection;
 createEditorSettings({ monaco, editor, showToast });
-const spellcheck = createSpellcheck({ monaco, editor, token, showToast });
+const spellcheck = createSpellcheck({ monaco, editor, token, showToast }); const syntaxDiagnostics = createSyntaxDiagnostics({ monaco, editor, showToast });
 function send(message) { agentConnection?.send(state.reviewDocument?.anchor(message) ?? message); }
 const { rangeFromBytes, selectionBytes, jumpToBytes } = createEditorCoordinates({ monaco, state, editor });
 let editingMode;
@@ -294,6 +294,6 @@ window.addEventListener('beforeunload', () => {
   notificationCenter.dispose(); editingMode.flushSuggestion(); editingMode.dispose();
   state.reviewDocument.dispose(); presenceController.dispose();
   historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();
-  scrollSync.dispose(); reviewRefresh.dispose(); spellcheck.dispose();
+  scrollSync.dispose(); reviewRefresh.dispose(); spellcheck.dispose(); syntaxDiagnostics.dispose();
   reviewNavigation.dispose(); appbarLayout.dispose(); agentConnection?.dispose(); gitConflictDiff.dispose();
 });

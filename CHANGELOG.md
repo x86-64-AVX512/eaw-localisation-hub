@@ -1,6 +1,17 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F10` form; package metadata uses `0.8.7-beta.10`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F11` form; package metadata uses `0.8.7-beta.11`.
+
+## Unreleased
+
+- Review now checks localisation syntax while editing, marking unclosed quotes, unknown escape sequences, missing value quotes and duplicate keys directly in Monaco. A Problems list navigates to each issue and the first duplicate. Checking stays local in a worker; unchanged markers remain visible while new results are calculated.
+
+## 0.8.7F11 – 2026-09-19
+
+- Review autosave checks the exact disk base before replacing a file, so a concurrent external edit is reconciled instead of erased.
+- Closing the last document waits for server persistence; edits not confirmed as delivered remain in a local Yjs recovery update for the next connection.
+- Personal projections no longer remain uninitialised when edits arrive during every request. External merge completion now forwards its notice correctly.
+- Protocol 19 adds an explicit durable document flush acknowledgement and requires the server and Desktop Agent to be upgraded together.
 
 ## 0.8.7F10 – 2026-09-14
 

@@ -159,6 +159,29 @@ test('a detached binding ignores a disk read that completes late', async () => {
   assert.equal(merged, false);
 });
 
+test('a closing binding ignores a disk read that completes after its recovery snapshot', async () => {
+  const gate = deferred();
+  const absolutePath = 'C:\\repo\\localisation\\russian\\a.yml';
+  const before = 'l_russian:\n key:0 "old"\n';
+  const state = { diskBase: before, materialisationExpected: null };
+  const client = { documents: new Map([[absolutePath, state]]), send() {} };
+  let merged = false;
+  const binding = {
+    ticketId: '', closing: false, paused: false, synced: true, gitWritable: true,
+    hub: { gitOperationInProgress: () => false, readGitHeadText: () => before },
+    readDiskText: () => gate.promise,
+    localFileText: () => before,
+    text: { toString: () => before },
+    finishExternalMerge() { merged = true; },
+  };
+  state.binding = binding;
+  const pending = checkDiskChange(binding, client, absolutePath, state);
+  binding.closing = true;
+  gate.resolve(before.replace('old', 'external'));
+  await pending;
+  assert.equal(merged, false);
+});
+
 test('localisation audit value and cache key come from the same file snapshot', async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-audit-snapshot-'));
   try {

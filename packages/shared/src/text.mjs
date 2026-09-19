@@ -260,7 +260,9 @@ export async function readTrackedTextFile(repositoryRoot, absolutePath) {
   }
 }
 
-export async function writeTrackedTextFile(repositoryRoot, absolutePath, text, { isCurrent = () => true } = {}) {
+export async function writeTrackedTextFile(repositoryRoot, absolutePath, text, {
+  isCurrent = () => true, expectedText,
+} = {}) {
   const { resolvedRoot, resolvedFile } = resolveTrackedPath(repositoryRoot, absolutePath);
   let handle;
   let temporary;
@@ -278,6 +280,12 @@ export async function writeTrackedTextFile(repositoryRoot, absolutePath, text, {
       throw new Error(`File changed identity during secure write: ${absolutePath}`);
     }
     const current = await handle.readFile({ encoding: 'utf8' });
+    if (expectedText !== undefined
+      && normaliseLineEndings(withoutUtf8Bom(current)) !== expectedText) {
+      throw Object.assign(new Error(`File changed before materialisation: ${absolutePath}`), {
+        code: 'EAW_EXTERNAL_CHANGE',
+      });
+    }
     const preferredEnding = await preferredTrackedLineEnding(
       resolvedRoot,
       resolvedFile,

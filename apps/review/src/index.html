@@ -54,6 +54,7 @@
   <nav id="document-tabs" class="document-tabs" aria-label="Открытые файлы">
     <div id="document-tab-list" class="document-tab-list"></div>
     <button id="document-tab-add" title="Открыть ещё один файл">+</button>
+    <button id="syntax-problems-open" title="Показать ошибки синтаксиса в текущем файле" hidden>Проблемы <span id="syntax-problems-count">0</span></button>
   </nav>
   <div id="recovery-banner" class="recovery-banner" role="alert" hidden>
     <strong>Нет действующего кода восстановления.</strong>
@@ -111,6 +112,13 @@
     <svg id="connectors" aria-hidden="true"></svg>
   </main>
   <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="syntax-problems-dialog" class="syntax-problems-dialog">
+    <div class="simple-dialog-shell">
+      <div class="history-toolbar"><h2>Проблемы локализации</h2><button id="syntax-problems-close">Закрыть</button></div>
+      <p id="syntax-problems-empty" class="dialog-hint">Синтаксических проблем нет.</p>
+      <div id="syntax-problems-list"></div>
+    </div>
+  </dialog>
   <dialog id="text-dialog">
     <form method="dialog">
       <h2 id="dialog-title">Новый текст</h2>
@@ -308,6 +316,7 @@
         <label>Высота строки<input id="editor-line-height" type="number" min="18" max="48" value="23"></label>
         <label class="settings-wide"><input id="spellcheck-enabled" type="checkbox" checked> Подчёркивать возможные ошибки в русском тексте</label>
         <p class="dialog-hint settings-wide">Проверяется локально и в фоне только видимая область; сервер отдаёт расширенный словарь и хранит общий список слов команды, но не получает текст файла. Любой участник может пополнить общий словарь через меню быстрых исправлений; замены применяются только по вашему выбору. Автоматической замены нет.</p>
+        <p class="dialog-hint settings-wide">Синтаксис локализации проверяется отдельно и постоянно: кавычки, escape-последовательности и повторные ключи. Результаты видны прямо в редакторе и в списке «Проблемы» рядом с вкладками; текст для проверки не отправляется на сервер.</p>
       </section>
       <hr>
       <div class="settings-cache-row">

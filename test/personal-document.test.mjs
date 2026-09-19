@@ -22,7 +22,7 @@ test('reconnect cancels a lost projection request and ignores its late response'
   const binding = bindingFixture();
   requestPersonalDocument(binding);
   const oldId = binding.personalRequestId;
-  assert.equal(localFileText(binding), null);
+  assert.equal(localFileText(binding), 'previous personal', 'refresh keeps the last known projection visible');
   resetPersonalRequest(binding);
   requestPersonalDocument(binding);
   const newId = binding.personalRequestId;
@@ -50,7 +50,7 @@ test('a projection timeout retries with a new ID and stops when the binding clos
   assert.equal(binding.sent.length, 2);
 });
 
-test('an invalidated in-flight projection is not published or materialised', () => {
+test('an invalidated refresh keeps the last known projection usable', () => {
   const binding = bindingFixture();
   requestPersonalDocument(binding);
   const first = binding.personalRequestId;
@@ -58,7 +58,29 @@ test('an invalidated in-flight projection is not published or materialised', () 
   handlePersonalDocument(binding, { requestId: first, textBase64: Buffer.from('outdated').toString('base64') });
   assert.equal(binding.sent.length, 2);
   assert.equal(binding.personalText, 'previous personal');
-  assert.equal(localFileText(binding), null);
+  assert.equal(localFileText(binding), 'previous personal');
+  assert.equal(binding.personalReady, true);
+  resetPersonalRequest(binding);
+});
+
+test('continuous edits do not indefinitely prevent the initial personal projection', () => {
+  const binding = bindingFixture();
+  binding.personalReady = false;
+  requestPersonalDocument(binding);
+  for (let index = 0; index < 20; index += 1) {
+    const requestId = binding.personalRequestId;
+    requestPersonalDocument(binding);
+    handlePersonalDocument(binding, {
+      requestId, textBase64: Buffer.from(`projection ${index}`).toString('base64'),
+    });
+  }
+  assert.equal(binding.personalReady, true);
+  assert.equal(binding.personalText, 'projection 0', 'the first successful response unblocks initialisation');
+  assert.equal(binding.sent.length, 21);
+  handlePersonalDocument(binding, {
+    requestId: binding.personalRequestId, textBase64: Buffer.from('latest').toString('base64'),
+  });
+  assert.equal(binding.personalText, 'latest', 'a quiet refresh catches up to the latest projection');
   resetPersonalRequest(binding);
 });
 

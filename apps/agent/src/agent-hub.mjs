@@ -262,6 +262,47 @@ export class AgentHub {
       .replace(`${path.sep}merge-bases${path.sep}`, `${path.sep}personal-modes${path.sep}`);
   }
 
+  pendingDocumentUpdatePath(documentId) {
+    const digest = crypto.createHash('sha256').update(JSON.stringify([
+      path.resolve(this.options.repo), this.options.server, documentId,
+    ])).digest('hex');
+    return path.join(this.options.state, 'pending-document-updates', `${digest}.update`);
+  }
+
+  loadPendingDocumentUpdate(documentId) {
+    try {
+      return fs.readFileSync(this.pendingDocumentUpdatePath(documentId));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return null;
+    }
+  }
+
+  savePendingDocumentUpdate(documentId, update) {
+    const target = this.pendingDocumentUpdatePath(documentId);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const temporary = `${target}.${crypto.randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, update, { flag: 'wx', mode: 0o600 });
+      fs.renameSync(temporary, target);
+    } finally {
+      try { fs.unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+  }
+
+  clearPendingDocumentUpdate(documentId, expectedUpdate) {
+    const target = this.pendingDocumentUpdatePath(documentId);
+    try {
+      const current = fs.readFileSync(target);
+      if (!current.equals(expectedUpdate)) return false;
+      fs.unlinkSync(target);
+      return true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return false;
+    }
+  }
+
   loadPersonalMode(relativePath) {
     try {
       const value = JSON.parse(fs.readFileSync(this.personalModePath(relativePath), 'utf8'));

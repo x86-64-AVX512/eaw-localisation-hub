@@ -1,4 +1,5 @@
 import { resetPersonalRequest } from './personal-document.mjs';
+import * as Y from 'yjs';
 
 export function handleUnavailableTicketClose(binding, code, closeReason) {
   if (code !== 1001 || !binding.ticketId
@@ -19,6 +20,17 @@ export async function closeDocument(binding) {
   binding.closing = true;
   resetPersonalRequest(binding);
   if (binding.reconnectTimer) clearTimeout(binding.reconnectTimer);
+  let pendingUpdate = null;
+  if (binding.localUpdatePending) {
+    // Keep the exact CRDT identities so a retry is idempotent even if the
+    // server applied the update but its acknowledgement never reached us.
+    pendingUpdate = Y.encodeStateAsUpdate(binding.document);
+    binding.hub.savePendingDocumentUpdate(binding.documentId, pendingUpdate);
+  }
+  const flushed = await binding.flushToServer();
+  if (flushed && binding.pendingUpdateSent && pendingUpdate) {
+    binding.hub.clearPendingDocumentUpdate(binding.documentId, pendingUpdate);
+  }
   binding.socket?.close();
   binding.localPresences.clear();
   for (const client of binding.clients) {

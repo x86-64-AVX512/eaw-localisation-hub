@@ -31,6 +31,7 @@ export function documentStatus(gitState) {
 }
 
 export function applySyncedMessage(binding, message) {
+  binding.deliveryFailed = false;
   binding.reservations = new Map((message.reservations ?? []).map((item) => [item.id, item]));
   binding.commentThreads = new Map((message.commentThreads ?? []).map((item) => [item.id, item]));
   binding.suggestions = new Map((message.suggestions ?? []).map((item) => [item.id, item]));
@@ -44,7 +45,10 @@ export function applySyncedMessage(binding, message) {
   binding.hub.updateDirectory(message.directory ?? []);
   binding.synced = true;
   seedAttachedDocument(binding);
-  if (binding.gitWritable) binding.socket.send(Y.encodeStateAsUpdate(binding.document));
+  if (binding.gitWritable) {
+    binding.socket.send(Y.encodeStateAsUpdate(binding.document));
+    binding.pendingUpdateSent = true;
+  }
   binding.requestPersonalDocument();
   binding.localPresences.replay();
   if (binding.gitWritable) binding.initialiseAttachedClients();

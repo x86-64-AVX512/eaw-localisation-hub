@@ -81,3 +81,14 @@ test('an external change during staging is not overwritten', async (t) => {
   await assert.rejects(writeTrackedTextFile(repository, target, original.replace('Original', 'Changed')), /changed during/);
   assert.match(fs.readFileSync(target, 'utf8'), /External checkout/u);
 });
+
+test('a disk edit made before autosave begins is not replaced by a stale materialisation', async (t) => {
+  const { repository, target, original } = fixture(t);
+  const external = original.replace('Original', 'External');
+  fs.writeFileSync(target, external);
+  await assert.rejects(writeTrackedTextFile(
+    repository, target, original.replace('Original', 'Review'),
+    { expectedText: original.replace(/^\uFEFF/u, '').replace(/\r\n/gu, '\n') },
+  ), { code: 'EAW_EXTERNAL_CHANGE' });
+  assert.equal(fs.readFileSync(target, 'utf8'), external);
+});

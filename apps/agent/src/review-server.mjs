@@ -32,6 +32,7 @@ const STATIC_FILES = new Map([
   ['/app.css', ['app.css', 'text/css; charset=utf-8']],
   ['/editor.worker.js', ['editor.worker.js', 'text/javascript; charset=utf-8']],
   ['/spellcheck-worker.js', ['spellcheck-worker.js', 'text/javascript; charset=utf-8']],
+  ['/syntax-worker.js', ['syntax-worker.js', 'text/javascript; charset=utf-8']],
 ]);
 
 function tokenMatches(actual, expected) {
@@ -190,6 +191,7 @@ class ReviewClient {
       let materialisationSucceeded = false;
       try {
         await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(materialised), {
+          expectedText: state.diskBase,
           isCurrent: () => {
             const current = !this.closed && state.binding.synced && state.binding.gitWritable !== false
             && !this.hub.workspaceBlocked && !state.pendingExternal && !this.hub.gitOperationInProgress?.()
@@ -202,8 +204,12 @@ class ReviewClient {
           },
         });
         materialisationSucceeded = true;
-      } catch {
-        this.send({ type: 'error', message: 'Не удалось безопасно сохранить локальный файл.' });
+      } catch (error) {
+        if (error.code === 'EAW_EXTERNAL_CHANGE') {
+          state.materialisationExpected = null;
+          state.materialisationDeadline = 0;
+          state.binding.scheduleDiskCheck(this, absolutePath, state, 0);
+        } else this.send({ type: 'error', message: 'Не удалось безопасно сохранить локальный файл.' });
       }
       if (materialisationSucceeded && !materialisationInvalidated) {
         confirmDiskMaterialisation(state.binding, absolutePath, state, materialised);

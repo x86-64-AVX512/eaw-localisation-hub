@@ -11,9 +11,10 @@ import * as actions from './document-actions.mjs';
 import * as disk from './disk-reconciliation.mjs';
 import * as view from './document-view.mjs';
 import * as gitState from './git-document-state.mjs';
+import * as delivery from './document-delivery.mjs';
 import * as personalDocument from './personal-document.mjs';
 import { broadcastReviewUpdate, applyReviewUpdate } from './review-document.mjs';
-import { closeDocument, handleUnavailableTicketClose } from './document-lifecycle.mjs';
+import { handleUnavailableTicketClose } from './document-lifecycle.mjs';
 const REMOTE_ORIGIN = Symbol('remote-server-update');
 function encodeRelativePosition(position) {
   return Buffer.from(Y.encodeRelativePosition(position)).toString('base64');
@@ -45,6 +46,7 @@ export class DocumentBinding {
     this.reconnectTimer = null;
     this.refreshScheduled = false;
     this.baseWrites = new Set();
+    delivery.initialiseDelivery(this);
     this.personalRequestId = '';
     this.personalRefreshPending = false;
     this.variantRequests = new Map();
@@ -55,12 +57,11 @@ export class DocumentBinding {
     this.personalSelectionRevision = ''; this.personalSelectionGit = ''; this.personalSelectionShared = '';
     this.personalMaterialisationMode = this.ticketId ? 'mine' : this.hub.loadPersonalMode(this.relativePath);
 
+    delivery.restorePendingDocument(this);
+
     this.document.on('update', (update, origin) => {
       broadcastReviewUpdate(this, update, origin);
-      if (origin !== REMOTE_ORIGIN && this.synced && this.gitWritable
-        && this.socket?.readyState === WebSocket.OPEN) {
-        this.socket.send(update);
-      }
+      delivery.forwardLocalUpdate(this, update, origin !== REMOTE_ORIGIN);
       if (this.synced) this.requestPersonalDocument();
       if (this.synced) this.initialiseAttachedClients();
       this.scheduleRefresh();
@@ -94,6 +95,7 @@ export class DocumentBinding {
       }
     });
     this.socket.on('close', (code, reason) => {
+      delivery.handleSocketClose(this);
       this.synced = false;
       personalDocument.resetPersonalRequest(this);
       console.warn('[agent] document disconnected');
@@ -133,6 +135,7 @@ export class DocumentBinding {
       }
       return;
     }
+    if (delivery.handleFlushAcknowledgement(this, message)) return;
     if (message.type === 'synced') {
       if (message.protocol !== PROTOCOL_VERSION) {
         throw new Error(`Protocol mismatch: server=${message.protocol}, agent=${PROTOCOL_VERSION}`);
@@ -196,15 +199,10 @@ export class DocumentBinding {
       this.emitReservationTargets();
       return;
     }
-    if (message.type === 'error') {
-      console.error('[agent] server rejected an operation');
-      for (const client of this.clients) {
-        for (const [absolutePath, state] of client.documents) {
-          if (state.binding === this) client.send({ type: 'error', path: absolutePath, message: message.message });
-        }
-      }
-    }
+    if (message.type === 'error') delivery.handleServerError(this, message);
   }
+
+  flushToServer(timeoutMilliseconds = 5000) { return delivery.flushToServer(this, timeoutMilliseconds); }
 
   attach(client, absolutePath, initialText) {
     const existing = client.documents.get(absolutePath);
@@ -361,8 +359,8 @@ export class DocumentBinding {
     return disk.applyMergedText(this, nextText);
   }
 
-  finishExternalMerge(client, absolutePath, state, mergedText, notice) {
-    return disk.finishExternalMerge(this, client, absolutePath, state, mergedText, notice);
+  finishExternalMerge(client, absolutePath, state, sharedText, personalText, notice) {
+    return disk.finishExternalMerge(this, client, absolutePath, state, sharedText, personalText, notice);
   }
 
   resolveExternalConflict(client, absolutePath, message) {
@@ -545,5 +543,5 @@ export class DocumentBinding {
     return view.emitReservationTargets(this, onlyClient);
   }
 
-  async close() { return closeDocument(this); }
+  close() { return delivery.closeBinding(this); }
 }

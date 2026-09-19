@@ -61,7 +61,7 @@ foreach ($portable in @($paths.PortableA, $paths.PortableB)) {
 }
 
 [pscustomobject]@{
-    Version = '0.8.7F10'
+    Version = '0.8.7F11'
     PortableA = Join-Path $paths.PortableA 'notepad++.exe'
     PortableB = Join-Path $paths.PortableB 'notepad++.exe'
     WorkspaceA = $paths.WorkspaceA

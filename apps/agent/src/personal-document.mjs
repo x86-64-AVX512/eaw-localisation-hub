@@ -67,11 +67,9 @@ export function requestPersonalDocument(binding) {
   if (binding.ticketId || binding.closing || binding.paused || !binding.synced || binding.socket?.readyState !== WebSocket.OPEN) return;
   if (binding.personalRequestId) {
     binding.personalRefreshPending = true;
-    binding.personalReady = false;
     return;
   }
   binding.personalRequestId = crypto.randomUUID();
-  binding.personalReady = false;
   binding.personalRequestTimer = setTimeout(() => {
     resetPersonalRequest(binding);
     requestPersonalDocument(binding);
@@ -98,8 +96,9 @@ export function handlePersonalDocument(binding, message) {
   binding.personalRequestId = '';
   clearTimeout(binding.personalRequestTimer);
   binding.personalRequestTimer = null;
-  if (binding.personalRefreshPending) {
-    binding.personalRefreshPending = false;
+  const refreshPending = binding.personalRefreshPending;
+  binding.personalRefreshPending = false;
+  if (refreshPending && binding.personalReady) {
     requestPersonalDocument(binding);
     return;
   }
@@ -122,6 +121,7 @@ export function handlePersonalDocument(binding, message) {
       }
     }
   }
+  if (refreshPending) requestPersonalDocument(binding);
 }
 
 export function requestDocumentVariant(binding, client, absolutePath, authorId) {
