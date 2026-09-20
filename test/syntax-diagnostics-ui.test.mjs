@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createSyntaxDiagnostics, diagnosticsToMarkers } from '../apps/review/src/syntax-diagnostics.js';
 
 test('Monaco markers include an exact range and a link to the first duplicate', () => {
-  const monaco = { MarkerSeverity: { Error: 8, Warning: 4 } };
+  const monaco = { MarkerSeverity: { Error: 8, Warning: 4, Info: 2 } };
   const model = { uri: 'file:///test.yml' };
   const markers = diagnosticsToMarkers(monaco, model, [{
     code: 'duplicate-key', severity: 'error', message: 'Повтор',
@@ -13,6 +13,10 @@ test('Monaco markers include an exact range and a link to the first duplicate', 
   assert.equal(markers[0].severity, 8);
   assert.equal(markers[0].startLineNumber, 3);
   assert.equal(markers[0].relatedInformation[0].startLineNumber, 1);
+  assert.equal(diagnosticsToMarkers(monaco, model, [{
+    code: 'unresolved-local-reference', severity: 'info', message: 'Не найден',
+    lineNumber: 4, startColumn: 1, endColumn: 5,
+  }])[0].severity, 2);
 });
 
 test('typing preserves existing markers until a current worker result replaces them', (t) => {
@@ -50,9 +54,11 @@ test('typing preserves existing markers until a current worker result replaces t
     onDidChangeModelContent(callback) { onContent = callback; return { dispose() {} }; },
     onDidChangeModel() { return { dispose() {} }; },
   };
-  const controller = createSyntaxDiagnostics({ monaco, editor, showToast() {} });
+  const controller = createSyntaxDiagnostics({ monaco, editor, showToast() {},
+    getFilePath: () => 'localisation/russian/test_l_russian.yml' });
   t.mock.timers.tick(180);
   const first = FakeWorker.instance.messages[0];
+  assert.equal(first.filePath, 'localisation/russian/test_l_russian.yml');
   FakeWorker.instance.onmessage({ data: { id: first.id, version: first.version,
     diagnostics: [{ code: 'unclosed-quote', severity: 'error', message: 'Не закрыта',
       lineNumber: 1, startColumn: 1, endColumn: 6 }] } });

@@ -125,6 +125,15 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       'localisation/replace/english/review_l_english.yml',
       'localisation/russian/review_l_russian.yml',
     ]);
+    const keyIndexUnauthorized = await fetch(`${discovery.origin}/api/localisation-key-index`);
+    assert.equal(keyIndexUnauthorized.status, 401);
+    const keyIndexResponse = await fetch(`${discovery.origin}/api/localisation-key-index`, {
+      headers: { Authorization: `Bearer ${discovery.token}` },
+    });
+    assert.equal(keyIndexResponse.status, 200);
+    const keyIndex = await keyIndexResponse.json();
+    assert.equal(keyIndex.complete, true);
+    assert.deepEqual(keyIndex.keys, ['REVIEW_KEY']);
 
     const spellingUnauthorized = await fetch(`${discovery.origin}/api/spelling/dictionary`);
     assert.equal(spellingUnauthorized.status, 401);

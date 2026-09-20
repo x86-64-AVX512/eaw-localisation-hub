@@ -4,7 +4,8 @@ export function diagnosticsToMarkers(monaco, model, diagnostics) {
   return diagnostics.map((issue) => ({
     code: issue.code,
     source: 'Синтаксис локализации',
-    severity: issue.severity === 'error' ? monaco.MarkerSeverity.Error : monaco.MarkerSeverity.Warning,
+    severity: issue.severity === 'error' ? monaco.MarkerSeverity.Error
+      : issue.severity === 'info' ? monaco.MarkerSeverity.Info : monaco.MarkerSeverity.Warning,
     message: issue.message,
     startLineNumber: issue.lineNumber, endLineNumber: issue.lineNumber,
     startColumn: issue.startColumn, endColumn: issue.endColumn,
@@ -17,7 +18,7 @@ export function diagnosticsToMarkers(monaco, model, diagnostics) {
   }));
 }
 
-export function createSyntaxDiagnostics({ monaco, editor, showToast }) {
+export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getFilePath = null }) {
   const worker = new Worker('/syntax-worker.js', { type: 'module' });
   const button = document.querySelector('#syntax-problems-open');
   const count = document.querySelector('#syntax-problems-count');
@@ -26,6 +27,7 @@ export function createSyntaxDiagnostics({ monaco, editor, showToast }) {
   const empty = document.querySelector('#syntax-problems-empty');
   let timer = null; let revision = 0; let issues = []; let failed = false;
   let markedModel = null; let markerSignature = '';
+  let indexError = '';
 
   function jumpTo(lineNumber, column) {
     dialog.close();
@@ -70,6 +72,12 @@ export function createSyntaxDiagnostics({ monaco, editor, showToast }) {
   }
 
   worker.onmessage = ({ data }) => {
+    if (data.type === 'key-index-ready') { indexError = ''; schedule(); return; }
+    if (data.type === 'key-index-error') {
+      if (indexError !== data.error) showToast(`Индекс ссылок локализации недоступен: ${data.error}`, true);
+      indexError = data.error;
+      return;
+    }
     if (data.id !== revision) return;
     const model = editor.getModel();
     if (!model || model.getVersionId() !== data.version) return;
@@ -93,7 +101,9 @@ export function createSyntaxDiagnostics({ monaco, editor, showToast }) {
     timer = setTimeout(() => {
       const model = editor.getModel();
       if (!model || id !== revision) return;
-      worker.postMessage({ id, version: model.getVersionId(), text: model.getValue() });
+      const filePath = getFilePath?.();
+      if (getFilePath && !filePath) return;
+      worker.postMessage({ id, version: model.getVersionId(), text: model.getValue(), filePath });
     }, 180);
   }
 
@@ -107,8 +117,9 @@ export function createSyntaxDiagnostics({ monaco, editor, showToast }) {
   button.addEventListener('click', () => { renderList(); dialog.showModal(); });
   document.querySelector('#syntax-problems-close').addEventListener('click', () => dialog.close());
   schedule();
+  if (token) worker.postMessage({ type: 'init-key-index', token });
 
-  return { dispose() {
+  return { refresh: schedule, dispose() {
     clearTimeout(timer); worker.terminate(); content.dispose(); modelChange.dispose();
     if (markedModel) monaco.editor.setModelMarkers(markedModel, MARKER_OWNER, []);
   } };

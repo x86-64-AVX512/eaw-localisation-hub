@@ -27,6 +27,7 @@ body { display: flex; flex-direction: column; }
 #syntax-problems-empty { margin: 0; padding: 12px; }
 .syntax-problem { display: grid; gap: 3px; border-left: 3px solid #d27777; padding-left: 7px; }
 .syntax-problem.warning { border-color: #d9ad68; }
+.syntax-problem.info { border-color: #6d9ec6; }
 .syntax-problem button { text-align: left; overflow-wrap: anywhere; }
 .syntax-problem .syntax-related { border: 0; padding: 2px 8px; color: #aebcce; background: transparent; font-size: 12px; }
 .file-picker-dialog { width: min(850px, 92vw); height: min(720px, 88vh); padding: 0; }

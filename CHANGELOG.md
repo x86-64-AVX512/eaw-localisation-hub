@@ -1,10 +1,12 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F11` form; package metadata uses `0.8.7-beta.11`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F12` form; package metadata uses `0.8.7-beta.12`.
 
-## Unreleased
+## 0.8.7F12 – 2026-09-19
 
-- Review now checks localisation syntax while editing, marking unclosed quotes, unknown escape sequences, missing value quotes and duplicate keys directly in Monaco. A Problems list navigates to each issue and the first duplicate. Checking stays local in a worker; unchanged markers remain visible while new results are calculated.
+- Review checks localisation syntax while editing, marking unclosed quotes, unknown escape sequences, missing value quotes, duplicate keys and malformed `$...$`, `§...`, `£...` and `[...]` markup directly in Monaco. A Problems list navigates to each issue and the first duplicate. Checking stays local in a worker; unchanged markers remain visible while new results are calculated.
+- The linter requires a language header matching the opened file and tokenises references, variable expressions, dynamic loc and both valid icon forms independently, so one broken token no longer hides a neighbouring error. Common HOI4 formatter and array/scope forms are covered without treating colour switches or an empty `$VALUE|$` formatter as errors.
+- Desktop Agent supplies a read-only index of localisation keys from the local repository. Review uses it for conservative unresolved `$KEY$` hints, including keys in other files; the file text is not sent to a remote validator. Runtime and vanilla references without a matching local namespace are intentionally not flagged.
 
 ## 0.8.7F11 – 2026-09-19
 

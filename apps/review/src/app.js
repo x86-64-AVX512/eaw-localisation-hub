@@ -57,7 +57,7 @@ const editor = monaco.editor.create(document.querySelector('#editor'), {
   renderWhitespace: 'selection', roundedSelection: false,
 }); let agentConnection;
 createEditorSettings({ monaco, editor, showToast });
-const spellcheck = createSpellcheck({ monaco, editor, token, showToast }); const syntaxDiagnostics = createSyntaxDiagnostics({ monaco, editor, showToast });
+const spellcheck = createSpellcheck({ monaco, editor, token, showToast }); const syntaxDiagnostics = createSyntaxDiagnostics({ monaco, editor, token, showToast, getFilePath: () => state.relativePath });
 function send(message) { agentConnection?.send(state.reviewDocument?.anchor(message) ?? message); }
 const { rangeFromBytes, selectionBytes, jumpToBytes } = createEditorCoordinates({ monaco, state, editor });
 let editingMode;
@@ -262,7 +262,7 @@ async function start() {
   }
   const contextName = data.ticket ? `тикет «${data.ticket.title}»` : data.workspace;
   document.querySelector('#document-name').textContent = `${data.relativePath} · ${contextName}`;
-  editor.setValue(decodeBase64(data.textBase64));
+  editor.setValue(decodeBase64(data.textBase64)); syntaxDiagnostics.refresh();
   if (!requestedLine) workspaceTabs.restore(editor, data.path);
   if (data.readOnly) {
     configureReadOnlyReview({ data, editor, requestedLine, setStatus });

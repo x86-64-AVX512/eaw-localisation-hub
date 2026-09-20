@@ -21,6 +21,7 @@ import { persistentReviewEndpoint } from './review-endpoint.mjs';
 import { fileHistoryDiff, listFileHistory } from './git-file-history.mjs';
 import { runGitSync } from './git-executable.mjs';
 import { prepareLocalisationAudit } from './localisation-audit.mjs';
+import { getLocalisationKeyIndex } from './localisation-key-index.mjs';
 import { currentGitFileBlob } from './git-ticket-context.mjs';
 import { confirmDiskMaterialisation } from './disk-reconciliation.mjs';
 import { DiffCache } from './diff-cache.mjs';
@@ -289,6 +290,18 @@ export async function startReviewServer(hub, options) {
         const files = await listLocalisationFiles(options.repo);
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify({ files }));
+      } catch (error) {
+        response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+    if (requestUrl.pathname === '/api/localisation-key-index' && request.method === 'GET') {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      try {
+        const index = await getLocalisationKeyIndex(options.repo);
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify(index));
       } catch (error) {
         response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ error: error.message }));
