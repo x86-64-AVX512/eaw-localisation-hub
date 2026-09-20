@@ -390,6 +390,17 @@ test('Review editor preferences and spelling remain explicit user-controlled aid
     'the application zoom shortcut must remain available');
 });
 
+test('Review suppresses ambiguous Unicode boxes in every editor while retaining invisible-character warnings', () => {
+  for (const file of [
+    'apps/review/src/app.js',
+    'apps/review/src/standard-diff-view.js',
+    'apps/review/src/ticket-panel.js',
+    'apps/review/src/git-conflict-diff.js',
+  ]) {
+    assert.match(source(file), /unicodeHighlight:\s*\{\s*ambiguousCharacters:\s*false,\s*invisibleCharacters:\s*true\s*\}/u, file);
+  }
+});
+
 test('Review hides the Git conflict section unless unresolved conflicts exist', () => {
   const markup = source('apps/review/src/index.html');
   const panel = source('apps/review/src/collaboration-panel.js');

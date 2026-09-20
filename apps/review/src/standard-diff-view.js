@@ -39,6 +39,7 @@ export function createStandardDiffView({
     renderSideBySide: true, originalEditable: false, hideUnchangedRegions: { enabled: false },
     wordWrap: 'on', diffWordWrap: 'on', wordWrapOverride1: 'on', wordWrapOverride2: 'on',
     wrappingStrategy: 'advanced', scrollBeyondLastLine: false, ...editorOptions,
+    unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
   });
   diff.setModel({ original: originalModel, modified: modifiedModel });
   let active = true;

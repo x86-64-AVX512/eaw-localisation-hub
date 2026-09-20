@@ -108,6 +108,7 @@ export function createTicketPanel(options) {
       renderSideBySide: true, originalEditable: false,
       hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 4, revealLineCount: 10 },
       wordWrap: 'on', diffWordWrap: 'on', wrappingStrategy: 'advanced',
+      unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
     });
     diffEditor.setModel({ original, modified });
   }

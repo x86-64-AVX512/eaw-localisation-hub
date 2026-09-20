@@ -54,7 +54,7 @@ const editor = monaco.editor.create(document.querySelector('#editor'), {
   value: '', language: 'eaw-yaml', theme: 'vs-dark', automaticLayout: true, readOnly: true,
   fontFamily: 'Consolas, monospace', fontSize: 15, lineHeight: 23, minimap: { enabled: false },
   wordWrap: 'on', glyphMargin: true, padding: { top: 12, bottom: 40 }, scrollBeyondLastLine: false,
-  renderWhitespace: 'selection', roundedSelection: false,
+  renderWhitespace: 'selection', roundedSelection: false, unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
 }); let agentConnection;
 createEditorSettings({ monaco, editor, showToast });
 const spellcheck = createSpellcheck({ monaco, editor, token, showToast }); const syntaxDiagnostics = createSyntaxDiagnostics({ monaco, editor, token, showToast, getFilePath: () => state.relativePath });

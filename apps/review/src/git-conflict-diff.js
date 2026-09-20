@@ -26,6 +26,7 @@ export function createGitConflictDiff({ monaco, state, send }) {
       hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 2 },
       minimap: { enabled: false }, scrollBeyondLastLine: false,
       wordWrap: 'on', diffWordWrap: 'on', wrappingStrategy: 'advanced',
+      unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
     });
     diffEditor.setModel({ original: originalModel, modified: modifiedModel });
     dialog.showModal();

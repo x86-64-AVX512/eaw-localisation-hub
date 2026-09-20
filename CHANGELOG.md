@@ -1,6 +1,10 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F12` form; package metadata uses `0.8.7-beta.12`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F13` form; package metadata uses `0.8.7-beta.13`.
+
+## 0.8.7F13 – 2026-09-21
+
+- Review no longer draws yellow ambiguous-Unicode boxes around Cyrillic letters following Paradox colour codes. The change covers the main editor and diff views; invisible-character warnings remain enabled.
 
 ## 0.8.7F12 – 2026-09-19
 
