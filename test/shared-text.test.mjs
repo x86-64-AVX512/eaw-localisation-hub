@@ -189,6 +189,11 @@ test('UTF-8 byte offsets round-trip through Cyrillic and surrogate pairs', () =>
   }
   assert.throws(() => utf8ByteOffsetToUtf16Index(text, 2), /splits a code point/);
   assert.throws(() => utf16IndexToUtf8ByteOffset(text, 3), /splits a surrogate pair/);
+  const unpaired = 'A\uD800B\uDC00C';
+  for (let index = 0; index <= unpaired.length; index += 1) {
+    const byteOffset = utf16IndexToUtf8ByteOffset(unpaired, index);
+    assert.equal(utf8ByteOffsetToUtf16Index(unpaired, byteOffset), index);
+  }
 });
 
 test('a byte edit does not corrupt Cyrillic text', () => {

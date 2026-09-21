@@ -1,6 +1,13 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.7F13` form; package metadata uses `0.8.7-beta.13`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F1` form; package metadata uses `0.8.8-beta.1`.
+
+## 0.8.8F1 – 2026-09-21
+
+- Review caches UTF-8/UTF-16 position checkpoints, and Agent converts large-file cursor positions without per-character allocations. Presence and reservation-target snapshots update only the affected collaboration sections instead of rebuilding the complete panel for every participant message.
+- Personal projections are coalesced during typing with a two-second maximum delay. Agent reuses an unchanged Git HEAD file and sends small personal-version edits after the first full snapshot instead of repeatedly transferring three complete texts; the closed local-file dialog is populated only when opened.
+- Server history compression runs off the main event loop while preserving the captured revision and durable flush order. Agent polls Git asynchronously at a lower fallback rate.
+- The localisation key-index worker reuses unchanged files and the Review endpoint answers unchanged index requests without retransmitting the full key list. Reading an unchanged personal projection no longer schedules a redundant server persistence write.
 
 ## 0.8.7F13 – 2026-09-21
 

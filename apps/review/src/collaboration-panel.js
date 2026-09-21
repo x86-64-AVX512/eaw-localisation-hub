@@ -166,11 +166,11 @@ export function createCollaborationPanel({
     conflictList.scrollTop = previousScrollTop;
   }
 
-  function refresh() {
-    renderPresences();
-    renderTargets();
-    renderReservations();
-    renderConflicts();
+  function refresh(sections = null) {
+    if (!sections || sections.has('presences')) renderPresences();
+    if (!sections || sections.has('targets')) renderTargets();
+    if (!sections || sections.has('reservations')) renderReservations();
+    if (!sections || sections.has('conflicts')) renderConflicts();
   }
 
   document.querySelector('#reservation-create').addEventListener('click', () => {

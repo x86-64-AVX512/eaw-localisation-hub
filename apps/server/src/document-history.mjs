@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import zlib from 'node:zlib';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { byteLength } from './protocol-limits.mjs';
 import {
   captureLocalisationVariant,
@@ -16,10 +17,16 @@ const MAX_ENTRIES = 100;
 const MAX_TEXT_BYTES = 8 * 1024 * 1024;
 const MAX_STORED_BYTES = 24 * 1024 * 1024;
 const EDIT_SESSION_MILLISECONDS = 60 * 1000;
+const gzipAsync = promisify(zlib.gzip);
 
 function packedText(text) {
   if (byteLength(text) > MAX_TEXT_BYTES) return null;
   return zlib.gzipSync(Buffer.from(text, 'utf8'), { level: 6 }).toString('base64');
+}
+
+async function packedTextAsync(text) {
+  if (byteLength(text) > MAX_TEXT_BYTES) return null;
+  return (await gzipAsync(Buffer.from(text, 'utf8'), { level: 6 })).toString('base64');
 }
 
 function unpackText(entry) {
@@ -75,6 +82,8 @@ export class DocumentHistory {
     this.authorVariants = new Map();
     this.gitBaseText = null;
     this.rebaseConflicts = new Map();
+    this.packedGitBaseText = null;
+    this.packedGitBaseValue = null;
   }
 
   async load() {
@@ -397,6 +406,43 @@ export class DocumentHistory {
     let value = serialise();
     while (this.entries.length > 2 && byteLength(value) > MAX_STORED_BYTES) {
       this.entries.shift();
+      persisted.shift();
+      value = serialise();
+    }
+    return value;
+  }
+
+  async serialiseAsync() {
+    const snapshots = this.entries.map((item) => ({
+      item, id: item.id, text: item._text, packed: item.textGzipBase64,
+      metadata: Object.fromEntries(Object.entries(item).filter(([key]) => key !== '_text')),
+    }));
+    const gitBaseText = this.gitBaseText;
+    const ownership = [...this.ownership].map(([key, ownerId]) => ({
+      key, ownerId, ownerName: this.ownerNames.get(ownerId) ?? 'Unknown',
+    }));
+    const authorVariants = [...this.authorVariants].map(([authorId, variant]) => ({
+      authorId, authorName: this.ownerNames.get(authorId) ?? 'Unknown',
+      values: [...variant].map(([key, line]) => ({ key, line })),
+    }));
+    const rebaseConflicts = [...this.rebaseConflicts].map(([authorId, conflicts]) => ({ authorId, conflicts: [...conflicts.values()] }));
+    const persisted = await Promise.all(snapshots.map(async (snapshot) => {
+      const packed = snapshot.packed ?? await packedTextAsync(snapshot.text);
+      if (snapshot.item.id === snapshot.id && snapshot.item._text === snapshot.text) {
+        snapshot.item.textGzipBase64 = packed;
+      }
+      return { ...snapshot.metadata, textGzipBase64: packed };
+    }));
+    const gitBaseGzipBase64 = gitBaseText === null ? null
+      : this.packedGitBaseText === gitBaseText ? this.packedGitBaseValue
+        : await packedTextAsync(gitBaseText);
+    if (this.gitBaseText === gitBaseText) {
+      this.packedGitBaseText = gitBaseText;
+      this.packedGitBaseValue = gitBaseGzipBase64;
+    }
+    const serialise = () => `${JSON.stringify({ schema: 5, entries: persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts }, null, 2)}\n`;
+    let value = serialise();
+    while (persisted.length > 2 && byteLength(value) > MAX_STORED_BYTES) {
       persisted.shift();
       value = serialise();
     }

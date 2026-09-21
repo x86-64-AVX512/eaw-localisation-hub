@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 
 let cachedExecutable = '';
 
@@ -65,6 +65,14 @@ export function gitExecutable() {
 
 export function runGitSync(args, options = {}) {
   return spawnSync(gitExecutable(), args, { windowsHide: true, ...options });
+}
+
+export function runGitAsync(args, options = {}) {
+  return new Promise((resolve) => {
+    execFile(gitExecutable(), args, { windowsHide: true, encoding: 'utf8', ...options }, (error, stdout, stderr) => {
+      resolve({ status: error ? error.code ?? 1 : 0, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
+    });
+  });
 }
 
 export function resetGitExecutableForTests() {

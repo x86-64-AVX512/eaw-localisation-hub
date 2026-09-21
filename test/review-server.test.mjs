@@ -134,6 +134,11 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     const keyIndex = await keyIndexResponse.json();
     assert.equal(keyIndex.complete, true);
     assert.deepEqual(keyIndex.keys, ['REVIEW_KEY']);
+    const unchangedKeyIndex = await fetch(`${discovery.origin}/api/localisation-key-index`, {
+      headers: { Authorization: `Bearer ${discovery.token}`,
+        'If-None-Match': keyIndexResponse.headers.get('etag') },
+    });
+    assert.equal(unchangedKeyIndex.status, 304);
 
     const spellingUnauthorized = await fetch(`${discovery.origin}/api/spelling/dictionary`);
     assert.equal(spellingUnauthorized.status, 401);

@@ -456,7 +456,11 @@ test('personal file controls expose per-key gutter and dialog selection with a v
   assert.match(markup, /<dialog id="personal-file-dialog"/u);
   assert.match(markup, /id="local-file-notice"/u);
   assert.match(markup, /id="personal-file-selections"/u);
-  assert.match(variants, /openButton\.addEventListener\('click', \(\) => dialog\.showModal\(\)\)/u);
+  assert.match(variants, /openButton\.addEventListener\('click', openDialog\)/u);
+  assert.match(variants, /editor\.getValue\(\) === text/u,
+    'an unchanged personal-file preview must not flush the Monaco model');
+  assert.match(variants, /renderSelections\(true\)[\s\S]*renderConflicts\(true\)[\s\S]*dialog\.showModal\(\)/u,
+    'the local-file dialog must render its current contents before opening');
   assert.match(variants, /type: 'personalFileSelectionSet'/u);
   assert.match(variants, /checkbox\.addEventListener\('change'/u);
   assert.match(variants, /GUTTER_GLYPH_MARGIN/u);

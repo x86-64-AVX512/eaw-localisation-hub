@@ -1,5 +1,18 @@
-import { decodeBase64 } from './review-utilities.js';
+import { byteToUtf16, decodeBase64 } from './review-utilities.js';
 import { confirmAction } from './confirm-action.js';
+
+export function variantTexts(previous, payload, reviewText = null) {
+  const patch = payload.minePatch;
+  const mine = patch && previous ? previous.mine.slice(0, byteToUtf16(previous.mine, patch.positionByte))
+    + decodeBase64(patch.insertBase64)
+    + previous.mine.slice(byteToUtf16(previous.mine, patch.positionByte + patch.deleteBytes))
+    : payload.mineBase64 !== undefined ? decodeBase64(payload.mineBase64) : previous?.mine ?? '';
+  return {
+    shared: reviewText ?? (payload.sharedBase64 !== undefined ? decodeBase64(payload.sharedBase64) : previous?.shared ?? ''),
+    mine,
+    git: payload.gitBase64 !== undefined ? decodeBase64(payload.gitBase64) : previous?.git ?? '',
+  };
+}
 
 export function createDocumentVariants({
   monaco, state, editor, send, showToast, beforeChange, afterChange, onChanged,
@@ -29,40 +42,42 @@ export function createDocumentVariants({
       revision: state.documentVariants?.localSelectionRevision ?? '' });
   }
 
-  function renderSelections() {
+  function renderSelections(renderDialog = dialog.open) {
     const entries = state.documentVariants?.localSelections ?? [];
     const blocked = state.documentVariants?.localSelectionBlocked ?? '';
     const disabled = Boolean(blocked || state.documentVariants?.gitConflicts.length);
-    selectionsElement.replaceChildren();
-    if (!entries.length) {
-      const empty = document.createElement('div');
-      empty.className = 'personal-selection-empty';
-      empty.textContent = blocked || 'Совместная версия не отличается от Git HEAD.';
-      selectionsElement.append(empty);
-    }
-    for (const entry of entries) {
-      const row = document.createElement('label');
-      row.className = `personal-selection-row ${entry.state}`;
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.checked = entry.state === 'included';
-      checkbox.indeterminate = entry.state === 'custom';
-      checkbox.disabled = disabled;
-      checkbox.addEventListener('change', () => setSelection(entry, checkbox.checked));
-      const label = document.createElement('span');
-      label.className = 'personal-selection-label';
-      label.textContent = entry.kind === 'structure' ? entry.label : `${entry.label} · строка ${entry.lineNumber}`;
-      const diff = document.createElement('span');
-      diff.className = 'personal-selection-diff';
-      const before = document.createElement('del');
-      before.textContent = displayLine(entry.gitLine, 'в Git строки нет');
-      const after = document.createElement('ins');
-      after.textContent = entry.kind === 'structure'
-        ? 'Изменена структура, отдельные комментарии или порядок строк'
-        : displayLine(entry.sharedLine, 'удалено в совместной версии');
-      diff.append(before, after);
-      row.append(checkbox, label, diff);
-      selectionsElement.append(row);
+    if (renderDialog) {
+      selectionsElement.replaceChildren();
+      if (!entries.length) {
+        const empty = document.createElement('div');
+        empty.className = 'personal-selection-empty';
+        empty.textContent = blocked || 'Совместная версия не отличается от Git HEAD.';
+        selectionsElement.append(empty);
+      }
+      for (const entry of entries) {
+        const row = document.createElement('label');
+        row.className = `personal-selection-row ${entry.state}`;
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = entry.state === 'included';
+        checkbox.indeterminate = entry.state === 'custom';
+        checkbox.disabled = disabled;
+        checkbox.addEventListener('change', () => setSelection(entry, checkbox.checked));
+        const label = document.createElement('span');
+        label.className = 'personal-selection-label';
+        label.textContent = entry.kind === 'structure' ? entry.label : `${entry.label} · строка ${entry.lineNumber}`;
+        const diff = document.createElement('span');
+        diff.className = 'personal-selection-diff';
+        const before = document.createElement('del');
+        before.textContent = displayLine(entry.gitLine, 'в Git строки нет');
+        const after = document.createElement('ins');
+        after.textContent = entry.kind === 'structure'
+          ? 'Изменена структура, отдельные комментарии или порядок строк'
+          : displayLine(entry.sharedLine, 'удалено в совместной версии');
+        diff.append(before, after);
+        row.append(checkbox, label, diff);
+        selectionsElement.append(row);
+      }
     }
 
     const included = entries.filter((entry) => entry.state === 'included').length;
@@ -93,6 +108,39 @@ export function createDocumentVariants({
     else openButton.removeAttribute('title');
   }
 
+  function renderConflicts(force = false) {
+    if (!force && !dialog.open) return;
+    conflictsElement.replaceChildren();
+    for (const conflict of state.documentVariants?.gitConflicts ?? []) {
+      const row = document.createElement('section');
+      const label = document.createElement('h3');
+      label.textContent = conflict.label;
+      const detail = document.createElement('pre');
+      detail.textContent = conflict.reason === 'legacy-base-unknown'
+        ? 'У сохранённой версии нет надёжной базы Git. Проверьте версии «Моя» и «Git» перед выбором.'
+        : `База: ${conflict.baseLine ?? '(структура или удаление)'}\nМоя: ${conflict.collaborativeLine ?? '(структура или удаление)'}\nGit: ${conflict.externalLine ?? '(структура или удаление)'}`;
+      row.append(label, detail);
+      for (const [choice, title] of [['mine', 'Оставить мою правку'], ['git', 'Взять Git']]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = title;
+        button.addEventListener('click', () => {
+          send({ type: 'personalConflictResolve', path: state.path, key: conflict.key,
+            choice, conflictId: conflict.id });
+          for (const control of row.querySelectorAll('button')) control.disabled = true;
+        });
+        row.append(button);
+      }
+      conflictsElement.append(row);
+    }
+  }
+
+  function openDialog() {
+    renderSelections(true);
+    renderConflicts(true);
+    dialog.showModal();
+  }
+
   const gutterClick = editor.onMouseDown((event) => {
     if (event.target.type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) return;
     if (!event.target.element?.classList?.contains('local-file-check')) return;
@@ -100,16 +148,18 @@ export function createDocumentVariants({
     const entries = (state.documentVariants?.localSelections ?? [])
       .filter((entry) => entry.lineNumber === lineNumber);
     if (entries.length === 1) setSelection(entries[0], entries[0].state !== 'included');
-    else if (entries.length > 1) dialog.showModal();
+    else if (entries.length > 1) openDialog();
   });
 
   function applyText(text) {
+    if (editor.getValue() === text) return false;
     beforeChange();
     state.applyingRemote = true;
     editor.getModel().setValue(text);
     state.applyingRemote = false;
     afterChange();
     onChanged();
+    return true;
   }
 
   function textFor(view) {
@@ -147,7 +197,7 @@ export function createDocumentVariants({
   }
 
   selector.addEventListener('change', () => select(selector.value));
-  openButton.addEventListener('click', () => dialog.showModal());
+  openButton.addEventListener('click', openDialog);
   document.querySelector('#personal-file-git').addEventListener('click', async (event) => {
     if (!await confirmAction(event.currentTarget, 'Записать в рабочий файл чистую версию Git HEAD?', { label: 'Записать' })) return;
     send({ type: 'personalFileMaterialize', path: state.path, mode: 'git' });
@@ -159,10 +209,9 @@ export function createDocumentVariants({
   });
 
   function update(payload) {
+    const previous = state.documentVariants;
     state.documentVariants = {
-      shared: state.reviewDocument?.text() ?? decodeBase64(payload.sharedBase64),
-      mine: decodeBase64(payload.mineBase64),
-      git: decodeBase64(payload.gitBase64),
+      ...variantTexts(previous, payload, state.reviewDocument?.text()),
       contributors: payload.contributors ?? [],
       conflicts: payload.conflicts ?? [],
       gitConflicts: payload.gitConflicts ?? [],
@@ -185,29 +234,7 @@ export function createDocumentVariants({
     selector.disabled = false;
     const conflictCount = state.documentVariants.conflicts.length;
     const gitConflicts = state.documentVariants.gitConflicts;
-    conflictsElement.replaceChildren();
-    for (const conflict of gitConflicts) {
-      const row = document.createElement('section');
-      const label = document.createElement('h3');
-      label.textContent = conflict.label;
-      const detail = document.createElement('pre');
-      detail.textContent = conflict.reason === 'legacy-base-unknown'
-        ? 'У сохранённой версии нет надёжной базы Git. Проверьте версии «Моя» и «Git» перед выбором.'
-        : `База: ${conflict.baseLine ?? '(структура или удаление)'}\nМоя: ${conflict.collaborativeLine ?? '(структура или удаление)'}\nGit: ${conflict.externalLine ?? '(структура или удаление)'}`;
-      row.append(label, detail);
-      for (const [choice, title] of [['mine', 'Оставить мою правку'], ['git', 'Взять Git']]) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = title;
-        button.addEventListener('click', () => {
-          send({ type: 'personalConflictResolve', path: state.path, key: conflict.key,
-            choice, conflictId: conflict.id });
-          for (const control of row.querySelectorAll('button')) control.disabled = true;
-        });
-        row.append(button);
-      }
-      conflictsElement.append(row);
-    }
+    renderConflicts();
     openButton.disabled = false;
     message.textContent = gitConflicts.length
       ? `Запись личной версии приостановлена: конфликтов с Git – ${gitConflicts.length}. Выберите вариант для каждого конфликта.`

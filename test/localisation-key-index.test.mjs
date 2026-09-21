@@ -21,4 +21,9 @@ test('local key index runs off the Agent event loop and includes versionless key
   assert.deepEqual(new Set(direct.keys), new Set(['EYE_one', 'EYE_two']));
   const threaded = await getLocalisationKeyIndex(repository);
   assert.deepEqual(new Set(threaded.keys), new Set(direct.keys));
+  const unchanged = await getLocalisationKeyIndex(repository, { forceRefresh: true });
+  assert.strictEqual(unchanged, threaded, 'an unchanged index should not be copied back from the worker');
+  await fs.writeFile(path.join(english, 'a.yml'), 'l_english:\n EYE_two: "Two"\n EYE_three:0 "Three"\n');
+  const changed = await getLocalisationKeyIndex(repository, { forceRefresh: true });
+  assert.ok(changed.keys.includes('EYE_three'));
 });

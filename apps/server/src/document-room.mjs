@@ -1045,8 +1045,9 @@ export class DocumentRoom {
         message.subjectAuthorId ?? actor.id, 'Projection author id', 256, { required: true },
       );
       const baseText = String(this.gitBase?.text ?? this.history.text(this.history.entries[0]?.id) ?? '');
+      const gitBaseChanged = this.history.updateGitBase(baseText);
       const text = this.history.personalProjection(subjectAuthorId, baseText);
-      this.schedulePersist();
+      if (gitBaseChanged) this.schedulePersist();
       sendWithBackpressure(socket, JSON.stringify({
         type: 'personal-projection', documentId: this.documentId, requestId,
         subjectAuthorId,
@@ -1216,13 +1217,13 @@ export class DocumentRoom {
       suggestions: this.suggestions,
       gitBase: this.gitBase,
     }, null, 2);
-    const history = this.history.serialise();
     if (byteLength(metadata) > MAX_ROOM_METADATA_BYTES) {
       throw new ProtocolLimitError('Room metadata exceeds the persistence limit');
     }
+    const history = this.history.serialiseAsync();
     const write = this.persistPromise
       .catch(() => {})
-      .then(() => this.registry.persistRoom(this, update, metadata, history));
+      .then(async () => this.registry.persistRoom(this, update, metadata, await history));
     this.persistPromise = write;
     await write;
     if (this.revision === persistedRevision) this.stateBudgetBytes = update.length;

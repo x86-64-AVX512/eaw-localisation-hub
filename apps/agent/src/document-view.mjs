@@ -130,13 +130,14 @@ export function emitReview(binding, onlyClient = null) {
   for (const client of recipients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
-      if (client.kind === 'review') client.send({ type: 'reviewBatchStart', path: absolutePath });
-      client.send({ type: 'commentReset', path: absolutePath });
+      const messages = [];
+      const send = client.kind === 'review' ? (message) => messages.push(message) : (message) => client.send(message);
+      send({ type: 'commentReset', path: absolutePath });
       for (const thread of binding.commentThreads.values()) {
         const resolved = binding.resolveAnchoredItem(thread);
         const status = thread.status === 'resolved' ? 'resolved' : (resolved ? 'open' : 'orphaned');
         const lastMessage = thread.messages?.at(-1);
-        client.send({
+        send({
           type: 'commentThread',
           path: absolutePath,
           id: thread.id,
@@ -155,7 +156,7 @@ export function emitReview(binding, onlyClient = null) {
           endByte: resolved ? utf16IndexToUtf8ByteOffset(canonical, resolved.end) : 0,
         });
         for (const discussionMessage of thread.messages ?? []) {
-          client.send({
+          send({
             type: 'commentMessage',
             path: absolutePath,
             id: thread.id,
@@ -168,7 +169,7 @@ export function emitReview(binding, onlyClient = null) {
           });
         }
       }
-      client.send({ type: 'suggestionReset', path: absolutePath });
+      send({ type: 'suggestionReset', path: absolutePath });
       for (const suggestion of binding.suggestions.values()) {
         const resolved = binding.resolveAnchoredItem(suggestion);
         let status = suggestion.status;
@@ -177,7 +178,7 @@ export function emitReview(binding, onlyClient = null) {
             ? 'orphaned'
             : canonical.slice(resolved.start, resolved.end) === suggestion.originalText ? 'open' : 'stale';
         }
-        client.send({
+        send({
           type: 'suggestion',
           path: absolutePath,
           id: suggestion.id,
@@ -197,7 +198,7 @@ export function emitReview(binding, onlyClient = null) {
           endByte: resolved ? utf16IndexToUtf8ByteOffset(canonical, resolved.end) : 0,
         });
         for (const discussionMessage of suggestion.messages ?? []) {
-          client.send({
+          send({
             type: 'suggestionMessage',
             path: absolutePath,
             id: suggestion.id,
@@ -210,7 +211,14 @@ export function emitReview(binding, onlyClient = null) {
           });
         }
       }
-      if (client.kind === 'review') client.send({ type: 'reviewBatchEnd', path: absolutePath });
+      if (client.kind === 'review') {
+        const fingerprint = JSON.stringify(messages);
+        if (!onlyClient && fingerprint === state.reviewFingerprint) continue;
+        state.reviewFingerprint = fingerprint;
+        client.send({ type: 'reviewBatchStart', path: absolutePath });
+        for (const message of messages) client.send(message);
+        client.send({ type: 'reviewBatchEnd', path: absolutePath });
+      }
     }
   }
 }
@@ -269,7 +277,8 @@ export function emitPresences(binding, onlyClient = null) {
   for (const client of recipients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
-      client.send({ type: 'presenceReset', path: absolutePath });
+      const presences = [];
+      if (client.kind !== 'review') client.send({ type: 'presenceReset', path: absolutePath });
       for (const presence of binding.presences.values()) {
         if (presence.offline || binding.hub.isLocalPresenceId(presence.clientId)) continue;
         try {
@@ -282,7 +291,7 @@ export function emitPresences(binding, onlyClient = null) {
             binding.document,
           );
           if (!caret || !anchor || caret.type !== binding.text || anchor.type !== binding.text) continue;
-          client.send({
+          const item = {
             type: 'presence',
             path: absolutePath,
             clientId: presence.clientId,
@@ -291,11 +300,14 @@ export function emitPresences(binding, onlyClient = null) {
             color: presence.color,
             positionByte: utf16IndexToUtf8ByteOffset(canonical, caret.index),
             anchorByte: utf16IndexToUtf8ByteOffset(canonical, anchor.index),
-          });
+          };
+          if (client.kind === 'review') presences.push(item);
+          else client.send(item);
         } catch {
           // A stale relative position is intentionally omitted from the visual layer.
         }
       }
+      if (client.kind === 'review') client.send({ type: 'presenceSnapshot', path: absolutePath, presences });
     }
   }
 }
@@ -322,9 +334,10 @@ export function emitReservationTargets(binding, onlyClient = null) {
   for (const client of recipients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
-      client.send({ type: 'reservationTargetReset', path: absolutePath });
+      const items = [];
+      if (client.kind !== 'review') client.send({ type: 'reservationTargetReset', path: absolutePath });
       for (const target of targets) {
-        client.send({
+        const item = {
           type: 'reservationTarget',
           path: absolutePath,
           id: String(target.id ?? ''),
@@ -334,7 +347,15 @@ export function emitReservationTargets(binding, onlyClient = null) {
           isSelf: target.id
             ? target.id === binding.hub.identity?.id
             : target.displayName === binding.hub.options.user,
-        });
+        };
+        if (client.kind === 'review') items.push(item);
+        else client.send(item);
+      }
+      if (client.kind === 'review') {
+        const fingerprint = JSON.stringify(items);
+        if (!onlyClient && state.reservationTargetsFingerprint === fingerprint) continue;
+        state.reservationTargetsFingerprint = fingerprint;
+        client.send({ type: 'reservationTargetSnapshot', path: absolutePath, targets: items });
       }
     }
   }

@@ -7,8 +7,14 @@ import {
   setLocalisationSelection,
 } from '../../../packages/shared/src/merge.mjs';
 
+const PERSONAL_REFRESH_DELAY_MS = 250;
+const PERSONAL_REFRESH_MAX_WAIT_MS = 2_000;
+
 function variantsPayload(binding) {
-  const git = binding.hub.readGitHeadText(binding.relativePath);
+  const commit = binding.hub.gitCommit;
+  const git = commit && binding.variantGitCommit === commit && binding.variantGitText !== undefined
+    ? binding.variantGitText : binding.hub.readGitHeadText(binding.relativePath);
+  if (commit) { binding.variantGitCommit = commit; binding.variantGitText = git; }
   const shared = binding.text.toString();
   const local = localFileText(binding) ?? binding.personalText;
   const selection = localisationSelectionChanges(git, shared, local);
@@ -16,9 +22,7 @@ function variantsPayload(binding) {
   binding.personalSelectionGit = git;
   binding.personalSelectionShared = shared;
   return {
-    sharedBase64: Buffer.from(shared, 'utf8').toString('base64'),
-    mineBase64: Buffer.from(binding.personalText, 'utf8').toString('base64'),
-    gitBase64: Buffer.from(git, 'utf8').toString('base64'),
+    shared, mine: binding.personalText, git,
     contributors: binding.personalContributors,
     conflicts: binding.personalConflicts,
     gitConflicts: binding.personalGitConflicts,
@@ -28,6 +32,32 @@ function variantsPayload(binding) {
   };
 }
 
+function sendVariants(client, state, absolutePath, payload) {
+  const message = { type: 'documentVariants', path: absolutePath,
+    contributors: payload.contributors, conflicts: payload.conflicts,
+    gitConflicts: payload.gitConflicts, localSelections: payload.localSelections,
+    localSelectionBlocked: payload.localSelectionBlocked,
+    localSelectionRevision: payload.localSelectionRevision };
+  if (!state.variantSharedSent) {
+    message.sharedBase64 = Buffer.from(payload.shared, 'utf8').toString('base64');
+    state.variantSharedSent = true;
+  }
+  if (state.variantGitText !== payload.git) {
+    message.gitBase64 = Buffer.from(payload.git, 'utf8').toString('base64');
+    state.variantGitText = payload.git;
+  }
+  if (state.variantMineText !== payload.mine) {
+    const patch = typeof state.variantMineText === 'string'
+      ? computeSingleReplace(state.variantMineText, payload.mine) : null;
+    if (patch && Buffer.byteLength(patch.insertText, 'utf8') < Buffer.byteLength(payload.mine, 'utf8') / 2) {
+      message.minePatch = { positionByte: patch.positionByte, deleteBytes: patch.deleteBytes,
+        insertBase64: Buffer.from(patch.insertText, 'utf8').toString('base64') };
+    } else message.mineBase64 = Buffer.from(payload.mine, 'utf8').toString('base64');
+    state.variantMineText = payload.mine;
+  }
+  client.send(message);
+}
+
 export function emitDocumentVariants(binding, onlyClient = null) {
   if (binding.ticketId || !binding.personalReady) return;
   const payload = variantsPayload(binding);
@@ -35,18 +65,35 @@ export function emitDocumentVariants(binding, onlyClient = null) {
     if (onlyClient && client !== onlyClient) continue;
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised || client.kind !== 'review') continue;
-      client.send({ type: 'documentVariants', path: absolutePath, ...payload });
+      sendVariants(client, state, absolutePath, payload);
     }
   }
 }
 
 export function resetPersonalRequest(binding) {
+  clearTimeout(binding.personalRefreshTimer);
+  binding.personalRefreshTimer = null;
+  binding.personalRefreshStartedAt = null;
   clearTimeout(binding.personalRequestTimer);
   binding.personalRequestTimer = null;
   binding.personalRequestId = '';
   binding.personalRefreshPending = false;
   binding.personalReady = Boolean(binding.ticketId);
   binding.variantRequests.clear();
+}
+
+export function schedulePersonalDocumentRefresh(binding) {
+  if (!binding.personalReady) { requestPersonalDocument(binding); return; }
+  const now = Date.now();
+  binding.personalRefreshStartedAt ??= now;
+  const remaining = PERSONAL_REFRESH_MAX_WAIT_MS - (now - binding.personalRefreshStartedAt);
+  clearTimeout(binding.personalRefreshTimer);
+  binding.personalRefreshTimer = setTimeout(() => {
+    binding.personalRefreshTimer = null;
+    binding.personalRefreshStartedAt = null;
+    requestPersonalDocument(binding);
+  }, Math.max(0, Math.min(PERSONAL_REFRESH_DELAY_MS, remaining)));
+  binding.personalRefreshTimer.unref?.();
 }
 
 export function seedAttachedDocument(binding) {
@@ -116,7 +163,7 @@ export function handlePersonalDocument(binding, message) {
       binding.reconcileInitialDisk(client, absolutePath, state);
       binding.syncClientView(client, absolutePath);
       if (client.kind === 'review') {
-        client.send({ type: 'documentVariants', path: absolutePath, ...payload });
+        sendVariants(client, state, absolutePath, payload);
         client.scheduleMaterialisation?.(absolutePath);
       }
     }

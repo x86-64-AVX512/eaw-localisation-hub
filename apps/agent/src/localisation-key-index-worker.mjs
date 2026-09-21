@@ -12,18 +12,19 @@ function inside(root, target) {
   return relative && !relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative);
 }
 
-export async function collectLocalisationKeys(repository) {
+export async function collectLocalisationKeys(repository, fileCache = new Map()) {
   const canonicalRepository = await fs.realpath(repository);
   const root = path.join(canonicalRepository, 'localisation');
   let canonicalRoot;
   try { canonicalRoot = await fs.realpath(root); }
   catch (error) {
-    if (error.code === 'ENOENT') return { keys: [], complete: true, files: 0 };
+    if (error.code === 'ENOENT') { fileCache.clear(); return { keys: [], complete: true, files: 0 }; }
     throw error;
   }
   if (!inside(canonicalRepository, canonicalRoot)) throw new Error('Localisation directory is outside the repository');
   const keys = new Set();
   const directories = [canonicalRoot];
+  const seen = new Set();
   let files = 0; let bytes = 0; let complete = true;
   while (directories.length && complete) {
     const directory = directories.pop();
@@ -34,19 +35,42 @@ export async function collectLocalisationKeys(repository) {
       if (!entry.isFile() || !/\.ya?ml$/iu.test(entry.name)) continue;
       const canonical = await fs.realpath(location);
       if (!inside(canonicalRepository, canonical)) continue;
-      const stat = await fs.stat(canonical);
-      if (++files > MAX_FILES || stat.size > MAX_FILE_BYTES || (bytes += stat.size) > MAX_TOTAL_BYTES) {
+      const stat = await fs.stat(canonical, { bigint: true });
+      const size = Number(stat.size);
+      if (++files > MAX_FILES || size > MAX_FILE_BYTES || (bytes += size) > MAX_TOTAL_BYTES) {
         complete = false;
         break;
       }
-      const body = await fs.readFile(canonical, 'utf8');
-      KEY_LINE.lastIndex = 0;
-      for (const match of body.matchAll(KEY_LINE)) keys.add(match[1].trim());
+      seen.add(canonical);
+      const cached = fileCache.get(canonical);
+      let fileKeys;
+      if (cached?.size === stat.size && cached.mtimeNs === stat.mtimeNs
+        && cached.ctimeNs === stat.ctimeNs) fileKeys = cached.keys;
+      else {
+        const body = await fs.readFile(canonical, 'utf8');
+        KEY_LINE.lastIndex = 0;
+        fileKeys = [...body.matchAll(KEY_LINE)].map((match) => match[1].trim());
+        fileCache.set(canonical, { size: stat.size, mtimeNs: stat.mtimeNs, ctimeNs: stat.ctimeNs, keys: fileKeys });
+      }
+      for (const key of fileKeys) keys.add(key);
     }
   }
+  for (const file of fileCache.keys()) if (!seen.has(file)) fileCache.delete(file);
   return { keys: complete ? [...keys] : [], complete, files };
 }
 
-if (parentPort) collectLocalisationKeys(workerData.repository)
-  .then((result) => parentPort.postMessage({ result }))
-  .catch((error) => parentPort.postMessage({ error: error.message }));
+if (parentPort) {
+  const fileCache = new Map();
+  let previous = null;
+  let queue = Promise.resolve();
+  parentPort.on('message', ({ id }) => {
+    queue = queue.then(async () => {
+      const result = await collectLocalisationKeys(workerData.repository, fileCache);
+      const unchanged = previous?.complete === result.complete && previous.files === result.files
+        && previous.keys.length === result.keys.length
+        && previous.keys.every((key, index) => key === result.keys[index]);
+      previous = result;
+      parentPort.postMessage(unchanged ? { id, unchanged: true } : { id, result });
+    }).catch((error) => parentPort.postMessage({ id, error: error.message }));
+  });
+}

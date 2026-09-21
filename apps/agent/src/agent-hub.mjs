@@ -18,7 +18,7 @@ import { KeyReplacementWorkflow } from './key-replacement-workflow.mjs';
 import { resolveReviewAnchors } from './review-document.mjs';
 import { serverHttpUrl } from './server-http-url.mjs';
 import { transitionWorkspace } from './workspace-transition.mjs';
-import { runGitSync } from './git-executable.mjs';
+import { runGitAsync, runGitSync } from './git-executable.mjs';
 import { DiffCache } from './diff-cache.mjs';
 
 function sendLine(socket, message) {
@@ -158,7 +158,7 @@ export class AgentHub {
     }, 15_000);
     this.accountRefreshTimer.unref();
     this.gitCommit = this.currentDocumentGitCommit();
-    this.gitCommitTimer = setInterval(() => this.checkGitCommitChange(), 1_000);
+    this.gitCommitTimer = setInterval(() => this.checkGitCommitChange().catch(() => {}), 3_000);
     this.gitCommitTimer.unref();
     removeLegacyCommitGuard(this.options.repo);
     this.startBranchWatcher();
@@ -433,21 +433,28 @@ export class AgentHub {
     };
   }
 
-  checkGitCommitChange() {
-    if (this.workspaceTransitioning) return;
-    if (!this.options.workspaceExplicit) {
-      const workspace = this.currentGitWorkspace();
-      if (!workspace) return;
-      if (workspace !== this.options.workspace) {
-        this.checkWorkspaceChange(workspace);
-        return;
+  async checkGitCommitChange() {
+    if (this.closing || this.workspaceTransitioning || this.gitCommitCheckPending) return;
+    this.gitCommitCheckPending = true;
+    try {
+      if (!this.options.workspaceExplicit) {
+        const branch = await runGitAsync(['branch', '--show-current'], { cwd: this.options.repo });
+        const workspace = branch.status === 0 ? branch.stdout.trim() : '';
+        if (!workspace || this.closing || this.workspaceTransitioning) return;
+        if (workspace !== this.options.workspace) {
+          this.checkWorkspaceChange(workspace);
+          return;
+        }
       }
+      const result = await runGitAsync(['rev-parse', 'HEAD'], { cwd: this.options.repo });
+      const commit = result.status === 0 ? result.stdout.trim().toLowerCase() : '';
+      if (this.closing || this.workspaceTransitioning
+        || !/^[0-9a-f]{40,64}$/u.test(commit) || commit === this.gitCommit) return;
+      this.gitCommit = commit;
+      for (const binding of this.documents.values()) binding.reconnectForGitHead();
+    } finally {
+      this.gitCommitCheckPending = false;
     }
-    const commit = this.currentDocumentGitCommit();
-    if (!commit) return;
-    if (commit === this.gitCommit) return;
-    this.gitCommit = commit;
-    for (const binding of this.documents.values()) binding.reconnectForGitHead();
   }
 
   async ticketRequest(route, options = {}) {
@@ -846,6 +853,7 @@ export class AgentHub {
   }
 
   async close() {
+    this.closing = true;
     clearInterval(this.accountRefreshTimer);
     clearInterval(this.gitCommitTimer);
     if (this.branchDebounce) clearTimeout(this.branchDebounce);

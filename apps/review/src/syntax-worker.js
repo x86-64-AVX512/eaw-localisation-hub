@@ -4,14 +4,18 @@ let knownKeys = null;
 let knownPrefixes = null;
 let indexTimer = null;
 let indexError = '';
+let indexTag = '';
 
 async function refreshKeyIndex(token) {
   try {
     const response = await fetch('/api/localisation-key-index', {
-      cache: 'no-store', headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store', headers: { Authorization: `Bearer ${token}`,
+        ...(indexTag ? { 'If-None-Match': indexTag } : {}) },
     });
+    if (response.status === 304) return;
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
+    indexTag = response.headers?.get?.('etag') ?? '';
     knownKeys = payload.complete && Array.isArray(payload.keys) ? new Set(payload.keys) : null;
     knownPrefixes = knownKeys
       ? new Set([...knownKeys].map((key) => /^([A-Z0-9]{2,5})_/u.exec(key)?.[1]).filter(Boolean))

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { discoverGitExecutable } from '../apps/agent/src/git-executable.mjs';
+import { discoverGitExecutable, runGitAsync } from '../apps/agent/src/git-executable.mjs';
 
 test('Agent discovers the Git executable bundled with the newest GitHub Desktop', () => {
   const environment = { LOCALAPPDATA: 'C:\\Users\\Tester\\AppData\\Local' };
@@ -23,4 +23,10 @@ test('Agent reports a clear error when neither system nor GitHub Desktop Git exi
   assert.throws(() => discoverGitExecutable({
     environment: {}, platform: 'win32', probe: () => false,
   }), /Git не найден/u);
+});
+
+test('Agent can poll Git without blocking the JavaScript event loop', async () => {
+  const result = await runGitAsync(['--version']);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /^git version /u);
 });

@@ -3,8 +3,10 @@ import test from 'node:test';
 import { WebSocket } from 'ws';
 import {
   requestPersonalDocument, resetPersonalRequest, handlePersonalDocument,
+  schedulePersonalDocumentRefresh, emitDocumentVariants,
   localFileText, replacePersonalDocument, setPersonalSelection,
 } from '../apps/agent/src/personal-document.mjs';
+import { variantTexts } from '../apps/review/src/document-variants.js';
 
 function bindingFixture() {
   const sent = [];
@@ -61,6 +63,66 @@ test('an invalidated refresh keeps the last known projection usable', () => {
   assert.equal(localFileText(binding), 'previous personal');
   assert.equal(binding.personalReady, true);
   resetPersonalRequest(binding);
+});
+
+test('settled personal projections coalesce rapid edits while the initial projection starts immediately', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const binding = bindingFixture();
+  for (let index = 0; index < 20; index += 1) schedulePersonalDocumentRefresh(binding);
+  assert.equal(binding.sent.length, 0);
+  t.mock.timers.tick(249);
+  assert.equal(binding.sent.length, 0);
+  t.mock.timers.tick(1);
+  assert.equal(binding.sent.length, 1);
+  resetPersonalRequest(binding);
+  binding.personalReady = false;
+  schedulePersonalDocumentRefresh(binding);
+  assert.equal(binding.sent.length, 2);
+  resetPersonalRequest(binding);
+});
+
+test('continuous typing cannot postpone a settled personal projection forever', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const binding = bindingFixture();
+  for (let index = 0; index < 20; index += 1) {
+    schedulePersonalDocumentRefresh(binding);
+    t.mock.timers.tick(100);
+  }
+  assert.equal(binding.sent.length, 1);
+  resetPersonalRequest(binding);
+});
+
+test('unchanged Git and shared variants are sent once and later personal edits remain reconstructible', () => {
+  const binding = bindingFixture();
+  binding.relativePath = 'localisation/russian/file.yml';
+  binding.hub.gitCommit = 'commit-one';
+  const git = 'l_russian:\n a:0 "Гит"\n';
+  let gitReads = 0;
+  binding.hub.readGitHeadText = () => { gitReads += 1; return git; };
+  binding.text = { toString: () => git };
+  binding.personalText = git;
+  const messages = [];
+  const path = 'C:\\repo\\localisation\\russian\\file.yml';
+  const state = { binding, initialised: true };
+  binding.clients.add({ kind: 'review', documents: new Map([[path, state]]), send: (message) => messages.push(message) });
+  emitDocumentVariants(binding);
+  const first = messages.at(-1);
+  assert.ok(first.sharedBase64);
+  assert.ok(first.gitBase64);
+  assert.ok(first.mineBase64);
+  binding.personalText = git.replace('Гит', 'Мир');
+  emitDocumentVariants(binding);
+  const second = messages.at(-1);
+  assert.equal(gitReads, 1);
+  assert.equal(second.gitBase64, undefined);
+  assert.equal(second.sharedBase64, undefined);
+  assert.ok(second.minePatch);
+  assert.deepEqual(variantTexts(variantTexts(null, first), second), {
+    shared: git, mine: binding.personalText, git,
+  });
+  binding.hub.gitCommit = 'commit-two';
+  emitDocumentVariants(binding);
+  assert.equal(gitReads, 2);
 });
 
 test('continuous edits do not indefinitely prevent the initial personal projection', () => {

@@ -120,7 +120,9 @@ export function utf8ByteOffsetToUtf16Index(text, byteOffset) {
   while (index < text.length && bytes < byteOffset) {
     const codePoint = text.codePointAt(index);
     const width16 = codePoint > 0xffff ? 2 : 1;
-    const width8 = Buffer.byteLength(String.fromCodePoint(codePoint), 'utf8');
+    // UTF-8 width can be derived directly. Avoid allocating a temporary
+    // one-character string for every code point in multi-megabyte files.
+    const width8 = codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
     if (bytes + width8 > byteOffset) {
       throw new RangeError(`UTF-8 byte offset ${byteOffset} splits a code point`);
     }

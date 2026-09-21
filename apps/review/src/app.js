@@ -7,7 +7,7 @@ import { createGitHistoryPanel, createHistoryPanel } from './history-panel.js';
 import { createKeyReplacementPanel } from './key-replacement-panel.js';
 import { createPresenceController } from './presence-controller.js'; import { createReviewCards } from './review-cards.js';
 import { createReviewNavigation } from './review-navigation.js';
-import { createReviewRefresh } from './review-refresh.js';
+import { createCollaborationRefresh, createReviewRefresh } from './review-refresh.js';
 import { createRecoveryBanner } from './recovery-banner.js';
 import { createTicketPanel } from './ticket-panel.js';
 import { createScrollSync } from './scroll-sync.js'; import { createSyntaxDiagnostics } from './syntax-diagnostics.js';
@@ -93,7 +93,7 @@ async function closeActiveDocument({ flush = true } = {}) {
   editingMode?.flushSuggestion();
   state.ready = false;
   state.presences.clear();
-  refreshCollaboration();
+  collaborationRefresh.refreshAll();
   agentConnection?.send({ type: 'deactivate', path: state.path });
   agentConnection?.send({ type: 'close', path: state.path });
   if (flush) await agentConnection?.flush();
@@ -112,10 +112,7 @@ const documentVariants = createDocumentVariants({
   afterChange: () => editingMode.afterRemoteChange(),
   onChanged: () => { reviewRefresh.schedule(); collaborationPanel.refresh(); },
 });
-function refreshCollaboration() {
-  refreshDecorations();
-  collaborationPanel.refresh();
-}
+const collaborationRefresh = createCollaborationRefresh(refreshDecorations, collaborationPanel);
 const applyRemoteReplace = createRemoteDocument({
   state, editor, editingMode, send,
   onChanged: () => { reviewRefresh.schedule(); collaborationPanel.refresh(); },
@@ -162,6 +159,7 @@ function handleMessage(message) {
   else if (message.type === 'personalFileStatus') documentVariants.status(message);
   else if (message.type === 'presenceReset') state.presences.clear();
   else if (message.type === 'presence') state.presences.set(message.clientId, message);
+  else if (message.type === 'presenceSnapshot') state.presences = new Map((message.presences ?? []).map((item) => [item.clientId, item]));
   else if (message.type === 'reservationReset') state.reservations.clear();
   else if (message.type === 'reservation') state.reservations.set(message.id, message);
   else if (message.type === 'reservationSnapshot') {
@@ -169,6 +167,7 @@ function handleMessage(message) {
   }
   else if (message.type === 'reservationTargetReset') state.reservationTargets = [];
   else if (message.type === 'reservationTarget') state.reservationTargets.push(message);
+  else if (message.type === 'reservationTargetSnapshot') state.reservationTargets = message.targets ?? [];
   else if (message.type === 'externalConflictReset') resetExternalConflicts(state, message.source);
   else if (message.type === 'externalConflict') storeExternalConflict(state, message);
   else if (message.type === 'commentReset') { state.comments.clear(); state.commentMessages.clear(); }
@@ -201,7 +200,7 @@ function handleMessage(message) {
     setStatus(message.message, true);
     showToast(message.message, true);
   }
-  if (/^(presence|reservation|externalConflict)/.test(message.type)) refreshCollaboration();
+  if (/^(presence|reservation|externalConflict)/.test(message.type)) collaborationRefresh.schedule(message.type);
   if (/^(comment|suggestion)/.test(message.type)) reviewRefresh.schedule();
 }
 function collaborativeUndo() { if (state.ready) editingMode.undo(); }
@@ -294,6 +293,6 @@ window.addEventListener('beforeunload', () => {
   notificationCenter.dispose(); editingMode.flushSuggestion(); editingMode.dispose();
   state.reviewDocument.dispose(); presenceController.dispose();
   historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();
-  scrollSync.dispose(); reviewRefresh.dispose(); spellcheck.dispose(); syntaxDiagnostics.dispose();
+  scrollSync.dispose(); reviewRefresh.dispose(); collaborationRefresh.dispose(); spellcheck.dispose(); syntaxDiagnostics.dispose();
   reviewNavigation.dispose(); appbarLayout.dispose(); agentConnection?.dispose(); gitConflictDiff.dispose();
 });

@@ -1,5 +1,5 @@
-export const DISPLAY_VERSION = '0.8.7F13';
-export const SEMVER_VERSION = '0.8.7-beta.13';
+export const DISPLAY_VERSION = '0.8.8F1';
+export const SEMVER_VERSION = '0.8.8-beta.1';
 export const PROTOCOL_VERSION = 19;
 
 // Transport and CRDT budgets are intentionally separate. A full localisation

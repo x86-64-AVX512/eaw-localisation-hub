@@ -3,11 +3,28 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { DocumentHistory } from '../apps/server/src/document-history.mjs';
 
 const alice = { id: 'alice', displayName: 'Alice' };
 const bob = { id: 'bob', displayName: 'Bob' };
 const baseline = 'l_russian:\n key:0 "Git"\n other:0 "Keep"\n';
+
+test('async history snapshots stay consistent when another edit arrives during compression', async () => {
+  const history = new DocumentHistory('unused');
+  history.ensureBaseline(baseline);
+  const firstText = baseline.replace('"Git"', '"First"');
+  const secondText = baseline.replace('"Git"', '"Second"');
+  history.record(firstText, alice);
+  const firstSave = history.serialiseAsync();
+  history.record(secondText, alice);
+  const savedFirst = JSON.parse(await firstSave);
+  const unpack = (entry) => zlib.gunzipSync(Buffer.from(entry.textGzipBase64, 'base64')).toString('utf8');
+  assert.equal(unpack(savedFirst.entries.at(-1)), firstText);
+  const savedSecond = JSON.parse(await history.serialiseAsync());
+  assert.equal(unpack(savedSecond.entries.at(-1)), secondText);
+  assert.deepEqual(savedSecond, JSON.parse(history.serialise()));
+});
 
 test('an incorporated personal edit cannot overwrite a later Git version after reload', async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-history-retire-'));

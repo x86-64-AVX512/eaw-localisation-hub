@@ -48,6 +48,8 @@ export class DocumentBinding {
     this.baseWrites = new Set();
     delivery.initialiseDelivery(this);
     this.personalRequestId = '';
+    this.personalRefreshTimer = null;
+    this.personalRefreshStartedAt = null;
     this.personalRefreshPending = false;
     this.variantRequests = new Map();
     this.personalText = '';
@@ -62,7 +64,7 @@ export class DocumentBinding {
     this.document.on('update', (update, origin) => {
       broadcastReviewUpdate(this, update, origin);
       delivery.forwardLocalUpdate(this, update, origin !== REMOTE_ORIGIN);
-      if (this.synced) this.requestPersonalDocument();
+      if (this.synced) personalDocument.schedulePersonalDocumentRefresh(this);
       if (this.synced) this.initialiseAttachedClients();
       this.scheduleRefresh();
     });
@@ -166,7 +168,7 @@ export class DocumentBinding {
       this.history = message.entries ?? [];
       this.historyHeadId = message.headId ?? '';
       this.emitHistory();
-      this.requestPersonalDocument();
+      personalDocument.schedulePersonalDocumentRefresh(this);
       return;
     }
     if (message.type === 'history-version') {
@@ -438,7 +440,7 @@ export class DocumentBinding {
     let anchor;
     try {
       caret = utf8ByteOffsetToUtf16Index(state.mirror, pendingCursor.positionByte);
-      anchor = utf8ByteOffsetToUtf16Index(state.mirror, pendingCursor.anchorByte);
+      anchor = pendingCursor.anchorByte === pendingCursor.positionByte ? caret : utf8ByteOffsetToUtf16Index(state.mirror, pendingCursor.anchorByte);
     } catch (error) {
       if (error instanceof RangeError) return false;
       throw error;

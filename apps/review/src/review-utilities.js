@@ -1,5 +1,37 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const COORDINATE_STEP = 4096;
+let coordinateText = null;
+let coordinateIndex = null;
+
+function coordinatesFor(text) {
+  if (coordinateText === text && coordinateIndex) return coordinateIndex;
+  const checkpoints = [{ utf16: 0, bytes: 0 }];
+  let utf16 = 0; let bytes = 0;
+  while (utf16 < text.length) {
+    let next = Math.min(text.length, utf16 + COORDINATE_STEP);
+    const previousCode = text.charCodeAt(next - 1);
+    const nextCode = text.charCodeAt(next);
+    if (next < text.length && previousCode >= 0xd800 && previousCode <= 0xdbff
+      && nextCode >= 0xdc00 && nextCode <= 0xdfff) next -= 1;
+    bytes += encoder.encode(text.slice(utf16, next)).length;
+    utf16 = next;
+    checkpoints.push({ utf16, bytes });
+  }
+  coordinateText = text;
+  coordinateIndex = checkpoints;
+  return checkpoints;
+}
+
+function checkpointFor(checkpoints, position, field) {
+  let low = 0; let high = checkpoints.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (checkpoints[middle][field] <= position) low = middle;
+    else high = middle - 1;
+  }
+  return checkpoints[low];
+}
 
 export function decodeBase64(value) {
   const binary = atob(value || '');
@@ -16,13 +48,18 @@ export function encodeBase64(value) {
 }
 
 export function utf16ToByte(text, index) {
-  return encoder.encode(text.slice(0, index)).length;
+  if (index < 0 || index > text.length) return encoder.encode(text.slice(0, index)).length;
+  const checkpoint = checkpointFor(coordinatesFor(text), index, 'utf16');
+  return checkpoint.bytes + encoder.encode(text.slice(checkpoint.utf16, index)).length;
 }
 
 export function byteToUtf16(text, byteOffset) {
-  const bytes = encoder.encode(text);
-  if (byteOffset < 0 || byteOffset > bytes.length) throw new RangeError('Invalid UTF-8 byte position');
-  return decoder.decode(bytes.slice(0, byteOffset)).length;
+  const checkpoints = coordinatesFor(text);
+  if (byteOffset < 0 || byteOffset > checkpoints.at(-1).bytes) throw new RangeError('Invalid UTF-8 byte position');
+  const checkpoint = checkpointFor(checkpoints, byteOffset, 'bytes');
+  if (checkpoint.bytes === byteOffset) return checkpoint.utf16;
+  const bytes = encoder.encode(text.slice(checkpoint.utf16, checkpoint.utf16 + COORDINATE_STEP + 1));
+  return checkpoint.utf16 + decoder.decode(bytes.subarray(0, byteOffset - checkpoint.bytes)).length;
 }
 
 export function safeColor(value) {

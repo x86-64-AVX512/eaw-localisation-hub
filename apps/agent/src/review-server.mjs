@@ -254,6 +254,7 @@ export async function startReviewServer(hub, options) {
   const diffCache = hub.diffCache ?? new DiffCache(path.join(options.state, 'diff-cache'));
   await diffCache.initialise();
   let spellingDictionaryPromise = null;
+  let keyIndexSnapshot = null; let keyIndexTag = '';
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'review-web');
   const server = http.createServer(async (request, response) => {
     const address = server.address();
@@ -300,7 +301,13 @@ export async function startReviewServer(hub, options) {
       if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
       try {
         const index = await getLocalisationKeyIndex(options.repo);
+        if (index !== keyIndexSnapshot) {
+          keyIndexSnapshot = index;
+          keyIndexTag = `"${crypto.randomUUID()}"`;
+        }
         secureHeaders(response, 'application/json; charset=utf-8');
+        response.setHeader('ETag', keyIndexTag);
+        if (request.headers['if-none-match'] === keyIndexTag) { response.writeHead(304).end(); return; }
         response.end(JSON.stringify(index));
       } catch (error) {
         response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
