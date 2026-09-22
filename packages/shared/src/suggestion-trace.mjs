@@ -42,7 +42,8 @@ export function parseSuggestionTrace(traceJson, original, replacement) {
 }
 
 export function createSuggestionTrace(original, replacement, origins, baseStart = 0) {
-  if (!Array.isArray(origins) || origins.length !== replacement.length) return '';
+  if (!(Array.isArray(origins) || ArrayBuffer.isView(origins))
+    || origins.length !== replacement.length) return '';
   const encoded = [];
   for (let index = 0; index < origins.length;) {
     const absoluteOrigin = origins[index];

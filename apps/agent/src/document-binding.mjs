@@ -32,6 +32,7 @@ export class DocumentBinding {
     this.reservations = new Map();
     this.commentThreads = new Map();
     this.suggestions = new Map();
+    this.reservationRevision = 0; this.reviewRevision = 0;
     this.history = [];
     this.historyHeadId = '';
     this.presences = new Map();
@@ -52,7 +53,7 @@ export class DocumentBinding {
     this.personalRefreshStartedAt = null;
     this.personalRefreshPending = false;
     this.variantRequests = new Map();
-    this.personalText = '';
+    this.personalText = ''; this.personalRevision = '';
     this.personalReady = Boolean(this.ticketId);
     this.personalContributors = [];
     this.personalConflicts = [];
@@ -150,13 +151,13 @@ export class DocumentBinding {
       return;
     }
     if (message.type === 'reservations') {
-      this.reservations = new Map((message.reservations ?? []).map((item) => [item.id, item]));
+      this.reservations = new Map((message.reservations ?? []).map((item) => [item.id, item])); this.reservationRevision += 1;
       this.emitReservations();
       return;
     }
     if (message.type === 'review') {
       this.commentThreads = new Map((message.commentThreads ?? []).map((item) => [item.id, item]));
-      this.suggestions = new Map((message.suggestions ?? []).map((item) => [item.id, item]));
+      this.suggestions = new Map((message.suggestions ?? []).map((item) => [item.id, item])); this.reviewRevision += 1;
       this.emitReview();
       return;
     }
@@ -236,9 +237,9 @@ export class DocumentBinding {
       origin: { clientId: client.clientId },
       diskBase: storedBase?.text ?? initialText,
       hasPersistedBase: storedBase != null,
+      basePersistText: storedBase?.text ?? null,
       basePersistPromise: Promise.resolve(),
-      diskWatcher: null,
-      diskPollTimer: null,
+      diskWatcher: null, diskSignature: '', diskPollTimer: null,
       diskDebounce: null,
       diskCheckPromise: Promise.resolve(),
       pendingExternal: null,
@@ -419,9 +420,8 @@ export class DocumentBinding {
   requestPersonalDocument() { return personalDocument.requestPersonalDocument(this); }
 
   replacePersonalDocument(text) { return personalDocument.replacePersonalDocument(this, text); }
-
   requestDocumentVariant(client, absolutePath, authorId) { return personalDocument.requestDocumentVariant(this, client, absolutePath, authorId); }
-
+  emitDocumentVariants(client = null) { return personalDocument.emitDocumentVariants(this, client); }
   localFileText() { return personalDocument.localFileText(this); }
 
   setPersonalMaterialisation(mode, absolutePath) {

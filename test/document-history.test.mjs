@@ -26,6 +26,31 @@ test('async history snapshots stay consistent when another edit arrives during c
   assert.deepEqual(savedSecond, JSON.parse(history.serialise()));
 });
 
+test('persisted history keeps decompressed text only for the editable head', async () => {
+  const history = new DocumentHistory('unused');
+  history.ensureBaseline(baseline);
+  history.record(baseline.replace('"Git"', '"First"'), alice, 'restore', { coalesce: false });
+  history.record(baseline.replace('"Git"', '"Second"'), alice, 'restore', { coalesce: false });
+  await history.serialiseAsync();
+  assert.equal(history.entries.at(-1)._text.includes('Second'), true);
+  assert.equal(history.entries.slice(0, -1).every((entry) => entry._text === undefined), true);
+  assert.equal(history.text(history.entries[0].id), baseline);
+});
+
+test('async history pruning keeps the live history identical to the bounded persisted history', async () => {
+  const history = new DocumentHistory('unused');
+  const packed = Buffer.alloc(512 * 1024, 0x61).toString('base64');
+  history.entries = Array.from({ length: 40 }, (_, index) => ({
+    id: `entry-${index}`, timestamp: index, authorId: 'alice', author: 'Alice',
+    color: '#f00', reason: 'edit', textGzipBase64: packed,
+  }));
+  const value = await history.serialiseAsync();
+  const persisted = JSON.parse(value).entries;
+  assert.ok(Buffer.byteLength(value, 'utf8') <= 24 * 1024 * 1024);
+  assert.ok(persisted.length < 40);
+  assert.deepEqual(history.entries.map(({ id }) => id), persisted.map(({ id }) => id));
+});
+
 test('an incorporated personal edit cannot overwrite a later Git version after reload', async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-history-retire-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));

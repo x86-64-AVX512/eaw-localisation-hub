@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  captureLocalisationVariant,
   localisationSelectionChanges,
   mergeLocalisationThreeWay,
   setLocalisationSelection,
@@ -12,6 +13,22 @@ const base = [
   ' key_two:0 "Второй"',
   '',
 ].join('\r\n');
+
+test('single-line variant capture preserves duplicate-key and structure semantics', () => {
+  assert.deepEqual([...captureLocalisationVariant(base, base.replace('"Первый"', '"Новый"'))], [
+    ['key_one', ' key_one:0 "Новый"'],
+  ]);
+  const duplicated = `${base} key_one:0 "Последний"\r\n`;
+  assert.deepEqual(
+    [...captureLocalisationVariant(duplicated, duplicated.replace('"Первый"', '"Новый"'))],
+    [],
+    'editing an overridden duplicate must retain the existing last-key behaviour',
+  );
+  const withComment = base.replace(' key_two', '# note\r\n key_two');
+  assert.equal(captureLocalisationVariant(base, withComment).has('__file_structure__'), true);
+  const brokenAcrossLines = base.replace('"Первый"', '"Пер\r\nвый"');
+  assert.equal(captureLocalisationVariant(base, brokenAcrossLines).has('__file_structure__'), true);
+});
 
 test('three-way merge combines edits to different localisation keys', () => {
   const collaborative = base.replace('"Первый"', '"Совместный"');

@@ -55,7 +55,7 @@ test('every dispatched plugin command has an explicit schema', () => {
     'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'avatarSet', 'avatarDelete',
     'recoveryIssue', 'recoveryConfirm', 'recoveryDiscard', 'externalConflictResolve',
     'historyRequest', 'historyRestore', 'personalFileMaterialize', 'personalFileSelectionSet',
-    'personalConflictResolve', 'documentVariantRequest',
+    'personalConflictResolve', 'documentVariantRequest', 'documentVariantsRequest',
   ]);
 });
 
@@ -80,4 +80,18 @@ test('server protocol schema validates nested collaborative state', () => {
       baseLine: 'x:0 "старое"', collaborativeLine: 'x:0 "совместное"', externalLine: 'x:0 "Git"' }],
   }).status, 'conflict');
   assert.throws(() => validateServerMessage({ type: 'shell', command: 'whoami' }), /Unknown server message/);
+});
+
+test('server protocol schema accepts a revisioned personal projection patch', () => {
+  const message = {
+    type: 'personal-projection', documentId: 'general-dev:localisation/russian/x.yml',
+    requestId: 'request-1', subjectAuthorId: 'alice', revision: 'b'.repeat(64),
+    baseRevision: 'a'.repeat(64),
+    patch: { positionByte: 10, deleteBytes: 4, insertBase64: '0YLQtdGB0YI=' },
+    contributors: [], conflicts: [],
+  };
+  assert.equal(validateServerMessage(message), message);
+  assert.throws(() => validateServerMessage({
+    ...message, patch: { ...message.patch, deleteBytes: -1 },
+  }), /patch deletion/);
 });

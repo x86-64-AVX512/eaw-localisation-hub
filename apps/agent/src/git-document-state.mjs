@@ -35,6 +35,8 @@ export function applySyncedMessage(binding, message) {
   binding.reservations = new Map((message.reservations ?? []).map((item) => [item.id, item]));
   binding.commentThreads = new Map((message.commentThreads ?? []).map((item) => [item.id, item]));
   binding.suggestions = new Map((message.suggestions ?? []).map((item) => [item.id, item]));
+  binding.reservationRevision += 1;
+  binding.reviewRevision += 1;
   binding.history = message.history ?? [];
   binding.historyHeadId = message.historyHeadId ?? '';
   binding.presences = new Map((message.presences ?? []).map((item) => [item.clientId, item]));

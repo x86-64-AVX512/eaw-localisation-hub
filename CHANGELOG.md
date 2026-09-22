@@ -1,6 +1,15 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F1` form; package metadata uses `0.8.8-beta.1`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F2` form; package metadata uses `0.8.8-beta.2`.
+
+## 0.8.8F2 – 2026-09-21
+
+- Large Review edits no longer allocate complete per-character copies merely to find one replacement. Suggestion provenance uses bounded typed-array history, and Monaco's exact edit ranges bypass the fallback whole-document comparison.
+- Agent indexes UTF-8 positions once per document snapshot, skips unchanged one-second disk reads and duplicate merge-base writes, and retries a failed base write safely.
+- Personal projections advance through revisioned byte patches. A response invalidated by newer typing becomes the base for the next request instead of being discarded, preventing continuous edits from starving local-file synchronisation.
+- Server history is bounded in one serialization pass and releases decompressed old snapshots after persistence. Audit journal writes are coalesced, and per-client projection caches are bounded.
+- Review snapshots are rebuilt only when their revision or anchored positions change; reservation snapshots receive the same deduplication. Personal-file patches sent to Review carry base and result hashes and recover with a full snapshot after any mismatch.
+- Common edits confined to one localisation line bypass the full history parser while structural changes and duplicate keys retain the conservative parser path. Localisation-key index output is sorted so filesystem enumeration order cannot cause false changes.
 
 ## 0.8.8F1 – 2026-09-21
 

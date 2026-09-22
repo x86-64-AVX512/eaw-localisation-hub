@@ -100,7 +100,16 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
     binding.scheduleDiskCheck(client, absolutePath, state, 300);
     return;
   }
+  let diskSignature = 'missing';
+  try {
+    const stats = await fs.promises.stat(absolutePath);
+    diskSignature = `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`;
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  if (state.diskSignature === diskSignature && state.materialisationExpected === null) return;
   const externalText = await binding.readDiskText(absolutePath);
+  state.diskSignature = diskSignature;
   if (binding.paused || binding.closing || state.binding !== binding
       || client.documents.get(absolutePath) !== state) return;
   if (binding.hub.gitOperationInProgress?.()) {
@@ -190,11 +199,19 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
 }
 
 export function persistBaseSnapshot(binding, state, text) {
+  if (state.basePersistText === text) return state.basePersistPromise;
   state.hasPersistedBase = true;
+  state.basePersistText = text;
   state.basePersistPromise = state.basePersistPromise
     .catch(() => {})
     .then(() => binding.hub.saveBaseSnapshot(binding.relativePath, text))
-    .catch(() => console.error('[agent] could not persist a merge base'));
+    .catch(() => {
+      if (state.basePersistText === text) {
+        state.basePersistText = null;
+        state.diskSignature = '';
+      }
+      console.error('[agent] could not persist a merge base');
+    });
   const pendingWrite = state.basePersistPromise;
   binding.baseWrites.add(pendingWrite);
   pendingWrite.then(() => binding.baseWrites.delete(pendingWrite));

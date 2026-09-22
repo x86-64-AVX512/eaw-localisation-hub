@@ -2,8 +2,48 @@ import { Buffer } from 'node:buffer';
 import * as Y from 'yjs';
 import {
   computeSingleReplace,
-  utf16IndexToUtf8ByteOffset,
 } from '../../../packages/shared/src/text.mjs';
+
+const COORDINATE_STEP = 4096;
+
+function documentCoordinates(binding, text) {
+  if (binding.coordinateText === text && binding.coordinateCheckpoints) {
+    return binding.coordinateCheckpoints;
+  }
+  const checkpoints = [{ utf16: 0, bytes: 0 }];
+  let utf16 = 0; let bytes = 0;
+  while (utf16 < text.length) {
+    let next = Math.min(text.length, utf16 + COORDINATE_STEP);
+    if (next < text.length && /[\uD800-\uDBFF]/u.test(text[next - 1])
+      && /[\uDC00-\uDFFF]/u.test(text[next])) next -= 1;
+    bytes += Buffer.byteLength(text.slice(utf16, next), 'utf8');
+    utf16 = next;
+    checkpoints.push({ utf16, bytes });
+  }
+  binding.coordinateText = text;
+  binding.coordinateCheckpoints = checkpoints;
+  return checkpoints;
+}
+
+function byteOffsetFor(binding, text, utf16Index) {
+  if (!Number.isSafeInteger(utf16Index) || utf16Index < 0 || utf16Index > text.length) {
+    throw new RangeError('Invalid UTF-16 position');
+  }
+  if (utf16Index > 0 && utf16Index < text.length
+    && /[\uD800-\uDBFF]/u.test(text[utf16Index - 1])
+    && /[\uDC00-\uDFFF]/u.test(text[utf16Index])) {
+    throw new RangeError('UTF-16 position splits a surrogate pair');
+  }
+  const checkpoints = documentCoordinates(binding, text);
+  let low = 0; let high = checkpoints.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (checkpoints[middle].utf16 <= utf16Index) low = middle;
+    else high = middle - 1;
+  }
+  const checkpoint = checkpoints[low];
+  return checkpoint.bytes + Buffer.byteLength(text.slice(checkpoint.utf16, utf16Index), 'utf8');
+}
 
 function decodeRelativePosition(encoded) {
   return Y.decodeRelativePosition(Buffer.from(encoded, 'base64'));
@@ -127,19 +167,40 @@ function avatarFor(binding, userId) {
 export function emitReview(binding, onlyClient = null) {
   const recipients = onlyClient ? [onlyClient] : binding.clients;
   const canonical = binding.text.toString();
+  const threads = [...binding.commentThreads.values()].map((thread) => {
+    const resolved = binding.resolveAnchoredItem(thread);
+    const status = thread.status === 'resolved' ? 'resolved' : (resolved ? 'open' : 'orphaned');
+    return { thread, resolved, status };
+  });
+  const suggestions = [...binding.suggestions.values()].map((suggestion) => {
+    const resolved = binding.resolveAnchoredItem(suggestion);
+    let status = suggestion.status;
+    if (status === 'open') status = !resolved
+      ? 'orphaned'
+      : canonical.slice(resolved.start, resolved.end) === suggestion.originalText ? 'open' : 'stale';
+    return { suggestion, resolved, status };
+  });
+  const positionFingerprint = JSON.stringify([
+    binding.reviewRevision ?? 0,
+    threads.map(({ thread, resolved, status }) => [thread.id, status, resolved?.start, resolved?.end]),
+    suggestions.map(({ suggestion, resolved, status }) => [suggestion.id, status, resolved?.start, resolved?.end]),
+  ]);
+  const targets = [];
   for (const client of recipients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
-      const messages = [];
-      const send = client.kind === 'review' ? (message) => messages.push(message) : (message) => client.send(message);
-      send({ type: 'commentReset', path: absolutePath });
-      for (const thread of binding.commentThreads.values()) {
-        const resolved = binding.resolveAnchoredItem(thread);
-        const status = thread.status === 'resolved' ? 'resolved' : (resolved ? 'open' : 'orphaned');
+      if (client.kind === 'review' && !onlyClient
+        && state.reviewPositionFingerprint === positionFingerprint) continue;
+      state.reviewPositionFingerprint = positionFingerprint;
+      targets.push({ client, absolutePath });
+    }
+  }
+  if (!targets.length) return;
+  const messages = [{ type: 'commentReset' }];
+  for (const { thread, resolved, status } of threads) {
         const lastMessage = thread.messages?.at(-1);
-        send({
+        messages.push({
           type: 'commentThread',
-          path: absolutePath,
           id: thread.id,
           author: thread.author,
           authorId: thread.authorId ?? '',
@@ -152,13 +213,12 @@ export function emitReview(binding, onlyClient = null) {
           summaryColor: lastMessage?.color ?? thread.color ?? '#8a8a8a',
           summaryBase64: Buffer.from(lastMessage?.body ?? '', 'utf8').toString('base64'),
           threadBase64: Buffer.from(binding.discussionText(thread), 'utf8').toString('base64'),
-          startByte: resolved ? utf16IndexToUtf8ByteOffset(canonical, resolved.start) : 0,
-          endByte: resolved ? utf16IndexToUtf8ByteOffset(canonical, resolved.end) : 0,
+          startByte: resolved ? byteOffsetFor(binding, canonical, resolved.start) : 0,
+          endByte: resolved ? byteOffsetFor(binding, canonical, resolved.end) : 0,
         });
         for (const discussionMessage of thread.messages ?? []) {
-          send({
+          messages.push({
             type: 'commentMessage',
-            path: absolutePath,
             id: thread.id,
             author: discussionMessage.author,
             authorId: discussionMessage.authorId ?? '',
@@ -168,19 +228,11 @@ export function emitReview(binding, onlyClient = null) {
             bodyBase64: Buffer.from(discussionMessage.body ?? '', 'utf8').toString('base64'),
           });
         }
-      }
-      send({ type: 'suggestionReset', path: absolutePath });
-      for (const suggestion of binding.suggestions.values()) {
-        const resolved = binding.resolveAnchoredItem(suggestion);
-        let status = suggestion.status;
-        if (status === 'open') {
-          status = !resolved
-            ? 'orphaned'
-            : canonical.slice(resolved.start, resolved.end) === suggestion.originalText ? 'open' : 'stale';
-        }
-        send({
+  }
+  messages.push({ type: 'suggestionReset' });
+  for (const { suggestion, resolved, status } of suggestions) {
+        messages.push({
           type: 'suggestion',
-          path: absolutePath,
           id: suggestion.id,
           author: suggestion.author,
           authorId: suggestion.authorId ?? '',
@@ -194,13 +246,12 @@ export function emitReview(binding, onlyClient = null) {
           replacementBase64: Buffer.from(suggestion.replacementText ?? '', 'utf8').toString('base64'),
           traceJson: suggestion.traceJson ?? '',
           threadBase64: Buffer.from(binding.discussionText(suggestion), 'utf8').toString('base64'),
-          startByte: resolved ? utf16IndexToUtf8ByteOffset(canonical, resolved.start) : 0,
-          endByte: resolved ? utf16IndexToUtf8ByteOffset(canonical, resolved.end) : 0,
+          startByte: resolved ? byteOffsetFor(binding, canonical, resolved.start) : 0,
+          endByte: resolved ? byteOffsetFor(binding, canonical, resolved.end) : 0,
         });
         for (const discussionMessage of suggestion.messages ?? []) {
-          send({
+          messages.push({
             type: 'suggestionMessage',
-            path: absolutePath,
             id: suggestion.id,
             author: discussionMessage.author,
             authorId: discussionMessage.authorId ?? '',
@@ -210,16 +261,13 @@ export function emitReview(binding, onlyClient = null) {
             bodyBase64: Buffer.from(discussionMessage.body ?? '', 'utf8').toString('base64'),
           });
         }
-      }
+  }
+  for (const { client, absolutePath } of targets) {
       if (client.kind === 'review') {
-        const fingerprint = JSON.stringify(messages);
-        if (!onlyClient && fingerprint === state.reviewFingerprint) continue;
-        state.reviewFingerprint = fingerprint;
         client.send({ type: 'reviewBatchStart', path: absolutePath });
-        for (const message of messages) client.send(message);
+        for (const message of messages) client.send({ ...message, path: absolutePath });
         client.send({ type: 'reviewBatchEnd', path: absolutePath });
-      }
-    }
+      } else for (const message of messages) client.send({ ...message, path: absolutePath });
   }
 }
 
@@ -240,30 +288,42 @@ export function emitHistory(binding, onlyClient = null) {
 export function emitReservations(binding, onlyClient = null) {
   const recipients = onlyClient ? [onlyClient] : binding.clients;
   const canonical = binding.text.toString();
+  const reservations = [...binding.reservations.values()].map((reservation) => {
+    const resolved = binding.resolveReservation(reservation);
+    return {
+      id: reservation.id,
+      assignee: reservation.assignee,
+      assigneeId: reservation.assigneeId ?? '',
+      color: reservation.color,
+      createdBy: reservation.createdBy ?? reservation.assignee,
+      createdById: reservation.createdById ?? '',
+      comment: reservation.comment ?? '',
+      keyCount: reservation.initialKeys?.length ?? 0,
+      status: resolved ? (resolved.start === resolved.end ? 'empty' : 'active') : 'orphaned',
+      startIndex: resolved?.start ?? 0,
+      endIndex: resolved?.end ?? 0,
+    };
+  });
+  const positionFingerprint = JSON.stringify([
+    binding.reservationRevision ?? 0,
+    reservations.map(({ id, status, startIndex, endIndex }) => [id, status, startIndex, endIndex]),
+  ]);
   for (const client of recipients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
-      const reservations = [...binding.reservations.values()].map((reservation) => {
-        const resolved = binding.resolveReservation(reservation);
-        return {
-          id: reservation.id,
-          assignee: reservation.assignee,
-          assigneeId: reservation.assigneeId ?? '',
-          color: reservation.color,
-          createdBy: reservation.createdBy ?? reservation.assignee,
-          createdById: reservation.createdById ?? '',
-          comment: reservation.comment ?? '',
-          keyCount: reservation.initialKeys?.length ?? 0,
-          status: resolved ? (resolved.start === resolved.end ? 'empty' : 'active') : 'orphaned',
-          startByte: resolved ? utf16IndexToUtf8ByteOffset(canonical, resolved.start) : 0,
-          endByte: resolved ? utf16IndexToUtf8ByteOffset(canonical, resolved.end) : 0,
-        };
-      });
+      if (client.kind === 'review' && !onlyClient
+        && state.reservationPositionFingerprint === positionFingerprint) continue;
+      state.reservationPositionFingerprint = positionFingerprint;
+      const encoded = reservations.map(({ startIndex, endIndex, ...reservation }) => ({
+        ...reservation,
+        startByte: byteOffsetFor(binding, canonical, startIndex),
+        endByte: byteOffsetFor(binding, canonical, endIndex),
+      }));
       if (client.kind === 'review') {
-        client.send({ type: 'reservationSnapshot', path: absolutePath, reservations });
+        client.send({ type: 'reservationSnapshot', path: absolutePath, reservations: encoded });
       } else {
         client.send({ type: 'reservationReset', path: absolutePath });
-        for (const reservation of reservations) client.send({
+        for (const reservation of encoded) client.send({
           type: 'reservation', path: absolutePath, ...reservation,
         });
       }
@@ -298,8 +358,8 @@ export function emitPresences(binding, onlyClient = null) {
           user: presence.user,
           avatarBase64: binding.hub.directory.find((user) => user.displayName === presence.user)?.avatarBase64 ?? '',
             color: presence.color,
-            positionByte: utf16IndexToUtf8ByteOffset(canonical, caret.index),
-            anchorByte: utf16IndexToUtf8ByteOffset(canonical, anchor.index),
+            positionByte: byteOffsetFor(binding, canonical, caret.index),
+            anchorByte: byteOffsetFor(binding, canonical, anchor.index),
           };
           if (client.kind === 'review') presences.push(item);
           else client.send(item);

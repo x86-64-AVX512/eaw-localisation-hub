@@ -59,6 +59,7 @@ const pluginSchemas = Object.freeze({
   personalFileSelectionSet: { path: pathField, changeId: text(4096), include: integer(1), revision: idField },
   personalConflictResolve: { path: pathField, key: text(4096), choice: text(32), conflictId: idField },
   documentVariantRequest: { path: pathField, authorId: idField },
+  documentVariantsRequest: { path: pathField },
 });
 
 function validateField(message, name, specification) {
@@ -112,6 +113,13 @@ function serverString(value, label, maximumBytes = 4096, { optional = false } = 
   if (value == null && optional) return '';
   if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > maximumBytes) {
     throw new TypeError(`${label} must be a bounded string`);
+  }
+  return value;
+}
+
+function serverInteger(value, label, maximum = Number.MAX_SAFE_INTEGER) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) {
+    throw new TypeError(`${label} must be a bounded integer`);
   }
   return value;
 }
@@ -303,7 +311,14 @@ export function validateServerMessage(message) {
     serverString(message.documentId, 'Server document id', 1024);
     serverString(message.requestId, 'Projection request id', 128);
     serverString(message.subjectAuthorId, 'Projection author id', 256);
-    serverString(message.textBase64, 'Projection text', 12 * 1024 * 1024);
+    serverString(message.revision ?? '', 'Projection revision', 128);
+    serverString(message.baseRevision ?? '', 'Projection base revision', 128);
+    if (message.patch !== undefined) {
+      const patch = serverRecord(message.patch, 'Projection patch');
+      serverInteger(patch.positionByte, 'Projection patch position', 0x7fffffff);
+      serverInteger(patch.deleteBytes, 'Projection patch deletion', 0x7fffffff);
+      serverString(patch.insertBase64 ?? '', 'Projection patch insertion', 12 * 1024 * 1024);
+    } else serverString(message.textBase64, 'Projection text', 12 * 1024 * 1024);
     for (const value of serverArray(message.gitConflicts ?? [], 'Personal Git conflicts', 1000)) {
       const conflict = serverRecord(value, 'Personal Git conflict');
       serverString(conflict.id, 'Personal Git conflict id', 256);

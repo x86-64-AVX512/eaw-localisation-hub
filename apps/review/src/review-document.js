@@ -56,10 +56,13 @@ export function createReviewDocument({ send, onText, beforeChange = () => {} }) 
       if (!document) return false;
       const text = document.getText('content');
       const previous = text.toString();
-      const change = singleReplacement(previous, nextText);
       const edits = Array.isArray(changes) && changes.length
         ? [...changes].sort((a, b) => b.rangeOffset - a.rangeOffset)
-        : change ? [{ rangeOffset: change.start, rangeLength: change.previousEnd - change.start, text: change.replacement }] : [];
+        : (() => {
+            const change = singleReplacement(previous, nextText);
+            return change ? [{ rangeOffset: change.start,
+              rangeLength: change.previousEnd - change.start, text: change.replacement }] : [];
+          })();
       // Monaco can queue several ordered content events while getValue() already
       // exposes the final model. Apply each event, not that future snapshot.
       for (const edit of edits) {

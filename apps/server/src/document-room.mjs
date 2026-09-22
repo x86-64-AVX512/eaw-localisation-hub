@@ -21,6 +21,7 @@ import {
 import { expiredPresenceIds } from '../../../packages/shared/src/presence.mjs';
 import { parseSuggestionTrace } from '../../../packages/shared/src/suggestion-trace.mjs';
 import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mjs';
+import { computeSingleReplace } from '../../../packages/shared/src/text.mjs';
 import { textChangeSummary } from './notification-summary.mjs';
 import { auditDocumentControl, auditDocumentEdit } from './document-audit.mjs';
 import { repairReservationAnchors } from './reservation-anchors.mjs';
@@ -84,6 +85,7 @@ export class DocumentRoom {
     this.presences = new Map();
     this.presenceLastSeen = new Map();
     this.presenceOwners = new Map();
+    this.personalProjectionCache = new WeakMap();
     this.updatePath = path.join(dataDirectory, 'documents', `${hash}.update`);
     this.metadataPath = path.join(dataDirectory, 'documents', `${hash}.json`);
     this.historyPath = path.join(dataDirectory, 'documents', `${hash}.history.json`);
@@ -1048,14 +1050,35 @@ export class DocumentRoom {
       const gitBaseChanged = this.history.updateGitBase(baseText);
       const text = this.history.personalProjection(subjectAuthorId, baseText);
       if (gitBaseChanged) this.schedulePersist();
-      sendWithBackpressure(socket, JSON.stringify({
+      const revision = crypto.createHash('sha256').update(text).digest('hex');
+      const baseRevision = controlledString(
+        message.baseRevision ?? '', 'Projection base revision', 128,
+      );
+      let cache = this.personalProjectionCache.get(socket);
+      if (!cache) { cache = new Map(); this.personalProjectionCache.set(socket, cache); }
+      const previous = cache.get(subjectAuthorId);
+      const response = {
         type: 'personal-projection', documentId: this.documentId, requestId,
-        subjectAuthorId,
-        textBase64: Buffer.from(text, 'utf8').toString('base64'),
+        subjectAuthorId, revision,
         contributors: this.history.contributors(),
         conflicts: this.history.conflicts(baseText, subjectAuthorId),
         gitConflicts: this.history.personalGitConflicts(subjectAuthorId),
-      }));
+      };
+      if (baseRevision && previous?.revision === baseRevision) {
+        const patch = computeSingleReplace(previous.text, text) ?? {
+          positionByte: 0, deleteBytes: 0, insertText: '',
+        };
+        const insertBase64 = Buffer.from(patch.insertText, 'utf8').toString('base64');
+        if (Buffer.byteLength(insertBase64, 'utf8') < Buffer.byteLength(text, 'utf8')) {
+          response.baseRevision = baseRevision;
+          response.patch = { positionByte: patch.positionByte,
+            deleteBytes: patch.deleteBytes, insertBase64 };
+        } else response.textBase64 = Buffer.from(text, 'utf8').toString('base64');
+      } else response.textBase64 = Buffer.from(text, 'utf8').toString('base64');
+      cache.delete(subjectAuthorId);
+      cache.set(subjectAuthorId, { revision, text });
+      while (cache.size > 8) cache.delete(cache.keys().next().value);
+      sendWithBackpressure(socket, JSON.stringify(response));
       return;
     }
 

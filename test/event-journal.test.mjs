@@ -31,3 +31,14 @@ test('event journal keeps typing events immutable so incremental readers receive
     assert.deepEqual(restored.list('one', firstRead.cursor, 500), incremental);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
+
+test('event journal batches synchronous appends into one durable snapshot', async () => {
+  const snapshots = [];
+  const journal = new EventJournal('C:\\state', async (_target, data) => snapshots.push(data));
+  journal.append('comment-reply', { id: 'actor', displayName: 'Actor' }, ['one'], {});
+  journal.append('comment-reply', { id: 'actor', displayName: 'Actor' }, ['one'], {});
+  journal.append('comment-reply', { id: 'actor', displayName: 'Actor' }, ['one'], {});
+  await journal.flush();
+  assert.equal(snapshots.length, 1);
+  assert.equal(JSON.parse(snapshots[0]).events.length, 3);
+});

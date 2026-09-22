@@ -13,6 +13,7 @@ function harness(kind) {
     suggestions: new Map(),
     reservations: new Map(),
     resolveReservation: () => null,
+    hub: { directory: [] },
   };
   const client = {
     kind,
@@ -35,6 +36,20 @@ test('Review receives comment and suggestion snapshots as one atomic batch and s
   assert.equal(messages.length, 4);
 });
 
+test('an unchanged review snapshot skips text encoding after resolving its anchors', () => {
+  const { binding, messages } = harness('review');
+  let discussions = 0;
+  binding.resolveAnchoredItem = () => ({ start: 0, end: 1 });
+  binding.discussionText = () => { discussions += 1; return 'thread'; };
+  binding.commentThreads.set('one', {
+    id: 'one', author: 'User', status: 'open', messages: [{ body: 'body' }],
+  });
+  emitReview(binding);
+  emitReview(binding);
+  assert.equal(discussions, 1);
+  assert.equal(messages.filter(({ type }) => type === 'reviewBatchStart').length, 1);
+});
+
 test('Review receives reservations in one snapshot while the legacy plugin keeps its sequence', () => {
   const review = harness('review');
   review.binding.reservations.set('one', {
@@ -43,6 +58,8 @@ test('Review receives reservations in one snapshot while the legacy plugin keeps
   emitReservations(review.binding);
   assert.deepEqual(review.messages.map(({ type }) => type), ['reservationSnapshot']);
   assert.equal(review.messages[0].reservations.length, 1);
+  emitReservations(review.binding);
+  assert.equal(review.messages.length, 1, 'an unchanged Review reservation snapshot is not resent');
 
   const plugin = harness('plugin');
   plugin.binding.reservations = review.binding.reservations;

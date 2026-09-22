@@ -158,7 +158,14 @@ export class AgentHub {
     }, 15_000);
     this.accountRefreshTimer.unref();
     this.gitCommit = this.currentDocumentGitCommit();
-    this.gitCommitTimer = setInterval(() => this.checkGitCommitChange().catch(() => {}), 3_000);
+    this.gitCommitPollError = '';
+    this.gitCommitTimer = setInterval(() => this.checkGitCommitChange().then(() => {
+      this.gitCommitPollError = '';
+    }, (error) => {
+      const message = String(error?.message ?? error);
+      if (message !== this.gitCommitPollError) console.error(`[agent] Git polling failed: ${message}`);
+      this.gitCommitPollError = message;
+    }), 3_000);
     this.gitCommitTimer.unref();
     removeLegacyCommitGuard(this.options.repo);
     this.startBranchWatcher();
@@ -231,6 +238,7 @@ export class AgentHub {
     if (self) this.identity.avatarBase64 = self.avatarBase64;
     for (const binding of this.documents.values()) {
       binding.emitReservationTargets();
+      binding.reviewRevision += 1;
       binding.emitReview();
       binding.emitPresences();
     }
@@ -732,6 +740,11 @@ export class AgentHub {
     }
     else if (message.type === 'documentVariantRequest') {
       state.binding.requestDocumentVariant(client, absolutePath, String(message.authorId));
+    }
+    else if (message.type === 'documentVariantsRequest') {
+      state.variantMineText = undefined;
+      state.variantMineRevision = '';
+      state.binding.emitDocumentVariants(client);
     }
     else if (message.type === 'avatarSet' || message.type === 'avatarDelete') {
       this.updateAvatar(client, message.type === 'avatarSet' ? message.avatarBase64 : '').catch(() => {

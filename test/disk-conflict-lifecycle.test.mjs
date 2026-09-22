@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import {
   checkDiskChange, confirmDiskMaterialisation, finishExternalMerge,
@@ -13,6 +16,38 @@ function localClient(path, state) {
     send(message) { sent.push(message); },
   };
 }
+
+test('unchanged disk polling does not read or persist a large file repeatedly', async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-disk-poll-'));
+  const absolutePath = path.join(temporary, 'test.yml');
+  const text = `l_russian:\n key:0 "${'текст '.repeat(20_000)}"\n`;
+  await fs.writeFile(absolutePath, text);
+  const state = {
+    binding: null, diskSignature: '', diskBase: text, materialisationExpected: null,
+    pendingExternal: null,
+  };
+  const client = localClient(absolutePath, state);
+  let reads = 0;
+  let persists = 0;
+  const binding = {
+    ticketId: '', closing: false, paused: false, synced: true, gitWritable: true,
+    clients: new Set([client]), personalText: text,
+    hub: { gitOperationInProgress: () => false },
+    async readDiskText() { reads += 1; return text; },
+    localFileText() { return this.personalText; },
+    persistBaseSnapshot() { persists += 1; },
+  };
+  state.binding = binding;
+  try {
+    await checkDiskChange(binding, client, absolutePath, state);
+    await checkDiskChange(binding, client, absolutePath, state);
+    await checkDiskChange(binding, client, absolutePath, state);
+    assert.equal(reads, 1);
+    assert.equal(persists, 1);
+  } finally {
+    await fs.rm(temporary, { recursive: true, force: true });
+  }
+});
 
 test('resolved disk conflict is removed from every local view of the file', () => {
   const absolutePath = 'C:\\repo\\localisation\\russian\\test.yml';

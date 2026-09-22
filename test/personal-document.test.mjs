@@ -52,15 +52,15 @@ test('a projection timeout retries with a new ID and stops when the binding clos
   assert.equal(binding.sent.length, 2);
 });
 
-test('an invalidated refresh keeps the last known projection usable', () => {
+test('an invalidated refresh accepts an intermediate projection while requesting the latest one', () => {
   const binding = bindingFixture();
   requestPersonalDocument(binding);
   const first = binding.personalRequestId;
   requestPersonalDocument(binding);
   handlePersonalDocument(binding, { requestId: first, textBase64: Buffer.from('outdated').toString('base64') });
   assert.equal(binding.sent.length, 2);
-  assert.equal(binding.personalText, 'previous personal');
-  assert.equal(localFileText(binding), 'previous personal');
+  assert.equal(binding.personalText, 'outdated');
+  assert.equal(localFileText(binding), 'outdated');
   assert.equal(binding.personalReady, true);
   resetPersonalRequest(binding);
 });
@@ -117,9 +117,13 @@ test('unchanged Git and shared variants are sent once and later personal edits r
   assert.equal(second.gitBase64, undefined);
   assert.equal(second.sharedBase64, undefined);
   assert.ok(second.minePatch);
-  assert.deepEqual(variantTexts(variantTexts(null, first), second), {
-    shared: git, mine: binding.personalText, git,
-  });
+  const reconstructed = variantTexts(variantTexts(null, first), second);
+  assert.equal(reconstructed.shared, git);
+  assert.equal(reconstructed.mine, binding.personalText);
+  assert.equal(reconstructed.git, git);
+  assert.equal(reconstructed.minePatchMissed, false);
+  assert.equal(reconstructed.mineRevision, second.mineRevision);
+  assert.equal(variantTexts({ ...reconstructed, mineRevision: 'wrong' }, second).minePatchMissed, true);
   binding.hub.gitCommit = 'commit-two';
   emitDocumentVariants(binding);
   assert.equal(gitReads, 2);
@@ -137,12 +141,31 @@ test('continuous edits do not indefinitely prevent the initial personal projecti
     });
   }
   assert.equal(binding.personalReady, true);
-  assert.equal(binding.personalText, 'projection 0', 'the first successful response unblocks initialisation');
+  assert.equal(binding.personalText, 'projection 19', 'intermediate responses advance the usable projection');
   assert.equal(binding.sent.length, 21);
   handlePersonalDocument(binding, {
     requestId: binding.personalRequestId, textBase64: Buffer.from('latest').toString('base64'),
   });
   assert.equal(binding.personalText, 'latest', 'a quiet refresh catches up to the latest projection');
+  resetPersonalRequest(binding);
+});
+
+test('a personal projection patch advances the last server revision without a full document', () => {
+  const binding = bindingFixture();
+  binding.personalText = 'l_russian:\n key:0 "old"\n';
+  binding.personalRevision = 'revision-one';
+  requestPersonalDocument(binding);
+  assert.equal(binding.sent[0].baseRevision, 'revision-one');
+  handlePersonalDocument(binding, {
+    requestId: binding.personalRequestId,
+    baseRevision: 'revision-one', revision: 'revision-two',
+    patch: {
+      positionByte: Buffer.byteLength('l_russian:\n key:0 "'),
+      deleteBytes: Buffer.byteLength('old'), insertBase64: Buffer.from('new').toString('base64'),
+    },
+  });
+  assert.equal(binding.personalText, 'l_russian:\n key:0 "new"\n');
+  assert.equal(binding.personalRevision, 'revision-two');
   resetPersonalRequest(binding);
 });
 

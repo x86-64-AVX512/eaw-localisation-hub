@@ -33,6 +33,26 @@ function unpackText(entry) {
   return zlib.gunzipSync(Buffer.from(entry.textGzipBase64, 'base64')).toString('utf8');
 }
 
+function boundedHistoryJson(persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts) {
+  const envelope = `${JSON.stringify({
+    schema: 5, entries: [], ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts,
+  })}\n`;
+  const marker = '"entries":[]';
+  const entryJson = persisted.map((entry) => JSON.stringify(entry));
+  let bytes = byteLength(envelope);
+  let start = entryJson.length;
+  while (start > 0) {
+    const added = byteLength(entryJson[start - 1]) + (start < entryJson.length ? 1 : 0);
+    if (entryJson.length - start >= 2 && bytes + added > MAX_STORED_BYTES) break;
+    start -= 1;
+    bytes += added;
+  }
+  return {
+    value: envelope.replace(marker, `"entries":[${entryJson.slice(start).join(',')}]`),
+    dropped: start,
+  };
+}
+
 function actorFields(actor) {
   return {
     authorId: actor?.id ? String(actor.id) : null,
@@ -402,14 +422,11 @@ export class DocumentHistory {
     }));
     const gitBaseGzipBase64 = this.gitBaseText === null ? null : packedText(this.gitBaseText);
     const rebaseConflicts = [...this.rebaseConflicts].map(([authorId, conflicts]) => ({ authorId, conflicts: [...conflicts.values()] }));
-    const serialise = () => `${JSON.stringify({ schema: 5, entries: persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts }, null, 2)}\n`;
-    let value = serialise();
-    while (this.entries.length > 2 && byteLength(value) > MAX_STORED_BYTES) {
-      this.entries.shift();
-      persisted.shift();
-      value = serialise();
-    }
-    return value;
+    const bounded = boundedHistoryJson(
+      persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts,
+    );
+    if (bounded.dropped) this.entries.splice(0, bounded.dropped);
+    return bounded.value;
   }
 
   async serialiseAsync() {
@@ -440,13 +457,20 @@ export class DocumentHistory {
       this.packedGitBaseText = gitBaseText;
       this.packedGitBaseValue = gitBaseGzipBase64;
     }
-    const serialise = () => `${JSON.stringify({ schema: 5, entries: persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts }, null, 2)}\n`;
-    let value = serialise();
-    while (persisted.length > 2 && byteLength(value) > MAX_STORED_BYTES) {
-      persisted.shift();
-      value = serialise();
+    const bounded = boundedHistoryJson(
+      persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts,
+    );
+    const stablePrefix = snapshots.slice(0, bounded.dropped)
+      .every((snapshot, index) => this.entries[index] === snapshot.item);
+    if (bounded.dropped && stablePrefix) this.entries.splice(0, bounded.dropped);
+    const newest = snapshots.at(-1)?.item;
+    for (const snapshot of snapshots) {
+      if (snapshot.item !== newest && snapshot.item.id === snapshot.id
+        && snapshot.item._text === snapshot.text && snapshot.item.textGzipBase64) {
+        delete snapshot.item._text;
+      }
     }
-    return value;
+    return bounded.value;
   }
 }
 

@@ -56,7 +56,7 @@ export async function collectLocalisationKeys(repository, fileCache = new Map())
     }
   }
   for (const file of fileCache.keys()) if (!seen.has(file)) fileCache.delete(file);
-  return { keys: complete ? [...keys] : [], complete, files };
+  return { keys: complete ? [...keys].sort() : [], complete, files };
 }
 
 if (parentPort) {

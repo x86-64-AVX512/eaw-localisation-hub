@@ -5,6 +5,25 @@ import {
 } from '../../../packages/shared/src/suggestion-trace.mjs';
 
 const SNAPSHOT_DELAY_MILLISECONDS = 120;
+const ORIGIN_HISTORY_BYTES = 32 * 1024 * 1024;
+const ORIGIN_HISTORY_VERSIONS = 64;
+
+function isOriginSequence(value) {
+  return Array.isArray(value) || ArrayBuffer.isView(value);
+}
+
+function identityOrigins(length) {
+  return Int32Array.from({ length }, (_, index) => index);
+}
+
+function replaceOrigins(origins, start, removed, inserted) {
+  const replacement = isOriginSequence(inserted) ? inserted : Int32Array.from({ length: inserted }, () => -1);
+  const next = new Int32Array(origins.length - removed + replacement.length);
+  next.set(origins.subarray(0, start), 0);
+  next.set(replacement, start);
+  next.set(origins.subarray(start + removed), start + replacement.length);
+  return next;
+}
 
 function codePointBefore(text, index) {
   if (index <= 0) return '';
@@ -32,27 +51,25 @@ export function isLineBreakBoundary(text, start, end = start) {
 
 export function singleReplacement(previous, next) {
   if (previous === next) return null;
-  const previousPoints = [...previous];
-  const nextPoints = [...next];
-  let sharedStart = 0;
-  while (sharedStart < previousPoints.length && sharedStart < nextPoints.length
-      && previousPoints[sharedStart] === nextPoints[sharedStart]) sharedStart += 1;
-  let previousPointEnd = previousPoints.length;
-  let nextPointEnd = nextPoints.length;
-  while (previousPointEnd > sharedStart && nextPointEnd > sharedStart
-      && previousPoints[previousPointEnd - 1] === nextPoints[nextPointEnd - 1]) {
-    previousPointEnd -= 1;
-    nextPointEnd -= 1;
+  let start = 0;
+  const shortest = Math.min(previous.length, next.length);
+  while (start < shortest && previous.codePointAt(start) === next.codePointAt(start)) {
+    start += previous.codePointAt(start) > 0xffff ? 2 : 1;
   }
-  const start = previousPoints.slice(0, sharedStart).join('').length;
-  const previousEnd = previousPoints.slice(0, previousPointEnd).join('').length;
-  const nextStart = nextPoints.slice(0, sharedStart).join('').length;
-  const nextEnd = nextPoints.slice(0, nextPointEnd).join('').length;
-  return { start, previousEnd, replacement: next.slice(nextStart, nextEnd) };
+  let previousEnd = previous.length; let nextEnd = next.length;
+  while (previousEnd > start && nextEnd > start) {
+    const previousStart = previousEnd > 1 && /[\uDC00-\uDFFF]/u.test(previous[previousEnd - 1])
+      && /[\uD800-\uDBFF]/u.test(previous[previousEnd - 2]) ? previousEnd - 2 : previousEnd - 1;
+    const nextStart = nextEnd > 1 && /[\uDC00-\uDFFF]/u.test(next[nextEnd - 1])
+      && /[\uD800-\uDBFF]/u.test(next[nextEnd - 2]) ? nextEnd - 2 : nextEnd - 1;
+    if (previous.codePointAt(previousStart) !== next.codePointAt(nextStart)) break;
+    previousEnd = previousStart; nextEnd = nextStart;
+  }
+  return { start, previousEnd, replacement: next.slice(start, nextEnd) };
 }
 
 export function replacementFromOrigins(previous, next, origins) {
-  if (!Array.isArray(origins) || origins.length !== next.length) return singleReplacement(previous, next);
+  if (!isOriginSequence(origins) || origins.length !== next.length) return singleReplacement(previous, next);
   let start = 0;
   while (start < next.length && start < previous.length
     && origins[start] === start && next[start] === previous[start]) start += 1;
@@ -69,7 +86,7 @@ export function replacementFromOrigins(previous, next, origins) {
 }
 
 export function suggestionAction(draftBase, current, suggestionId, updating = false, origins = null) {
-  const hasOrigins = Array.isArray(origins) && origins.length === current.length;
+  const hasOrigins = isOriginSequence(origins) && origins.length === current.length;
   const replacement = hasOrigins
     ? replacementFromOrigins(draftBase, current, origins)
     : singleReplacement(draftBase, current);
@@ -93,7 +110,7 @@ export function suggestionAction(draftBase, current, suggestionId, updating = fa
 }
 
 export function suggestionProjection(baseText, projectedText, origins = null) {
-  const hasOrigins = Array.isArray(origins) && origins.length === projectedText.length;
+  const hasOrigins = isOriginSequence(origins) && origins.length === projectedText.length;
   const replacement = hasOrigins
     ? replacementFromOrigins(baseText, projectedText, origins)
     : singleReplacement(baseText, projectedText);
@@ -182,8 +199,9 @@ export function createEditingModeController({
   let mode = 'edit';
   let snapshotTimer;
   let draftBase = editor.getValue();
-  let draftOrigins = Array.from({ length: draftBase.length }, (_, index) => index);
+  let draftOrigins = identityOrigins(draftBase.length);
   const originVersions = new Map();
+  let originHistoryBytes = 0;
   let activeSuggestion = null;
   const suggestionHistory = createSuggestionHistory(send);
   let localRedoAvailable = false;
@@ -193,12 +211,22 @@ export function createEditingModeController({
   function rememberDraftOrigins() {
     const version = editor.getModel().getAlternativeVersionId?.();
     if (!Number.isSafeInteger(version)) return;
-    originVersions.set(version, [...draftOrigins]);
-    if (originVersions.size > 512) originVersions.delete(originVersions.keys().next().value);
+    const replaced = originVersions.get(version);
+    if (replaced) originHistoryBytes -= replaced.byteLength;
+    originVersions.delete(version);
+    originVersions.set(version, draftOrigins);
+    originHistoryBytes += draftOrigins.byteLength;
+    while (originVersions.size > 1
+      && (originVersions.size > ORIGIN_HISTORY_VERSIONS || originHistoryBytes > ORIGIN_HISTORY_BYTES)) {
+      const oldest = originVersions.keys().next().value;
+      const removed = originVersions.get(oldest);
+      originVersions.delete(oldest);
+      originHistoryBytes -= removed.byteLength;
+    }
   }
 
   function resetDraftOrigins(text = draftBase) {
-    draftOrigins = Array.from({ length: text.length }, (_, index) => index);
+    draftOrigins = identityOrigins(text.length);
     rememberDraftOrigins();
   }
 
@@ -354,11 +382,8 @@ export function createEditingModeController({
       color: item.color ?? state.color, dirty: false, projectedText: model.getValue(),
       traceJson: item.traceJson ?? '',
     };
-    draftOrigins = [
-      ...Array.from({ length: start }, (_, index) => index),
-      ...replacementOrigins,
-      ...Array.from({ length: baseText.length - end }, (_, index) => end + index),
-    ];
+    draftOrigins = replaceOrigins(identityOrigins(baseText.length), start, end - start,
+      Int32Array.from(replacementOrigins));
     rememberDraftOrigins();
     state.editingSuggestionId = item.id;
     updateProjection();
@@ -396,10 +421,10 @@ export function createEditingModeController({
           const inserted = String(change.text ?? '');
           if (!Number.isSafeInteger(start) || !Number.isSafeInteger(removed)
             || start < 0 || removed < 0 || start + removed > draftOrigins.length) {
-            draftOrigins = Array.from({ length: editor.getValue().length }, () => -1);
+            draftOrigins = new Int32Array(editor.getValue().length); draftOrigins.fill(-1);
             break;
           }
-          draftOrigins.splice(start, removed, ...Array.from({ length: inserted.length }, () => -1));
+          draftOrigins = replaceOrigins(draftOrigins, start, removed, inserted.length);
         }
         rememberDraftOrigins();
       }
@@ -459,7 +484,8 @@ export function createEditingModeController({
         // A line break moves the complete edited word. Do not let provenance-based
         // diffing peel matching letters back out into a second, newline-only draft.
         const bounds = projectedEditingBounds(state.suggestionProjection);
-        for (let index = bounds.start; index < bounds.end; index += 1) draftOrigins[index] = -1;
+        draftOrigins = draftOrigins.slice();
+        draftOrigins.fill(-1, bounds.start, bounds.end);
         rememberDraftOrigins();
       }
       editor.pushUndoStop?.();

@@ -10,6 +10,7 @@ import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import * as Y from 'yjs';
 import { MAX_CRDT_UPDATE_BYTES } from '../packages/shared/src/constants.mjs';
+import { applyUtf8ByteEdit } from '../packages/shared/src/text.mjs';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 
@@ -238,10 +239,24 @@ test('server restores CRDT text, reservations, comments, and suggestions after r
       type: 'personal-projection-get', requestId: projectionRequestId,
       author: 'Bob', color: '#6699ff',
     }));
-    assert.equal(
-      Buffer.from((await personalProjection).textBase64, 'base64').toString('utf8'),
+    const initialProjection = await personalProjection;
+    assert.equal(Buffer.from(initialProjection.textBase64, 'base64').toString('utf8'), expected);
+    const patchRequestId = 'rollback-projection-patch';
+    const personalPatch = waitForJson(first.socket, (message) => (
+      message.type === 'personal-projection' && message.requestId === patchRequestId
+    ));
+    first.socket.send(JSON.stringify({
+      type: 'personal-projection-get', requestId: patchRequestId, baseRevision: initialProjection.revision,
+      author: 'Bob', color: '#6699ff',
+    }));
+    const patchedProjection = await personalPatch;
+    assert.equal(patchedProjection.textBase64, undefined);
+    assert.equal(applyUtf8ByteEdit(
       expected,
-    );
+      patchedProjection.patch.positionByte,
+      patchedProjection.patch.deleteBytes,
+      Buffer.from(patchedProjection.patch.insertBase64, 'base64').toString('utf8'),
+    ), expected);
     assert.equal(text.toString(), expected.replace('"Сохранено"', '"Предложено"'),
       'replacing a personal projection must not modify shared text');
     const metadataFile = await waitForValue(async () => {

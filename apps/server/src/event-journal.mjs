@@ -11,6 +11,8 @@ export class EventJournal {
     this.events = [];
     this.nextSequence = 1;
     this.persistence = Promise.resolve();
+    this.persistenceScheduled = false;
+    this.persistenceDirty = false;
   }
   async initialise() {
     try {
@@ -31,9 +33,24 @@ export class EventJournal {
     };
     this.events.push(event);
     if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
-    const snapshot = `${JSON.stringify({ schema: 1, events: this.events })}\n`;
-    this.persistence = this.persistence.catch(() => {}).then(() => this.atomicWrite(this.target, snapshot));
+    this.persistenceDirty = true;
+    this.schedulePersistence();
     return event;
+  }
+  schedulePersistence() {
+    if (this.persistenceScheduled) return;
+    this.persistenceScheduled = true;
+    this.persistence = this.persistence.catch(() => {}).then(async () => {
+      try {
+        while (this.persistenceDirty) {
+          this.persistenceDirty = false;
+          const snapshot = `${JSON.stringify({ schema: 1, events: this.events })}\n`;
+          await this.atomicWrite(this.target, snapshot);
+        }
+      } finally {
+        this.persistenceScheduled = false;
+      }
+    });
   }
   list(userId, after = 0, limit = 500) {
     const floor = this.events[0]?.sequence ?? this.nextSequence;
@@ -43,5 +60,5 @@ export class EventJournal {
     const events = scanned.filter((event) => event.recipientIds.includes(String(userId)));
     return { events, cursor: scanned.at(-1)?.sequence ?? Math.max(requested, floor - 1), truncated: requested > 0 && requested < floor - 1 };
   }
-  async flush() { await this.persistence; }
+  async flush() { if (this.persistenceDirty) this.schedulePersistence(); await this.persistence; }
 }

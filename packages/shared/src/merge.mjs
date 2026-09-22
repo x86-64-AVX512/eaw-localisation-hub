@@ -45,6 +45,51 @@ function sameLine(left, right) {
   return (left ?? null) === (right ?? null);
 }
 
+function laterKeyExists(text, start, key) {
+  let index = text.indexOf(key, start);
+  while (index >= 0) {
+    const lineStart = text.lastIndexOf('\n', index - 1) + 1;
+    if (/^[ \t]*$/u.test(text.slice(lineStart, index)) && text[index + key.length] === ':') return true;
+    index = text.indexOf(key, index + key.length);
+  }
+  return false;
+}
+
+function singleLineVariant(previousText, currentText) {
+  const shortest = Math.min(previousText.length, currentText.length);
+  let start = 0;
+  while (start < shortest && previousText[start] === currentText[start]) start += 1;
+  if (start === previousText.length && start === currentText.length) return new Map();
+  let previousEnd = previousText.length; let currentEnd = currentText.length;
+  while (previousEnd > start && currentEnd > start
+    && previousText[previousEnd - 1] === currentText[currentEnd - 1]) {
+    previousEnd -= 1; currentEnd -= 1;
+  }
+  if (/[\r\n]/u.test(previousText.slice(start, previousEnd))
+    || /[\r\n]/u.test(currentText.slice(start, currentEnd))) return null;
+  const previousLineStart = previousText.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+  const currentLineStart = currentText.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+  let previousLineEnd = previousText.indexOf('\n', start);
+  let currentLineEnd = currentText.indexOf('\n', start);
+  previousLineEnd = previousLineEnd < 0 ? previousText.length : previousLineEnd + 1;
+  currentLineEnd = currentLineEnd < 0 ? currentText.length : currentLineEnd + 1;
+  if (previousLineStart !== currentLineStart
+    || previousEnd > previousLineEnd || currentEnd > currentLineEnd) return null;
+  const previousRaw = previousText.slice(previousLineStart, previousLineEnd);
+  const currentRaw = currentText.slice(currentLineStart, currentLineEnd);
+  const previousEol = previousRaw.endsWith('\n');
+  const currentEol = currentRaw.endsWith('\n');
+  const previousLine = previousRaw.replace(/\r?\n$/u, '');
+  const currentLine = currentRaw.replace(/\r?\n$/u, '');
+  const expression = /^[ \t]*([^#\s][^:\r\n]*):(?:\d+)?[ \t]+/u;
+  const previousKey = expression.exec(previousLine)?.[1]?.trim();
+  const currentKey = expression.exec(currentLine)?.[1]?.trim();
+  if (!previousKey || previousKey !== currentKey || previousEol !== currentEol
+    || laterKeyExists(previousText, previousLineEnd, previousKey)
+    || laterKeyExists(currentText, currentLineEnd, currentKey)) return null;
+  return previousLine === currentLine ? new Map() : new Map([[currentKey, currentLine]]);
+}
+
 function resolutionFor(resolutions, key) {
   if (resolutions instanceof Map) return resolutions.get(key);
   return resolutions?.[key];
@@ -207,6 +252,8 @@ export function localisationChangedKeys(previousText, currentText) {
 }
 
 export function captureLocalisationVariant(previousText, currentText) {
+  const local = singleLineVariant(previousText, currentText);
+  if (local) return local;
   const previous = analyse(previousText);
   const current = analyse(currentText);
   const changed = new Map();

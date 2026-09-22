@@ -3,13 +3,18 @@ import { confirmAction } from './confirm-action.js';
 
 export function variantTexts(previous, payload, reviewText = null) {
   const patch = payload.minePatch;
-  const mine = patch && previous ? previous.mine.slice(0, byteToUtf16(previous.mine, patch.positionByte))
+  const patchCurrent = patch && previous
+    && previous.mineRevision === payload.mineBaseRevision;
+  const mine = patchCurrent ? previous.mine.slice(0, byteToUtf16(previous.mine, patch.positionByte))
     + decodeBase64(patch.insertBase64)
     + previous.mine.slice(byteToUtf16(previous.mine, patch.positionByte + patch.deleteBytes))
     : payload.mineBase64 !== undefined ? decodeBase64(payload.mineBase64) : previous?.mine ?? '';
   return {
     shared: reviewText ?? (payload.sharedBase64 !== undefined ? decodeBase64(payload.sharedBase64) : previous?.shared ?? ''),
     mine,
+    mineRevision: patchCurrent || payload.mineBase64 !== undefined
+      ? payload.mineRevision ?? '' : previous?.mineRevision ?? '',
+    minePatchMissed: Boolean(patch && !patchCurrent),
     git: payload.gitBase64 !== undefined ? decodeBase64(payload.gitBase64) : previous?.git ?? '',
   };
 }
@@ -210,8 +215,13 @@ export function createDocumentVariants({
 
   function update(payload) {
     const previous = state.documentVariants;
+    const texts = variantTexts(previous, payload, state.reviewDocument?.text());
+    if (texts.minePatchMissed) {
+      send({ type: 'documentVariantsRequest', path: state.path });
+      return;
+    }
     state.documentVariants = {
-      ...variantTexts(previous, payload, state.reviewDocument?.text()),
+      ...texts,
       contributors: payload.contributors ?? [],
       conflicts: payload.conflicts ?? [],
       gitConflicts: payload.gitConflicts ?? [],

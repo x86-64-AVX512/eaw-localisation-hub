@@ -18,6 +18,7 @@ test('local key index runs off the Agent event loop and includes versionless key
   const direct = await collectLocalisationKeys(repository);
   assert.equal(direct.complete, true);
   assert.equal(direct.files, 2);
+  assert.deepEqual(direct.keys, ['EYE_one', 'EYE_two']);
   assert.deepEqual(new Set(direct.keys), new Set(['EYE_one', 'EYE_two']));
   const threaded = await getLocalisationKeyIndex(repository);
   assert.deepEqual(new Set(threaded.keys), new Set(direct.keys));
