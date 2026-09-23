@@ -1,5 +1,9 @@
-import { runGitSync } from './git-executable.mjs';
+import { gitExecutable, runGitSync } from './git-executable.mjs';
 import { withoutUtf8Bom } from '../../../packages/shared/src/text.mjs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 function decode(value) {
   return Buffer.from(String(value ?? ''), 'base64').toString('utf8');
@@ -15,11 +19,23 @@ export function currentGitCommit(repository) {
   return commit.stdout.trim().toLowerCase();
 }
 
-export function currentGitFileBlob(repository, relativePath) {
-  const normalised = String(relativePath ?? '').replaceAll('\\', '/');
-  if (!/^localisation\/(?:russian|english|replace(?:\/(?:russian|english))?)\/[^\0]+\.yml$/iu.test(normalised)) {
-    throw new Error('Файл не входит в поддерживаемые папки локализации.');
+export async function currentGitCommitAsync(repository) {
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync(gitExecutable(), ['rev-parse', 'HEAD'], {
+      cwd: repository, encoding: 'utf8', windowsHide: true, timeout: 10_000,
+    }));
+  } catch {
+    throw new Error('Не удалось определить текущий Git-коммит.');
   }
+  if (!/^[0-9a-f]{40,64}$/iu.test(stdout.trim())) {
+    throw new Error('Не удалось определить текущий Git-коммит.');
+  }
+  return stdout.trim().toLowerCase();
+}
+
+export function currentGitFileBlob(repository, relativePath) {
+  const normalised = checkedGitFilePath(relativePath);
   const blob = runGitSync(['rev-parse', `HEAD:${normalised}`], {
     cwd: repository, encoding: 'utf8', windowsHide: true,
   });
@@ -27,6 +43,30 @@ export function currentGitFileBlob(repository, relativePath) {
     throw new Error('Не удалось определить Git-версию файла. Обновите репозиторий через GitHub Desktop.');
   }
   return blob.stdout.trim().toLowerCase();
+}
+
+function checkedGitFilePath(relativePath) {
+  const normalised = String(relativePath ?? '').replaceAll('\\', '/');
+  if (!/^localisation\/(?:russian|english|replace(?:\/(?:russian|english))?)\/[^\0]+\.yml$/iu.test(normalised)) {
+    throw new Error('Файл не входит в поддерживаемые папки локализации.');
+  }
+  return normalised;
+}
+
+export async function currentGitFileBlobAsync(repository, relativePath) {
+  const normalised = checkedGitFilePath(relativePath);
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync(gitExecutable(), ['rev-parse', `HEAD:${normalised}`], {
+      cwd: repository, encoding: 'utf8', windowsHide: true, timeout: 10_000,
+    }));
+  } catch {
+    throw new Error('Не удалось определить Git-версию файла. Обновите репозиторий через GitHub Desktop.');
+  }
+  if (!/^[0-9a-f]{40,64}$/iu.test(stdout.trim())) {
+    throw new Error('Не удалось определить Git-версию файла. Обновите репозиторий через GitHub Desktop.');
+  }
+  return stdout.trim().toLowerCase();
 }
 
 export async function ticketBootstrap(hub, ticketId, relativePath) {

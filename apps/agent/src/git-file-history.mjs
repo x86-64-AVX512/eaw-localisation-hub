@@ -66,11 +66,15 @@ function parseHistory(output, currentPath) {
 
 export function listFileHistory(repository, relativePath, options = {}) {
   const trackedPath = supportedRelativePath(relativePath);
+  const revision = options.headCommit ?? 'HEAD';
+  if (revision !== 'HEAD' && !/^[0-9a-f]{40,64}$/iu.test(revision)) {
+    throw new Error('Некорректный Git HEAD для истории файла.');
+  }
   const offset = Math.min(MAXIMUM_HISTORY_OFFSET, Math.max(0, Number(options.offset) || 0));
   const limit = Math.min(MAXIMUM_PAGE_SIZE, Math.max(1, Number(options.limit) || 50));
   const needed = offset + limit + 1;
   const output = runGit(repository, [
-    'log', '--follow', '--find-renames', `--max-count=${needed}`,
+    'log', revision, '--follow', '--find-renames', `--max-count=${needed}`,
     `--format=${COMMIT_PREFIX}%H${FIELD_SEPARATOR}%h${FIELD_SEPARATOR}%an${FIELD_SEPARATOR}%aI${FIELD_SEPARATOR}%s`,
     '--name-status', '--', trackedPath,
   ]);

@@ -420,7 +420,7 @@ export class DocumentBinding {
   requestPersonalDocument() { return personalDocument.requestPersonalDocument(this); }
 
   replacePersonalDocument(text) { return personalDocument.replacePersonalDocument(this, text); }
-  requestDocumentVariant(client, absolutePath, authorId) { return personalDocument.requestDocumentVariant(this, client, absolutePath, authorId); }
+  requestDocumentVariant(client, absolutePath, authorId, variantEpoch = '') { return personalDocument.requestDocumentVariant(this, client, absolutePath, authorId, variantEpoch); }
   emitDocumentVariants(client = null) { return personalDocument.emitDocumentVariants(this, client); }
   localFileText() { return personalDocument.localFileText(this); }
 

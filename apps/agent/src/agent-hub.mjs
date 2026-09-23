@@ -407,6 +407,10 @@ export class AgentHub {
     return ticketContext.currentGitCommit(this.options.repo);
   }
 
+  currentGitCommitAsync() {
+    return ticketContext.currentGitCommitAsync(this.options.repo);
+  }
+
   readGitHeadText(relativePath) {
     const shown = runGitSync(['show', `HEAD:${relativePath}`], {
       cwd: this.options.repo,
@@ -739,7 +743,7 @@ export class AgentHub {
       state.binding.requestPersonalDocument();
     }
     else if (message.type === 'documentVariantRequest') {
-      state.binding.requestDocumentVariant(client, absolutePath, String(message.authorId));
+      state.binding.requestDocumentVariant(client, absolutePath, String(message.authorId), String(message.variantEpoch ?? ''));
     }
     else if (message.type === 'documentVariantsRequest') {
       state.variantMineText = undefined;

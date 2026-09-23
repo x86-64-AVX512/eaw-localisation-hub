@@ -22,7 +22,7 @@ import { fileHistoryDiff, listFileHistory } from './git-file-history.mjs';
 import { runGitSync } from './git-executable.mjs';
 import { prepareLocalisationAudit } from './localisation-audit.mjs';
 import { getLocalisationKeyIndex } from './localisation-key-index.mjs';
-import { currentGitFileBlob } from './git-ticket-context.mjs';
+import { currentGitFileBlobAsync } from './git-ticket-context.mjs';
 import { confirmDiskMaterialisation } from './disk-reconciliation.mjs';
 import { DiffCache } from './diff-cache.mjs';
 
@@ -182,6 +182,8 @@ class ReviewClient {
       const state = this.documents.get(path.resolve(absolutePath));
       if (!state?.initialised || state.binding.gitWritable === false || state.pendingExternal
         || state.binding.ticketId || this.hub.workspaceBlocked) return;
+      const materialisationMode = state.binding.personalMaterialisationMode;
+      const expectedGitBlob = state.binding.gitState?.localBlob;
       const materialised = typeof state.binding.localFileText === 'function'
         ? state.binding.localFileText() : state.binding.text.toString();
       if (materialised === null || !state.binding.synced) return;
@@ -193,13 +195,18 @@ class ReviewClient {
       try {
         await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(materialised), {
           expectedText: state.diskBase,
-          isCurrent: () => {
-            const current = !this.closed && state.binding.synced && state.binding.gitWritable !== false
+          isCurrent: async () => {
+            const stillCurrent = () => !this.closed && state.binding.synced && state.binding.gitWritable !== false
             && !this.hub.workspaceBlocked && !state.pendingExternal && !this.hub.gitOperationInProgress?.()
-            && (!state.binding.gitState || currentGitFileBlob(this.hub.options.repo, state.binding.relativePath)
-              === state.binding.gitState.localBlob)
-            && (typeof state.binding.localFileText === 'function'
-              ? state.binding.localFileText() : state.binding.text.toString()) === materialised;
+            && state.binding.gitState?.localBlob === expectedGitBlob
+            && state.binding.personalMaterialisationMode === materialisationMode
+            && ((materialisationMode === 'git' && Boolean(expectedGitBlob))
+              || (typeof state.binding.localFileText === 'function'
+                ? state.binding.localFileText() : state.binding.text.toString()) === materialised);
+            const gitMatches = stillCurrent() && (!expectedGitBlob || await currentGitFileBlobAsync(
+              this.hub.options.repo, state.binding.relativePath,
+            ) === expectedGitBlob);
+            const current = gitMatches && stillCurrent();
             materialisationInvalidated = !current;
             return current;
           },
@@ -392,18 +399,34 @@ export async function startReviewServer(hub, options) {
       }
       return;
     }
+    if (requestUrl.pathname === '/api/git-history/head' && request.method === 'GET') {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      try {
+        const requested = requestUrl.searchParams.get('path') ?? '';
+        normaliseTrackedPath(options.repo, path.resolve(options.repo, requested));
+        const headCommit = await hub.currentGitCommitAsync();
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify({ headCommit }));
+      } catch (error) {
+        response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
     if (requestUrl.pathname === '/api/git-history' && request.method === 'GET') {
       if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
       try {
         const requested = requestUrl.searchParams.get('path') ?? '';
         const absolutePath = path.resolve(options.repo, requested);
         const relativePath = normaliseTrackedPath(options.repo, absolutePath);
+        const headCommit = await hub.currentGitCommitAsync();
         const payload = listFileHistory(options.repo, relativePath, {
+          headCommit,
           offset: Number(requestUrl.searchParams.get('offset') ?? 0),
           limit: Number(requestUrl.searchParams.get('limit') ?? 50),
         });
         secureHeaders(response, 'application/json; charset=utf-8');
-        response.end(JSON.stringify(payload));
+        response.end(JSON.stringify({ ...payload, headCommit }));
       } catch (error) {
         response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ error: error.message }));
@@ -422,13 +445,16 @@ export async function startReviewServer(hub, options) {
         const fromPath = requestUrl.searchParams.get('fromPath')
           ?? requestUrl.searchParams.get('historicalPath') ?? relativePath;
         const toPath = requestUrl.searchParams.get('toPath') ?? relativePath;
+        const headCommit = await hub.currentGitCommitAsync();
+        const selectedFrom = fromCommit === 'HEAD' ? headCommit : fromCommit;
+        const selectedTo = toCommit === 'HEAD' ? headCommit : toCommit;
         const cacheKey = JSON.stringify([
-          path.resolve(options.repo), hub.currentGitCommit(), relativePath,
+          path.resolve(options.repo), headCommit, relativePath,
           fromCommit, fromPath, toCommit, toPath,
         ]);
         const payload = await diffCache.getOrCreate('git-history-diff', cacheKey, async () => (
           fileHistoryDiff(
-            options.repo, relativePath, fromCommit, fromPath, toCommit, toPath,
+            options.repo, relativePath, selectedFrom, fromPath, selectedTo, toPath,
           )
         ));
         secureHeaders(response, 'application/json; charset=utf-8');

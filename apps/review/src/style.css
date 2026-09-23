@@ -310,6 +310,13 @@ dialog input {
 .key-result-diff .after { color: #9be4b5; }
 .key-result.error { border-color: #75414a; color: #ffadb3; }
 .history-dialog { width: min(1280px, 94vw); height: min(820px, 90vh); padding: 0; overflow: hidden; }
+#git-history-dialog:not([open]) {
+  display: block;
+  position: fixed;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-200vw);
+}
 .history-shell { display: grid; grid-template-columns: 280px 1fr; width: 100%; height: 100%; }
 .history-sidebar { overflow: auto; padding: 14px; border-right: 1px solid #303746; background: #151922; }
 .history-sidebar h2 { margin: 0 0 12px; font-size: 17px; }
@@ -457,6 +464,14 @@ dialog.fullscreen .history-shell, dialog.fullscreen .git-conflict-shell, dialog.
 .history-toolbar { display: flex; align-items: center; gap: 8px; padding: 9px; border-bottom: 1px solid #303746; }
 .history-toolbar strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #history-diff, #git-history-diff { min-height: 0; flex: 1; }
+#git-history-diff { position: relative; overflow: hidden; }
+.git-history-diff-page { position: absolute; inset: 0; }
+.git-history-diff-page:not(.active) { visibility: hidden; pointer-events: none; }
+.git-history-diff-status {
+  position: absolute; inset: 0; z-index: 2; display: grid; place-items: center;
+  color: #aeb8c8; background: #1e1e1e;
+}
+.git-history-diff-status[hidden] { display: none; }
 #git-history-more { width: 100%; margin-top: 10px; }
 #review-lane {
   position: relative;

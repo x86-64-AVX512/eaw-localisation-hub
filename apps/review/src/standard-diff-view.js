@@ -30,12 +30,14 @@ function hiddenRanges(monaco, visible, lineCount) {
 
 export function createStandardDiffView({
   monaco, container, language = 'eaw-yaml', contextLineCount = 2, editorOptions = {},
+  preserveOnDeactivate = false,
 }) {
   container.classList.add('standard-diff');
   const originalModel = monaco.editor.createModel('', language);
   const modifiedModel = monaco.editor.createModel('', language);
   const diff = monaco.editor.createDiffEditor(container, {
-    theme: 'vs-dark', readOnly: true, automaticLayout: true, minimap: { enabled: false },
+    theme: 'vs-dark', readOnly: true, automaticLayout: !preserveOnDeactivate,
+    minimap: { enabled: false },
     renderSideBySide: true, originalEditable: false, hideUnchangedRegions: { enabled: false },
     wordWrap: 'on', diffWordWrap: 'on', wordWrapOverride1: 'on', wordWrapOverride2: 'on',
     wrappingStrategy: 'advanced', scrollBeyondLastLine: false, ...editorOptions,
@@ -89,10 +91,13 @@ export function createStandardDiffView({
     window.cancelAnimationFrame(layoutFrame);
     diff.layout();
     enforceOptions();
+    if (preserveOnDeactivate) diff.getOriginalEditor().layout();
     layoutFrame = window.requestAnimationFrame(() => {
       layoutFrame = 0;
       if (!active) return;
-      diff.layout(); enforceOptions(); showChangedRegionsOnly();
+      diff.layout();
+      enforceOptions();
+      showChangedRegionsOnly();
     });
   }
   function setOriginal(value) { hiddenSignature = ''; clearHiddenAreas(); originalModel.setValue(value); layout(); }
@@ -112,9 +117,14 @@ export function createStandardDiffView({
       active = next;
       window.cancelAnimationFrame(layoutFrame);
       layoutFrame = 0;
-      if (!active) { diff.setModel(null); return; }
-      hiddenSignature = '';
-      diff.setModel({ original: originalModel, modified: modifiedModel });
+      if (!active) {
+        if (!preserveOnDeactivate) diff.setModel(null);
+        return;
+      }
+      if (!preserveOnDeactivate) {
+        hiddenSignature = '';
+        diff.setModel({ original: originalModel, modified: modifiedModel });
+      }
       layout();
     },
     clear() { setTexts('', ''); },

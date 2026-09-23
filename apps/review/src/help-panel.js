@@ -158,6 +158,7 @@ export function createHelpPanel({ state, token, showToast }) {
       const result = await cacheRequest('DELETE');
       const cleared = result.cleared ?? {};
       cacheInfo.textContent = `0 записей · 0 Б из ${formatBytes(result.maximumBytes)}`;
+      window.dispatchEvent(new Event('eaw-diff-cache-cleared'));
       showToast(`Кэш диффов очищен: удалено ${cleared.entries ?? 0} записей (${formatBytes(cleared.bytes)}).`);
     } catch (error) {
       showToast(`Не удалось очистить кэш диффов: ${error.message}`, true);

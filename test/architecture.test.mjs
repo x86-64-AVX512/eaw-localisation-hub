@@ -321,8 +321,10 @@ test('Review lane anchors cards beside their text and resolves vertical collisio
   const cards = source('apps/review/src/review-cards.js');
   const layout = source('apps/review/src/review-card-layout.js');
   const styles = source('apps/review/src/style.css');
-  assert.match(layout, /desiredTop = editor\.getTopForLineNumber/u);
-  assert.match(layout, /nextTop = top \+ card\.offsetHeight/u);
+  assert.match(layout, /desiredTop: editor\.getTopForLineNumber/u);
+  assert.match(layout, /nextTop = top \+ height \+ 8/u);
+  assert.match(layout, /requestAnimationFrame\(performLayout\)/u,
+    'multiple scroll and collaboration updates share one layout frame');
   assert.match(styles, /#review-lane[\s\S]*overflow-y: auto/u);
   assert.match(styles, /#cards[\s\S]*position: relative/u);
   assert.match(styles, /\.review-card[\s\S]*position: absolute/u);
@@ -495,11 +497,13 @@ test('Agent never treats an unavailable Git result as a branch switch', () => {
 
 test('Git history, document history, and localisation audit share the compact wrapped diff view', () => {
   const history = source('apps/review/src/git-history-panel.js');
+  const historyDiffViews = source('apps/review/src/git-history-diff-views.js');
   const documentHistory = source('apps/review/src/history-panel.js');
   const audit = source('apps/review/src/localisation-audit-panel.js');
   const standard = source('apps/review/src/standard-diff-view.js');
   const style = source('apps/review/src/style.css');
-  for (const consumer of [history, documentHistory, audit]) {
+  assert.match(history, /createGitHistoryDiffViews/u);
+  for (const consumer of [historyDiffViews, documentHistory, audit]) {
     assert.match(consumer, /createStandardDiffView/u);
   }
   assert.match(standard, /wordWrapOverride1: 'on'/u);
@@ -507,7 +511,9 @@ test('Git history, document history, and localisation audit share the compact wr
   assert.match(standard, /hideUnchangedRegions: \{ enabled: false \}/u);
   assert.match(standard, /diff\.onDidUpdateDiff\(showChangedRegionsOnly\)/u);
   assert.match(standard, /setHiddenAreas\(hiddenRanges/u);
-  assert.match(standard, /layoutFrame = window\.requestAnimationFrame\([\s\S]*diff\.layout\(\); enforceOptions\(\); showChangedRegionsOnly\(\)/u);
+  assert.match(standard, /layoutFrame = window\.requestAnimationFrame\([\s\S]*diff\.layout\(\);[\s\S]*showChangedRegionsOnly\(\)/u);
+  assert.match(standard, /automaticLayout: !preserveOnDeactivate/u);
+  assert.match(standard, /if \(preserveOnDeactivate\) diff\.getOriginalEditor\(\)\.layout\(\)/u);
   assert.match(style, /\.standard-diff \.diagonal-fill/u);
   assert.match(style, /background-image: none !important/u);
 });

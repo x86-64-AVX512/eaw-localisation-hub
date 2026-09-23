@@ -4,9 +4,9 @@ import { WebSocket } from 'ws';
 import {
   requestPersonalDocument, resetPersonalRequest, handlePersonalDocument,
   schedulePersonalDocumentRefresh, emitDocumentVariants,
-  localFileText, replacePersonalDocument, setPersonalSelection,
+  localFileText, replacePersonalDocument, setPersonalSelection, requestDocumentVariant,
 } from '../apps/agent/src/personal-document.mjs';
-import { variantTexts } from '../apps/review/src/document-variants.js';
+import { retainedAuthorPreviews, variantTexts } from '../apps/review/src/document-variants.js';
 
 function bindingFixture() {
   const sent = [];
@@ -54,6 +54,9 @@ test('a projection timeout retries with a new ID and stops when the binding clos
 
 test('an invalidated refresh accepts an intermediate projection while requesting the latest one', () => {
   const binding = bindingFixture();
+  let gitReads = 0;
+  binding.hub.readGitHeadText = () => { gitReads += 1; return 'Git'; };
+  binding.personalSelectionRevision = 'old-selection';
   requestPersonalDocument(binding);
   const first = binding.personalRequestId;
   requestPersonalDocument(binding);
@@ -62,7 +65,28 @@ test('an invalidated refresh accepts an intermediate projection while requesting
   assert.equal(binding.personalText, 'outdated');
   assert.equal(localFileText(binding), 'outdated');
   assert.equal(binding.personalReady, true);
+  assert.equal(gitReads, 0, 'an unpublished projection does not calculate local selections');
+  assert.equal(binding.personalSelectionRevision, '', 'the unpublished text invalidates the old selection');
   resetPersonalRequest(binding);
+});
+
+test('author preview replies retain the request epoch for stale-response filtering', () => {
+  const binding = bindingFixture();
+  const replies = [];
+  const client = { closed: false, send: (value) => replies.push(value) };
+  requestDocumentVariant(binding, client, 'C:\\file.yml', 'author-2', '7');
+  const requestId = binding.sent[0].requestId;
+  handlePersonalDocument(binding, { requestId, subjectAuthorId: 'author-2', textBase64: 'dGV4dA==' });
+  assert.equal(replies[0].variantEpoch, '7');
+  assert.equal(replies[0].authorId, 'author-2');
+});
+
+test('author previews survive personal-only updates but not a changed shared or Git base', () => {
+  const authors = new Map([['author-2', 'preview']]);
+  const previous = { shared: 'shared', git: 'git', authors };
+  assert.equal(retainedAuthorPreviews(previous, { shared: 'shared', git: 'git', mine: 'new mine' }), authors);
+  assert.equal(retainedAuthorPreviews(previous, { shared: 'new shared', git: 'git' }).size, 0);
+  assert.equal(retainedAuthorPreviews(previous, { shared: 'shared', git: 'new git' }).size, 0);
 });
 
 test('settled personal projections coalesce rapid edits while the initial projection starts immediately', (t) => {

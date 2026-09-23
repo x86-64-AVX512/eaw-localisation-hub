@@ -142,6 +142,7 @@ export function handlePersonalDocument(binding, message) {
     if (!variantRequest.client.closed) variantRequest.client.send({
       type: 'documentVariant', path: variantRequest.absolutePath,
       authorId: message.subjectAuthorId,
+      variantEpoch: variantRequest.variantEpoch,
       textBase64: message.textBase64,
     });
     return;
@@ -174,7 +175,10 @@ export function handlePersonalDocument(binding, message) {
   binding.personalGitConflicts = message.gitConflicts ?? [];
   const publish = !refreshPending || !wasReady;
   if (publish) binding.initialiseAttachedClients();
-  const payload = variantsPayload(binding);
+  // A superseded projection is still the base of the next patch, but it is
+  // never shown. Do not parse three complete localisation variants for it.
+  if (!publish) binding.personalSelectionRevision = '';
+  const payload = publish ? variantsPayload(binding) : null;
   for (const client of publish ? binding.clients : []) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
@@ -189,10 +193,10 @@ export function handlePersonalDocument(binding, message) {
   if (refreshPending) requestPersonalDocument(binding);
 }
 
-export function requestDocumentVariant(binding, client, absolutePath, authorId) {
+export function requestDocumentVariant(binding, client, absolutePath, authorId, variantEpoch = '') {
   if (binding.ticketId || !binding.synced || binding.socket?.readyState !== WebSocket.OPEN) return;
   const requestId = crypto.randomUUID();
-  binding.variantRequests.set(requestId, { client, absolutePath, authorId });
+  binding.variantRequests.set(requestId, { client, absolutePath, authorId, variantEpoch });
   binding.socket.send(JSON.stringify({
     type: 'personal-projection-get', requestId, subjectAuthorId: authorId,
     author: binding.hub.options.user, color: binding.hub.options.color,

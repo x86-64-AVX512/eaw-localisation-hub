@@ -1,24 +1,34 @@
 import { decodeBase64 } from './review-utilities.js';
-import { createStandardDiffView } from './standard-diff-view.js';
+import { createGitHistoryDiffViews } from './git-history-diff-views.js';
 
 export function createGitHistoryPanel({ monaco, state, token, showToast }) {
   const openButton = document.querySelector('#git-history-open');
   const dialog = document.querySelector('#git-history-dialog');
+  dialog.inert = !dialog.open;
   const list = document.querySelector('#git-history-list');
   const empty = document.querySelector('#git-history-empty');
   const more = document.querySelector('#git-history-more');
   const selection = document.querySelector('#git-history-selection');
   const fromSelect = document.querySelector('#git-history-from');
   const toSelect = document.querySelector('#git-history-to');
-  const diffView = createStandardDiffView({
+  const diffViews = createGitHistoryDiffViews({
     monaco, container: document.querySelector('#git-history-diff'),
   });
-  diffView.setActive(false);
   let entries = [];
   let nextOffset = 0;
   let hasMore = false;
   let loading = false;
   let comparisonId = 0;
+  let loadId = 0;
+  let headCheckId = 0;
+  let loadedPath = '';
+  let loadedHead = '';
+  let shownPair = '';
+  let pendingPair = '';
+  let savedSelection = '';
+  let cacheCleared = false;
+  const onCacheCleared = () => { cacheCleared = true; };
+  window.addEventListener('eaw-diff-cache-cleared', onCacheCleared);
 
   async function request(url) {
     const response = await fetch(url, {
@@ -88,20 +98,35 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
   }
 
   async function load(reset = false) {
-    if (loading || !state.path) return;
+    if (loading || !state.path || !dialog.open) return;
     loading = true;
+    const requestedPath = state.path;
+    const generation = ++loadId;
+    let reload = false;
     if (reset) {
+      comparisonId += 1;
+      headCheckId += 1;
       entries = [];
       nextOffset = 0;
       hasMore = false;
-      diffView.clear();
+      loadedPath = '';
+      loadedHead = '';
+      shownPair = '';
+      pendingPair = '';
+      diffViews.clear();
       selection.textContent = 'Загрузка истории Git…';
     }
     render();
     try {
-      const query = new URLSearchParams({ path: state.path, offset: String(nextOffset), limit: '50' });
+      const query = new URLSearchParams({ path: requestedPath, offset: String(nextOffset), limit: '50' });
       const payload = await request(`/api/git-history?${query}`);
-      if (!dialog.open) return;
+      if (generation !== loadId || !dialog.open || state.path !== requestedPath) return;
+      if (!/^[0-9a-f]{40,64}$/iu.test(payload.headCommit ?? '')) {
+        throw new Error('Agent не сообщил текущий Git HEAD. Обновите Desktop Agent.');
+      }
+      if (!reset && payload.headCommit !== loadedHead) { reload = true; return; }
+      loadedPath = requestedPath;
+      loadedHead = payload.headCommit;
       entries.push(...(payload.entries ?? []).filter(
         (entry) => !entries.some((known) => known.commit === entry.commit),
       ));
@@ -109,69 +134,148 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }) {
       hasMore = payload.hasMore === true;
       updateSelectors();
       if (entries.length) await compare();
-      else selection.textContent = 'История файла пуста';
+      else {
+        savedSelection = 'История файла пуста';
+        selection.textContent = savedSelection;
+      }
     } catch (error) {
-      selection.textContent = error.message;
-      showToast(error.message, true);
+      if (generation === loadId && dialog.open && state.path === requestedPath) {
+        selection.textContent = error.message;
+        showToast(error.message, true);
+      }
     } finally {
-      loading = false;
-      render();
+      if (generation === loadId) {
+        loading = false;
+        render();
+        if (reload && dialog.open) load(true);
+      }
     }
   }
 
   async function compare() {
-    if (!dialog.open) return;
+    if (!dialog.open || loadedPath !== state.path || !loadedHead) return;
     const from = fromSelect.value;
     const to = toSelect.value;
     if (!from || !to) return;
+    const fromEntry = entryFor(from);
+    const toEntry = entryFor(to);
+    const requestedPath = state.path;
+    const headAtRequest = loadedHead;
+    const selectedFrom = from === 'HEAD' ? headAtRequest : from;
+    const selectedTo = to === 'HEAD' ? headAtRequest : to;
+    const pair = JSON.stringify([
+      requestedPath, headAtRequest, selectedFrom, fromEntry?.historicalPath ?? state.relativePath,
+      selectedTo, toEntry?.historicalPath ?? state.relativePath,
+    ]);
+    if (shownPair === pair || pendingPair === pair) return;
     const requestId = ++comparisonId;
-    selection.textContent = `${shortLabel(from)} → ${shortLabel(to)} · загрузка…`;
-    diffView.clear();
+    pendingPair = pair;
+    const pairLabel = `${shortLabel(from)} → ${shortLabel(to)}`;
+    if (diffViews.showCached(pair)) {
+      pendingPair = '';
+      shownPair = pair;
+      savedSelection = pairLabel;
+      selection.textContent = pairLabel;
+      render();
+      return;
+    }
+    selection.textContent = `${pairLabel} · загрузка…`;
+    shownPair = '';
+    diffViews.showLoading();
     render();
     try {
-      const fromEntry = entryFor(from);
-      const toEntry = entryFor(to);
       const query = new URLSearchParams({
-        path: state.path,
-        from,
-        to,
+        path: requestedPath,
+        from: selectedFrom,
+        to: selectedTo,
         fromPath: fromEntry?.historicalPath ?? state.relativePath,
         toPath: toEntry?.historicalPath ?? state.relativePath,
       });
       const payload = await request(`/api/git-history/diff?${query}`);
-      if (requestId !== comparisonId || !dialog.open) return;
-      diffView.setTexts(decodeBase64(payload.baseBase64), decodeBase64(payload.headBase64));
-      selection.textContent = `${String(payload.fromCommit).slice(0, 10)} → ${String(payload.toCommit).slice(0, 10)}`;
+      if (requestId !== comparisonId || !dialog.open || state.path !== requestedPath
+        || loadedHead !== headAtRequest) return;
+      selection.textContent = `${pairLabel} · вычисление отличий…`;
+      diffViews.prepare(pair, decodeBase64(payload.baseBase64), decodeBase64(payload.headBase64), () => {
+        if (requestId !== comparisonId || !dialog.open || state.path !== requestedPath
+          || loadedHead !== headAtRequest) return;
+        shownPair = pair;
+        pendingPair = '';
+        savedSelection = `${String(payload.fromCommit).slice(0, 10)} → ${String(payload.toCommit).slice(0, 10)}`;
+        selection.textContent = savedSelection;
+      });
     } catch (error) {
-      if (requestId === comparisonId && dialog.open) {
+      if (requestId === comparisonId && dialog.open && state.path === requestedPath
+        && loadedHead === headAtRequest) {
+        pendingPair = '';
         selection.textContent = error.message;
         showToast(error.message, true);
       }
     }
   }
 
+  async function verifyCachedHead() {
+    const requestedPath = state.path;
+    const generation = ++headCheckId;
+    const comparisonAtStart = comparisonId;
+    selection.textContent = `${savedSelection} · проверка Git…`;
+    try {
+      const query = new URLSearchParams({ path: requestedPath });
+      const { headCommit } = await request(`/api/git-history/head?${query}`);
+      if (generation !== headCheckId || !dialog.open || state.path !== requestedPath) return;
+      if (headCommit !== loadedHead) { load(true); return; }
+      if (comparisonId === comparisonAtStart) selection.textContent = savedSelection;
+      if (!shownPair && entries.length) compare();
+    } catch (error) {
+      if (generation !== headCheckId || !dialog.open || state.path !== requestedPath) return;
+      selection.textContent = `${savedSelection} · актуальность Git не проверена`;
+      showToast(error.message, true);
+    }
+  }
+
   openButton.addEventListener('click', () => {
+    dialog.inert = false;
     dialog.showModal();
-    diffView.setActive(true);
-    diffView.layout();
-    load(true);
+    diffViews.resume();
+    if (!cacheCleared && loadedPath === state.path && loadedHead) {
+      verifyCachedHead();
+    } else {
+      cacheCleared = false;
+      load(true);
+    }
   });
   fromSelect.addEventListener('change', compare);
   toSelect.addEventListener('change', compare);
   more.addEventListener('click', () => load(false));
-  document.querySelector('#git-history-close').addEventListener('click', () => {
+  function suspend() {
+    if (dialog.inert) return;
+    dialog.inert = true;
     comparisonId += 1;
+    pendingPair = '';
+    loadId += 1;
+    headCheckId += 1;
+    loading = false;
+    diffViews.suspend();
+  }
+  dialog.addEventListener('cancel', suspend);
+  dialog.addEventListener('close', suspend);
+  document.querySelector('#git-history-close').addEventListener('click', () => {
+    suspend();
     dialog.close();
-    diffView.setActive(false);
   });
+  const onResize = () => { if (dialog.open) diffViews.layout(); };
+  window.addEventListener('resize', onResize);
   document.querySelector('#git-history-fullscreen').addEventListener('click', (event) => {
     dialog.classList.toggle('fullscreen');
     event.currentTarget.textContent = dialog.classList.contains('fullscreen') ? 'Обычный размер' : 'На весь экран';
-    requestAnimationFrame(diffView.layout);
+    requestAnimationFrame(diffViews.layout);
   });
 
   return {
     setAvailable(available) { openButton.disabled = !available; },
-    dispose() { diffView.dispose(); },
+    dispose() {
+      window.removeEventListener('eaw-diff-cache-cleared', onCacheCleared);
+      window.removeEventListener('resize', onResize);
+      diffViews.dispose();
+    },
   };
 }

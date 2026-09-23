@@ -14,6 +14,7 @@ const agentConnection = fs.readFileSync(path.join(projectRoot, 'apps', 'review',
 const documentBinding = fs.readFileSync(path.join(projectRoot, 'apps', 'agent', 'src', 'document-binding.mjs'), 'utf8');
 const documentLifecycle = fs.readFileSync(path.join(projectRoot, 'apps', 'agent', 'src', 'document-lifecycle.mjs'), 'utf8');
 const gitHistory = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'git-history-panel.js'), 'utf8');
+const gitHistoryDiffViews = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'git-history-diff-views.js'), 'utf8');
 const historyPanel = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'history-panel.js'), 'utf8');
 const standardDiff = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'standard-diff-view.js'), 'utf8');
 
@@ -62,10 +63,13 @@ test('a deleted open ticket redirects every Review client to its main document',
   assert.match(ticketPanel, /leaveUnavailable[\s\S]*void navigate\(null\)/u);
 });
 
-test('closing Git diff detaches Monaco models and suppresses duplicate hidden ranges', () => {
-  assert.match(gitHistory, /git-history-close[\s\S]*comparisonId \+= 1[\s\S]*diffView\.setActive\(false\)/u);
+test('closing Git diff retains its warm models but rejects late responses', () => {
+  assert.match(gitHistory, /function suspend\(\)[\s\S]*comparisonId \+= 1[\s\S]*loadId \+= 1[\s\S]*diffViews\.suspend\(\)/u);
+  assert.match(gitHistory, /dialog\.addEventListener\('cancel', suspend\)/u);
   assert.match(gitHistory, /requestId !== comparisonId \|\| !dialog\.open/u);
-  assert.match(standardDiff, /if \(!active\) \{ diff\.setModel\(null\); return; \}/u);
+  assert.match(gitHistoryDiffViews, /preserveOnDeactivate: true/u);
+  assert.match(gitHistoryDiffViews, /MAX_CACHED_PAIRS = 3/u);
+  assert.match(standardDiff, /if \(!preserveOnDeactivate\) diff\.setModel\(null\)/u);
   assert.match(standardDiff, /if \(signature === hiddenSignature\) return;/u);
   assert.match(standardDiff, /cancelAnimationFrame\(layoutFrame\)/u);
 });

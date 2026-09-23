@@ -1,6 +1,14 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F2` form; package metadata uses `0.8.8-beta.2`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F3` form; package metadata uses `0.8.8-beta.3`.
+
+## 0.8.8F3 – 2026-09-22
+
+- Agent verifies the Git blob asynchronously before replacing a tracked file, so a save no longer blocks its event loop while retaining the freshness and disk-identity checks.
+- Review batches card layout into one animation frame, measures card heights before applying positions and retains card nodes when only their text anchors move, avoiding repeated forced layouts and visual remounts.
+- Author previews retain their cache across unchanged shared/Git bases, suppress duplicate requests and discard replies from an older base.
+- Bulk localisation-key insertion uses linear-time anchor resolution instead of repeatedly scanning the growing document. Superseded personal projections no longer calculate an unused local-selection diff.
+- Review keeps up to three completed Git comparisons as ready-to-display Monaco diff views. Switching back to one does not fetch, rewrite models, or recompute highlights; duplicate in-flight requests are suppressed. A new comparison still requires computation, now bounded to avoid multi-second CPU stalls, and remains behind a loading overlay until its highlights are ready. The closed editor keeps its geometry offscreen without automatic relayout, so repeated opens and closes do not trigger a costly render, and long lines wrap on both sides. A changed HEAD or file reloads the history from a pinned commit snapshot, while the Agent-side disk cache continues to serve text for other comparisons.
 
 ## 0.8.8F2 – 2026-09-21
 

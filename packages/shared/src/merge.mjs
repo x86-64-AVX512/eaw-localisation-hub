@@ -102,45 +102,52 @@ function lineEnding(records) {
 function renderWithChoices(templateText, choices, preferredOrder) {
   const records = splitLines(templateText);
   const eol = lineEnding(records);
-  const rendered = [];
-  const existing = new Set();
+  let first = null;
+  let last = null;
+  const firstByKey = new Map();
+  const insertBefore = (record, next, added = true) => {
+    const node = { ...record, previous: next?.previous ?? last, next };
+    if (node.previous) node.previous.next = node;
+    else first = node;
+    if (next) next.previous = node;
+    else last = node;
+    if (added && node.previous && !node.previous.eol) node.previous.eol = eol;
+    return node;
+  };
   for (const record of records) {
     if (!record.key) {
-      rendered.push({ ...record });
+      insertBefore(record, null, false);
       continue;
     }
     const chosen = choices.get(record.key);
     if (chosen == null) continue;
-    existing.add(record.key);
-    rendered.push({ content: chosen, eol: record.eol, key: record.key });
+    const node = insertBefore({ content: chosen, eol: record.eol, key: record.key }, null, false);
+    if (!firstByKey.has(record.key)) firstByKey.set(record.key, node);
   }
 
-  for (const key of preferredOrder) {
-    const chosen = choices.get(key);
-    if (chosen == null || existing.has(key)) continue;
-    const referenceIndex = preferredOrder.indexOf(key);
-    const nextKeys = preferredOrder.slice(referenceIndex + 1);
-    const previousKeys = preferredOrder.slice(0, referenceIndex).reverse();
-    let insertion = -1;
-    for (const next of nextKeys) {
-      insertion = rendered.findIndex((record) => record.key === next);
-      if (insertion >= 0) break;
-    }
-    if (insertion < 0) {
-      for (const previous of previousKeys) {
-        const previousIndex = rendered.findIndex((record) => record.key === previous);
-        if (previousIndex >= 0) {
-          insertion = previousIndex + 1;
-          break;
-        }
-      }
-    }
-    if (insertion < 0) insertion = rendered.length;
-    if (insertion > 0 && !rendered[insertion - 1].eol) rendered[insertion - 1].eol = eol;
-    rendered.splice(insertion, 0, { content: chosen, eol, key });
-    existing.add(key);
+  // Future keys cannot be inserted before their turn, so the next available
+  // anchor is always one of the original template keys. Resolve it once.
+  const nextOriginal = new Array(preferredOrder.length);
+  let following = null;
+  for (let index = preferredOrder.length - 1; index >= 0; index -= 1) {
+    nextOriginal[index] = following;
+    following = firstByKey.get(preferredOrder[index]) ?? following;
   }
-  return rendered.map(({ content, eol: ending }) => content + ending).join('');
+  let preceding = null;
+  for (let index = 0; index < preferredOrder.length; index += 1) {
+    const key = preferredOrder[index];
+    const chosen = choices.get(key);
+    if (chosen == null) continue;
+    const present = firstByKey.get(key);
+    if (present) { preceding = present; continue; }
+    const node = insertBefore({ content: chosen, eol, key },
+      nextOriginal[index] ?? preceding?.next ?? null);
+    firstByKey.set(key, node);
+    preceding = node;
+  }
+  const rendered = [];
+  for (let node = first; node; node = node.next) rendered.push(node.content + node.eol);
+  return rendered.join('');
 }
 
 export function mergeLocalisationThreeWay(baseText, collaborativeText, externalText, resolutions = {}) {

@@ -64,6 +64,34 @@ test('an invalidated save is cancelled just before replacement', async (t) => {
   assert.deepEqual(fs.readdirSync(directory), ['test.yml']);
 });
 
+test('an asynchronous freshness check is awaited before replacement', async (t) => {
+  const { repository, directory, target, original } = fixture(t);
+  let checked = false;
+  const changed = await writeTrackedTextFile(repository, target, original.replace('Original', 'Changed'), {
+    async isCurrent() {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      checked = true;
+      return false;
+    },
+  });
+  assert.equal(checked, true);
+  assert.equal(changed, false);
+  assert.equal(fs.readFileSync(target, 'utf8'), original);
+  assert.deepEqual(fs.readdirSync(directory), ['test.yml']);
+});
+
+test('an external edit during the asynchronous freshness check is not overwritten', async (t) => {
+  const { repository, target, original } = fixture(t);
+  const external = original.replace('Original', 'External');
+  await assert.rejects(writeTrackedTextFile(repository, target, original.replace('Original', 'Changed'), {
+    async isCurrent() {
+      await fs.promises.writeFile(target, external);
+      return true;
+    },
+  }), /changed during atomic write/u);
+  assert.equal(fs.readFileSync(target, 'utf8'), external);
+});
+
 test('an external change during staging is not overwritten', async (t) => {
   const { repository, target, original } = fixture(t);
   const open = fs.promises.open;

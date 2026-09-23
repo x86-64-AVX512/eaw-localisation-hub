@@ -79,6 +79,7 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     },
     detachClient() {},
     currentGitCommit() { return 'a'.repeat(40); },
+    async currentGitCommitAsync() { return 'a'.repeat(40); },
     async ticketRequest(route, options = {}) {
       received.push({ type: 'ticketRequest', route, options });
       if (options.method === 'POST') return { ticket: { id: 'ticket-created' } };
@@ -139,6 +140,19 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
         'If-None-Match': keyIndexResponse.headers.get('etag') },
     });
     assert.equal(unchangedKeyIndex.status, 304);
+
+    const gitHeadUrl = `${discovery.origin}/api/git-history/head?path=${encodeURIComponent(tracked)}`;
+    assert.equal((await fetch(gitHeadUrl)).status, 401);
+    const gitHead = await fetch(gitHeadUrl, {
+      headers: { Authorization: `Bearer ${discovery.token}` },
+    });
+    assert.equal(gitHead.status, 200);
+    assert.deepEqual(await gitHead.json(), { headCommit: 'a'.repeat(40) });
+    const invalidGitHead = await fetch(
+      `${discovery.origin}/api/git-history/head?path=${encodeURIComponent(path.join(temporary, 'outside.yml'))}`,
+      { headers: { Authorization: `Bearer ${discovery.token}` } },
+    );
+    assert.equal(invalidGitHead.status, 400);
 
     const spellingUnauthorized = await fetch(`${discovery.origin}/api/spelling/dictionary`);
     assert.equal(spellingUnauthorized.status, 401);

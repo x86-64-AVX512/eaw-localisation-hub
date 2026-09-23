@@ -139,6 +139,15 @@ test('independent key additions do not create artificial layout conflicts', () =
   assert.match(merged.text, /git:0 "Git"/u);
 });
 
+test('bulk key additions retain preferred anchors and the final newline', () => {
+  const base = 'l_russian:\n first:0 "First"\n last:0 "Last"\n';
+  const added = Array.from({ length: 1_000 }, (_, index) => ` added_${index}:0 "${index}"\n`);
+  const external = `l_russian:\n first:0 "First"\n${added.join('')} last:0 "Last"\n`;
+  const result = mergeLocalisationThreeWay(base, base, external);
+  assert.deepEqual(result.conflicts, []);
+  assert.equal(result.text, external);
+});
+
 test('local-file selections independently include and remove shared key changes', () => {
   const shared = base.replace('"Первый"', '"Совместный"').replace('"Второй"', '"Принятый"');
   const oneIncluded = setLocalisationSelection(base, shared, base, 'key:key_one', true);

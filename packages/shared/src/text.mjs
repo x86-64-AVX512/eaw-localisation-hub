@@ -307,6 +307,11 @@ export async function writeTrackedTextFile(repositoryRoot, absolutePath, text, {
     await staged.sync();
     await staged.close();
     staged = null;
+    if (!await isCurrent()) return false;
+    await handle.close();
+    handle = null;
+    // An asynchronous freshness callback can yield while an external process
+    // edits the file. Recheck identity and metadata after it, not before it.
     const latestPath = await fs.promises.realpath(resolvedFile);
     const latestStat = await fs.promises.stat(latestPath, { bigint: true });
     assertCanonicalContainment(await fs.promises.realpath(resolvedRoot), latestPath, absolutePath);
@@ -314,9 +319,6 @@ export async function writeTrackedTextFile(repositoryRoot, absolutePath, text, {
       || latestStat.ino !== openedStat.ino || latestStat.mtimeNs !== openedStat.mtimeNs
       || latestStat.ctimeNs !== openedStat.ctimeNs
       || latestStat.size !== openedStat.size) throw new Error(`File changed during atomic write: ${absolutePath}`);
-    if (!isCurrent()) return false;
-    await handle.close();
-    handle = null;
     // Never unlink the destination as a fallback: failed replacement keeps the old file intact.
     await fs.promises.rename(temporary, canonicalFile);
     temporary = null;

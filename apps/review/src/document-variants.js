@@ -19,6 +19,11 @@ export function variantTexts(previous, payload, reviewText = null) {
   };
 }
 
+export function retainedAuthorPreviews(previous, texts) {
+  return previous?.shared === texts.shared && previous?.git === texts.git
+    ? previous.authors : new Map();
+}
+
 export function createDocumentVariants({
   monaco, state, editor, send, showToast, beforeChange, afterChange, onChanged,
 }) {
@@ -32,6 +37,13 @@ export function createDocumentVariants({
   conflictsElement.className = 'personal-git-conflicts';
   message.after(conflictsElement);
   const selectionDecorations = editor.createDecorationsCollection();
+  let authorEpoch = 0;
+  const pendingAuthors = new Map();
+
+  function clearPendingAuthors() {
+    for (const timer of pendingAuthors.values()) clearTimeout(timer);
+    pendingAuthors.clear();
+  }
 
   function displayLine(value, emptyLabel) {
     return value == null ? `(${emptyLabel})` : value;
@@ -182,9 +194,19 @@ export function createDocumentVariants({
     selector.value = state.documentView;
     if (state.documentView.startsWith('author:')
       && !state.documentVariants?.authors.has(state.documentView.slice(7))) {
-      send({ type: 'documentVariantRequest', path: state.path,
-        authorId: state.documentView.slice(7) });
-      showToast('Загружается персональная версия участника…');
+      const authorId = state.documentView.slice(7);
+      if (!pendingAuthors.has(authorId)) {
+        const epoch = authorEpoch;
+        const timer = setTimeout(() => {
+          pendingAuthors.delete(authorId);
+          if (authorEpoch === epoch && state.documentView === `author:${authorId}`
+            && !state.documentVariants?.authors.has(authorId)) select(state.documentView);
+        }, 10_000);
+        pendingAuthors.set(authorId, timer);
+        send({ type: 'documentVariantRequest', path: state.path,
+          authorId, variantEpoch: String(authorEpoch) });
+        showToast('Загружается персональная версия участника…');
+      }
       return;
     }
     applyText(textFor(state.documentView));
@@ -220,6 +242,12 @@ export function createDocumentVariants({
       send({ type: 'documentVariantsRequest', path: state.path });
       return;
     }
+    const authors = retainedAuthorPreviews(previous, texts);
+    const authorBaseChanged = authors !== previous?.authors;
+    if (authorBaseChanged) {
+      authorEpoch += 1;
+      clearPendingAuthors();
+    }
     state.documentVariants = {
       ...texts,
       contributors: payload.contributors ?? [],
@@ -228,7 +256,7 @@ export function createDocumentVariants({
       localSelections: payload.localSelections ?? [],
       localSelectionBlocked: payload.localSelectionBlocked ?? '',
       localSelectionRevision: payload.localSelectionRevision ?? '',
-      authors: new Map(),
+      authors,
     };
     for (const option of [...selector.querySelectorAll('[data-author]')]) option.remove();
     for (const contributor of state.documentVariants.contributors) {
@@ -258,6 +286,9 @@ export function createDocumentVariants({
 
   function updateAuthor(payload) {
     if (!state.documentVariants) return;
+    if (payload.variantEpoch !== String(authorEpoch)) return;
+    clearTimeout(pendingAuthors.get(payload.authorId));
+    pendingAuthors.delete(payload.authorId);
     state.documentVariants.authors.set(payload.authorId, decodeBase64(payload.textBase64));
     if (state.documentView === `author:${payload.authorId}`) select(state.documentView);
   }
@@ -270,6 +301,6 @@ export function createDocumentVariants({
 
   return {
     update, updateAuthor, status, select,
-    dispose() { gutterClick.dispose(); selectionDecorations.clear(); },
+    dispose() { clearPendingAuthors(); gutterClick.dispose(); selectionDecorations.clear(); },
   };
 }

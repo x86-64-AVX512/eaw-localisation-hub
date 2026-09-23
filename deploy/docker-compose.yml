@@ -5,7 +5,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: eaw-localisation-hub:0.8.8F2
+    image: eaw-localisation-hub:0.8.8F3
     restart: unless-stopped
     init: true
     environment:

@@ -11,6 +11,11 @@ export function visibleComparisonText(text) {
   return count === 1 ? '[перенос строки]' : `[переносы строк: ${count}]`;
 }
 
+export function reviewCardFingerprint(item, messages, editingSuggestionId, userId) {
+  const { startByte, endByte, ...content } = item;
+  return JSON.stringify([content, messages ?? [], item.id === editingSuggestionId, userId]);
+}
+
 export function createReviewCards({
   state, editor, rangeFromBytes, send, askText, onEditSuggestion = () => false,
   onAcceptSuggestion = () => {}, onRevertSuggestion = () => {},
@@ -118,12 +123,17 @@ export function createReviewCards({
       const key = `${item.kind}:${item.id}`;
       const messages = item.kind === 'suggestion'
         ? state.suggestionMessages.get(item.id) : state.commentMessages.get(item.id);
-      const fingerprint = JSON.stringify([item, messages ?? [], item.id === state.editingSuggestionId, state.userId]);
+      const fingerprint = reviewCardFingerprint(item, messages, state.editingSuggestionId, state.userId);
       liveKeys.add(key);
       const cached = cardCache.get(key);
-      if (cached?.fingerprint === fingerprint) return cached.card;
+      if (cached?.fingerprint === fingerprint) {
+        cached.item.startByte = item.startByte;
+        cached.item.endByte = item.endByte;
+        cached.card.dataset.startByte = String(item.startByte);
+        return cached.card;
+      }
       const card = createCard(item, messages);
-      cardCache.set(key, { card, fingerprint });
+      cardCache.set(key, { card, fingerprint, item });
       return card;
     });
     for (const key of cardCache.keys()) if (!liveKeys.has(key)) cardCache.delete(key);
@@ -132,7 +142,7 @@ export function createReviewCards({
       if (current !== node) cards.insertBefore(node, current);
     });
     while (cards.children.length > nodes.length) cards.lastElementChild.remove();
-    requestAnimationFrame(cardLayout.layout);
+    cardLayout.layout();
   }
 
   showAccepted.addEventListener('change', render);
@@ -147,7 +157,7 @@ export function createReviewCards({
     card.scrollIntoView({ block: 'center', behavior: 'smooth' });
     card.focus({ preventScroll: true });
     focusTimer = setTimeout(() => card.classList.remove('review-card-focused'), 1800);
-    requestAnimationFrame(cardLayout.layout);
+    cardLayout.layout();
     return true;
   }
 
