@@ -24,3 +24,18 @@ test('GitHub verifier rejects commits outside the branch and fails closed on out
   const unavailable = new GitCommitVerifier('EaW-Team/equestria_dev', async () => { throw new Error('offline'); });
   await assert.rejects(unavailable.verify('general-dev', commit), /unavailable/u);
 });
+
+test('GitHub verifier checks the approved fork only for barrad', async () => {
+  const urls = [];
+  const commit = 'c'.repeat(40);
+  const verifier = new GitCommitVerifier('EaW-Team/equestria_dev', async (url) => {
+    urls.push(url);
+    return { ok: true, status: 200, json: async () => ({
+      status: 'ahead', base_commit: { sha: commit },
+    }) };
+  }, { barrad: 'MiszczTheMaste/equestria_dev' });
+  await verifier.verify('barrad', commit);
+  await verifier.verify('general-dev', commit);
+  assert.match(urls[0], /^https:\/\/api\.github\.com\/repos\/MiszczTheMaste\/equestria_dev\/compare\//u);
+  assert.match(urls[1], /^https:\/\/api\.github\.com\/repos\/EaW-Team\/equestria_dev\/compare\//u);
+});

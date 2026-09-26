@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   localisationEntries, parseKeyReplacementBatch, replaceLocalisationValues,
-} from '../packages/shared/src/localisation-replace.mjs';
+} from '../packages/shared/src/localisation-replace.mts';
 
 test('batch key parser accepts numbered and unnumbered entries', () => {
   const parsed = parseKeyReplacementBatch('one:0 "Первый"\ntwo: "Второй \\"текст\\""');

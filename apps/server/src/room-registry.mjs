@@ -7,8 +7,8 @@ import {
   MAX_PERSISTED_ROOMS,
   MAX_TOTAL_ROOM_STATE_BYTES,
   ROOM_IDLE_MILLISECONDS,
-} from '../../../packages/shared/src/constants.mjs';
-import { ProtocolLimitError, byteLength } from './protocol-limits.mjs';
+} from '../../../packages/shared/src/constants.mts';
+import { ProtocolLimitError, byteLength } from './protocol-limits.mts';
 
 export class RoomRegistry {
   constructor(dataDirectory, authStore, loadRoom, atomicWrite, canonicalSource = null) {
@@ -24,10 +24,42 @@ export class RoomRegistry {
     this.evictionTimer = null;
     this.canonicalTimer = null;
     this.persistenceGenerations = new Map();
+    this.knownDocuments = new Map();
+    this.indexedDocuments = new Set();
+    this.indexPath = path.join(dataDirectory, 'room-index.json');
+    this.branchHints = new Map();
+    this.legacyDocumentsByBranch = new Map();
+    this.mergedBranches = new Map();
+    this.mergingBranches = new Set();
+    this.branchMergeService = null;
+    this.eventJournal = null;
+    this.auditLog = null;
+    this.ticketStore = null;
   }
 
   async initialise() {
     const directory = path.join(this.dataDirectory, 'documents');
+    try {
+      const index = JSON.parse(await fs.readFile(this.indexPath, 'utf8'));
+      if (index.schema === 1 && index.documents && typeof index.documents === 'object') {
+        for (const [hash, documentId] of Object.entries(index.documents)) {
+          if (typeof documentId !== 'string' || !/^[0-9a-f]{64}$/u.test(hash)
+            || crypto.createHash('sha256').update(documentId).digest('hex') !== hash) continue;
+          this.knownDocuments.set(hash, documentId);
+          this.indexedDocuments.add(hash);
+        }
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    try {
+      const state = JSON.parse(await fs.readFile(path.join(this.dataDirectory, 'branch-merges.json'), 'utf8'));
+      if (state.schema === 1 && state.branches && typeof state.branches === 'object') {
+        this.mergedBranches = new Map(Object.entries(state.branches));
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
     let entries = [];
     try {
       entries = await fs.readdir(directory, { withFileTypes: true });
@@ -41,10 +73,37 @@ export class RoomRegistry {
       const stats = await fs.stat(path.join(directory, entry.name));
       this.persisted.set(match[1], (this.persisted.get(match[1]) ?? 0) + stats.size);
       this.persistedTotalBytes += stats.size;
+      if (match[2] === 'json') {
+        let metadata;
+        try {
+          metadata = JSON.parse(await fs.readFile(path.join(directory, entry.name), 'utf8'));
+        } catch {
+          console.error(`[server] cannot index document metadata ${entry.name}`);
+          continue;
+        }
+        const branch = String(metadata.gitBase?.branch ?? '');
+        const commit = String(metadata.gitBase?.commit ?? '');
+        const checkedAt = Number(metadata.gitBase?.checkedAt ?? 0);
+        if (branch && /^[0-9a-f]{40}$/u.test(commit)
+          && checkedAt >= (this.branchHints.get(branch)?.checkedAt ?? -1)) {
+          this.branchHints.set(branch, { commit, checkedAt });
+        }
+        if (branch && !this.knownDocuments.has(match[1])) {
+          const legacy = this.legacyDocumentsByBranch.get(branch) ?? new Set();
+          legacy.add(match[1]);
+          this.legacyDocumentsByBranch.set(branch, legacy);
+        }
+      }
     }
     if (this.persisted.size > MAX_PERSISTED_ROOMS
       || this.persistedTotalBytes > MAX_PERSISTED_DOCUMENT_BYTES) {
       throw new Error('Persisted document storage already exceeds the configured safety budget');
+    }
+    for (const [branch, merge] of this.mergedBranches) {
+      const documents = (Array.isArray(merge.documentIds) ? merge.documentIds : [])
+        .filter((id) => typeof id === 'string' && id.startsWith(`${branch}:`)
+          && this.persisted.has(crypto.createHash('sha256').update(id).digest('hex')));
+      if (documents.length) await this.deleteDocuments(documents, `Branch merged into ${merge.target}`);
     }
     this.evictionTimer = setInterval(() => {
       this.evictIdleRooms().catch(() => console.error('[server] idle room eviction failed'));
@@ -61,8 +120,65 @@ export class RoomRegistry {
   async refreshCanonicalRooms() {
     for (const value of this.rooms.values()) {
       const room = await value;
-      if (room.clients.size > 0) await room.refreshCanonical();
+      if (room.clients.size > 0) {
+        try {
+          await room.refreshCanonical();
+        } catch (error) {
+          console.error(`[server] canonical refresh failed for ${room.documentId}: ${error.message}`);
+        }
+      }
     }
+    await this.branchMergeService?.refresh();
+  }
+
+  isUnavailableBranch(documentId) {
+    const branch = String(documentId).split(':', 1)[0];
+    return this.mergingBranches.has(branch) || this.mergedBranches.has(branch);
+  }
+
+  documentIdsForBranch(branch, targetPaths = []) {
+    const result = new Set([...this.knownDocuments]
+      .filter(([hash, documentId]) => this.persisted.has(hash)
+        && documentId.startsWith(`${branch}:`))
+      .map(([, documentId]) => documentId));
+    for (const relativePath of targetPaths) {
+      const documentId = `${branch}:${relativePath}`;
+      const hash = crypto.createHash('sha256').update(documentId).digest('hex');
+      if (this.persisted.has(hash)) result.add(documentId);
+    }
+    for (const documentId of this.rooms.keys()) {
+      if (documentId.startsWith(`${branch}:`)) result.add(documentId);
+    }
+    return [...result];
+  }
+
+  unresolvedLegacyHashes(branch, targetPaths) {
+    const unresolved = new Set(this.legacyDocumentsByBranch.get(branch) ?? []);
+    for (const relativePath of targetPaths) {
+      const hash = crypto.createHash('sha256').update(`${branch}:${relativePath}`).digest('hex');
+      unresolved.delete(hash);
+    }
+    return [...unresolved];
+  }
+
+  async markBranchMerged(branch, target, commit, documentIds = []) {
+    const next = new Map(this.mergedBranches);
+    next.set(branch, { target, commit, at: new Date().toISOString(), documentIds });
+    await this.atomicWrite(path.join(this.dataDirectory, 'branch-merges.json'),
+      `${JSON.stringify({ schema: 1, branches: Object.fromEntries(next) }, null, 2)}\n`);
+    this.mergedBranches = next;
+    for (const [documentId, value] of this.rooms) {
+      if (!documentId.startsWith(`${branch}:`)) continue;
+      const room = await value;
+      for (const client of room.clients) client.close(4002, `Branch merged into ${target}`);
+    }
+  }
+
+  async persistDocumentIndex() {
+    const documents = Object.fromEntries([...this.knownDocuments]
+      .filter(([hash]) => this.persisted.has(hash)));
+    await this.atomicWrite(this.indexPath, `${JSON.stringify({ schema: 1, documents }, null, 2)}\n`);
+    this.indexedDocuments = new Set(Object.keys(documents));
   }
 
   persistedBytesFor(hash) {
@@ -131,6 +247,8 @@ export class RoomRegistry {
       const room = await loading;
       room.persistenceGeneration = this.persistenceGenerations.get(hash) ?? 0;
       this.rooms.set(documentId, room);
+      this.knownDocuments.set(hash, documentId);
+      this.legacyDocumentsByBranch.get(documentId.split(':', 1)[0])?.delete(hash);
       this.assertStateBudget(room, room.stateBudgetBytes);
       return room;
     } catch (error) {
@@ -159,9 +277,19 @@ export class RoomRegistry {
       this.persisted.set(room.hash, nextBytes);
       this.persistedTotalBytes = projected;
       room.persistedBytes = nextBytes;
+      if (typeof room.documentId === 'string') {
+        this.knownDocuments.set(room.hash, room.documentId);
+        this.legacyDocumentsByBranch.get(room.documentId.split(':', 1)[0])?.delete(room.hash);
+        if (!this.indexedDocuments.has(room.hash)) await this.persistDocumentIndex();
+      }
+      if (room.gitBase?.branch && /^[0-9a-f]{40}$/u.test(room.gitBase.commit)) {
+        this.branchHints.set(room.gitBase.branch, {
+          commit: room.gitBase.commit, checkedAt: Number(room.gitBase.checkedAt ?? 0),
+        });
+      }
       return true;
     });
-    this.persistencePromise = operation;
+    this.persistencePromise = operation.then(() => undefined);
     await operation;
   }
 
@@ -199,6 +327,7 @@ export class RoomRegistry {
       removals.push(hash);
     }
     const operation = this.persistencePromise.catch(() => {}).then(async () => {
+      let indexChanged = false;
       for (const hash of removals) {
         const previousBytes = this.persisted.get(hash) ?? 0;
         await Promise.all([
@@ -207,8 +336,12 @@ export class RoomRegistry {
           fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.history.json`), { force: true }),
         ]);
         this.persisted.delete(hash);
+        if (this.knownDocuments.delete(hash)) indexChanged = true;
+        this.indexedDocuments.delete(hash);
+        for (const legacy of this.legacyDocumentsByBranch.values()) legacy.delete(hash);
         this.persistedTotalBytes = Math.max(0, this.persistedTotalBytes - previousBytes);
       }
+      if (indexChanged) await this.persistDocumentIndex();
     });
     this.persistencePromise = operation;
     await operation;

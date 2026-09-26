@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
 import * as Y from 'yjs';
-import { createReviewDocument } from '../apps/review/src/review-document.js';
+import { createReviewDocument } from '../apps/review/src/review-document.ts';
 import { applyReviewUpdate, broadcastReviewUpdate, resolveReviewAnchors } from '../apps/agent/src/review-document.mjs';
 import { AgentHub } from '../apps/agent/src/agent-hub.mjs';
 

@@ -23,6 +23,7 @@
           <option value="closed">Закрыт</option>
         </select>
         <button id="ticket-catalog">Все тикеты</button>
+        <button id="deleted-branches-open" title="Сохранённые документы веток, удалённых без слияния">Удалённые ветки</button>
         <button id="ticket-create" title="Создать совместный черновик от текущего Git-коммита">Новый тикет</button>
       </div>
     </div>
@@ -204,6 +205,30 @@
           <h3>Журнал событий</h3>
           <div id="ticket-events" class="ticket-events"></div>
         </div>
+      </section>
+    </div>
+  </dialog>
+  <dialog id="deleted-branches-dialog" class="deleted-branches-dialog">
+    <div class="deleted-branches-shell">
+      <aside class="deleted-branches-sidebar">
+        <div class="ticket-catalog-heading"><h2>Удалённые ветки</h2><button id="deleted-branches-close">Закрыть</button></div>
+        <p class="dialog-hint">Здесь доступны сохранённые сервером документы. Просмотр не восстанавливает ветку и не записывает текст в Git.</p>
+        <button id="deleted-branches-refresh">Обновить список</button>
+        <div id="deleted-branches-list"></div>
+        <h3>Файлы ветки</h3>
+        <div id="deleted-branches-files"></div>
+        <label for="deleted-branches-path">Старый файл не виден в списке?</label>
+        <input id="deleted-branches-path" placeholder="localisation/russian/example_l_russian.yml">
+        <button id="deleted-branches-open-path">Открыть по пути</button>
+      </aside>
+      <section class="deleted-branches-preview">
+        <div class="history-toolbar">
+          <strong id="deleted-branches-selection">Выберите ветку и файл</strong>
+          <span>Только чтение</span>
+        </div>
+        <p id="deleted-branches-notice" class="dialog-hint">Чтобы продолжить редактирование, попросите администратора восстановить ветку из указанного коммита или перенести работу в новую ветку.</p>
+        <div id="deleted-branches-editor"></div>
+        <div id="deleted-branches-comments"></div>
       </section>
     </div>
   </dialog>

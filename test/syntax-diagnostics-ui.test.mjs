@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createSyntaxDiagnostics, diagnosticsToMarkers } from '../apps/review/src/syntax-diagnostics.js';
+import { createSyntaxDiagnostics, diagnosticsToMarkers } from '../apps/review/src/syntax-diagnostics.ts';
 
 test('Monaco markers include an exact range and a link to the first duplicate', () => {
   const monaco = { MarkerSeverity: { Error: 8, Warning: 4, Info: 2 } };

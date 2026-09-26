@@ -6,17 +6,17 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const agentHub = fs.readFileSync(path.join(projectRoot, 'apps', 'agent', 'src', 'agent-hub.mjs'), 'utf8');
-const reviewApp = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'app.js'), 'utf8');
-const helpPanel = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'help-panel.js'), 'utf8');
+const reviewApp = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'app.ts'), 'utf8');
+const helpPanel = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'help-panel.ts'), 'utf8');
 const reviewServer = fs.readFileSync(path.join(projectRoot, 'apps', 'agent', 'src', 'review-server.mjs'), 'utf8');
-const ticketPanel = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'ticket-panel.js'), 'utf8');
-const agentConnection = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'agent-connection.js'), 'utf8');
+const ticketPanel = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'ticket-panel.ts'), 'utf8');
+const agentConnection = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'agent-connection.ts'), 'utf8');
 const documentBinding = fs.readFileSync(path.join(projectRoot, 'apps', 'agent', 'src', 'document-binding.mjs'), 'utf8');
-const documentLifecycle = fs.readFileSync(path.join(projectRoot, 'apps', 'agent', 'src', 'document-lifecycle.mjs'), 'utf8');
-const gitHistory = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'git-history-panel.js'), 'utf8');
-const gitHistoryDiffViews = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'git-history-diff-views.js'), 'utf8');
-const historyPanel = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'history-panel.js'), 'utf8');
-const standardDiff = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'standard-diff-view.js'), 'utf8');
+const documentLifecycle = fs.readFileSync(path.join(projectRoot, 'apps', 'agent', 'src', 'document-lifecycle.mts'), 'utf8');
+const gitHistory = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'git-history-panel.ts'), 'utf8');
+const gitHistoryDiffViews = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'git-history-diff-views.ts'), 'utf8');
+const historyPanel = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'history-panel.ts'), 'utf8');
+const standardDiff = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'standard-diff-view.ts'), 'utf8');
 
 test('recovery warning waits for an explicit server-confirmed status', () => {
   assert.match(agentHub, /recoveryStatus: this\.identity\?\.recoveryStatus \?\? ''/u);
@@ -83,7 +83,8 @@ test('closing ticket catalog disposes Monaco and rejects late diff responses', (
 });
 
 test('deleting a ticket closes its active diff before waiting on the server', () => {
-  const deletion = ticketPanel.slice(ticketPanel.indexOf("document.querySelector('#ticket-delete')"));
+  const deletion = ticketPanel.slice(ticketPanel.indexOf("requiredButton('#ticket-delete').addEventListener"));
+  assert.ok(deletion.includes("method: 'DELETE'"));
   assert.ok(deletion.indexOf('closeCatalog()') < deletion.indexOf("method: 'DELETE'"));
 });
 

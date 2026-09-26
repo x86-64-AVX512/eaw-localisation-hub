@@ -1,4 +1,4 @@
-import { sendWithBackpressure } from './protocol-limits.mjs';
+import { sendWithBackpressure } from './protocol-limits.mts';
 
 export function watchTicketCatalog(ticketStore, rooms) {
   ticketStore.onChanged = async (revision) => {

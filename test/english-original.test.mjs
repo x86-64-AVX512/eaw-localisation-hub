@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { englishOriginal } from '../apps/agent/src/git-ticket-context.mjs';
-import { keyAtCursor } from '../apps/review/src/english-original.js';
+import { englishOriginal } from '../apps/agent/src/git-ticket-context.mts';
+import { keyAtCursor } from '../apps/review/src/english-original.ts';
 
 test('Review identifies a versionless localisation key under the cursor', () => {
   const editor = {

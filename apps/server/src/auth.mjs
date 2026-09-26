@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import {
   ACCOUNT_ROLES,
   AuthError,
@@ -42,8 +41,8 @@ import {
 } from './management-policy.mjs';
 import { updateTrainingProgress } from './training-progress.mjs';
 import { addSpellingWord, spellingWords } from './auth-spelling.mjs';
+import { scryptAsync } from './auth-scrypt.mts';
 export { ACCOUNT_ROLES, AuthError };
-const scryptAsync = promisify(crypto.scrypt);
 const SCRYPT_PARAMETERS = Object.freeze({ N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 });
 const PASSWORD_KEY_BYTES = 32;
 const MAX_PASSWORD_JOBS = 8;

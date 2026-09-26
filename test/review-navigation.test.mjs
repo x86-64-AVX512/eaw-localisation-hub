@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { reviewItemsAtByte } from '../apps/review/src/review-navigation.js';
+import { reviewItemsAtByte } from '../apps/review/src/review-navigation.ts';
 
 test('review navigation prefers the narrowest overlapping discussion range', () => {
   const state = {

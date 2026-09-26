@@ -6,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { GitBranchCache } from '../apps/server/src/git-branch-cache.mjs';
+import { branchRepositoriesFor } from '../apps/server/src/branch-repositories.mjs';
 
 function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true }).trim();
@@ -73,4 +74,73 @@ test('canonical cache clones sparse localisation trees and refreshes branch head
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
+});
+
+test('only the EaW repository routes barrad to the approved fork', () => {
+  assert.deepEqual(branchRepositoriesFor('EaW-Team/equestria_dev'), {
+    barrad: 'MiszczTheMaste/equestria_dev',
+  });
+  assert.deepEqual(branchRepositoriesFor('https://github.com/EaW-Team/equestria_dev.git'), {
+    barrad: 'MiszczTheMaste/equestria_dev',
+  });
+  assert.deepEqual(branchRepositoriesFor('SomeoneElse/equestria_dev'), {});
+  assert.deepEqual(branchRepositoriesFor(''), {});
+});
+
+test('barrad uses its fork even when a stale main-repository cache and branch exist', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-fork-cache-'));
+  try {
+    const main = path.join(root, 'main');
+    const fork = path.join(root, 'fork');
+    const mainOrigin = path.join(root, 'main.git');
+    const forkOrigin = path.join(root, 'fork.git');
+    for (const [directory, text] of [[main, 'main'], [fork, 'fork']]) {
+      const loc = path.join(directory, 'localisation', 'russian');
+      await fs.mkdir(loc, { recursive: true });
+      await fs.writeFile(path.join(loc, 'barrad.yml'), `l_russian:\n a:0 "${text}"\n`);
+      git(directory, 'init', '-b', 'barrad');
+      git(directory, 'config', 'user.name', 'Test');
+      git(directory, 'config', 'user.email', 'test@example.invalid');
+      git(directory, 'add', '.');
+      git(directory, 'commit', '-m', 'initial');
+    }
+    git(root, 'clone', '--bare', main, mainOrigin);
+    git(root, 'clone', '--bare', fork, forkOrigin);
+
+    const data = path.join(root, 'data');
+    const oldCache = new GitBranchCache(data, pathToFileURL(mainOrigin).href);
+    assert.match((await oldCache.snapshot('barrad:localisation/russian/barrad.yml')).text, /"main"/u);
+
+    const cache = new GitBranchCache(data, pathToFileURL(mainOrigin).href, {
+      refreshMilliseconds: 0,
+      branchRepositories: { barrad: pathToFileURL(forkOrigin).href },
+    });
+    const snapshot = await cache.snapshot('barrad:localisation/russian/barrad.yml');
+    assert.match(snapshot.text, /"fork"/u);
+    assert.equal(snapshot.commit, git(fork, 'rev-parse', 'HEAD'));
+    assert.equal(git(cache.branchDirectory('barrad'), 'remote', 'get-url', 'origin'), pathToFileURL(forkOrigin).href);
+    assert.equal((await cache.remoteBranchNames()).has('barrad'), true);
+    assert.equal(await cache.branchDeleted('barrad'), false);
+
+    git(root, '--git-dir', forkOrigin, 'branch', '-D', 'barrad');
+    assert.equal((await cache.remoteBranchNames({ force: true })).has('barrad'), false);
+    assert.equal(await cache.branchDeleted('barrad'), true);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('merge detection looks for pull requests from the fork owner', async () => {
+  const urls = [];
+  const cache = new GitBranchCache('/unused', 'EaW-Team/equestria_dev', {
+    branchRepositories: { barrad: 'MiszczTheMaste/equestria_dev' },
+    fetchImplementation: async (url) => {
+      urls.push(url);
+      return { ok: true, json: async () => url.includes('/compare/')
+        ? { status: 'behind', base_commit: { sha: 'a'.repeat(40) } }
+        : [] };
+    },
+  });
+  assert.equal(await cache.mergedInto('barrad', 'general-dev', 'a'.repeat(40), 'b'.repeat(40)), false);
+  assert.match(urls[1], /head=MiszczTheMaste%3Abarrad/u);
 });

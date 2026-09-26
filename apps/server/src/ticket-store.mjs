@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { AuthError } from './auth.mjs';
-import { TRACKED_PATH_PATTERN } from '../../../packages/shared/src/constants.mjs';
+import { TRACKED_PATH_PATTERN } from '../../../packages/shared/src/constants.mts';
 
 const STATUSES = new Set(['draft', 'in_progress', 'review', 'needs_changes', 'ready', 'git_conflict', 'applied', 'closed']);
 const USER_STATUSES = new Set(['draft', 'in_progress', 'review', 'needs_changes', 'ready', 'closed']);
@@ -68,6 +68,8 @@ export class TicketStore {
     this.persistence = Promise.resolve();
     this.commitVerifier = commitVerifier;
     this.revision = crypto.randomUUID();
+    this.eventJournal = null;
+    this.onChanged = null;
   }
 
   async initialise() {
@@ -229,6 +231,34 @@ export class TicketStore {
   async setBase(actor, id, baseBranch, baseCommit) {
     this.mutable(id);
     return this.setVerifiedBase(actor, id, await this.verifyBase(baseBranch, baseCommit));
+  }
+
+  async retargetMergedBranch(sourceBranch, targetBranch, targetCommit, availableFiles) {
+    const branch = validBranch(targetBranch);
+    const commit = validCommit(targetCommit);
+    const files = new Set(availableFiles);
+    const actor = { id: '', displayName: 'Git merge' };
+    const moved = [];
+    const unresolved = [];
+    for (const ticket of this.tickets) {
+      if (ticket.baseBranch !== sourceBranch) continue;
+      const missing = ticket.files.filter((file) => !files.has(file));
+      if (missing.length) {
+        unresolved.push({ id: ticket.id, missing });
+        continue;
+      }
+      const previousBranch = ticket.baseBranch;
+      const previousCommit = ticket.baseCommit;
+      ticket.baseBranch = branch;
+      this.addEvent(ticket, actor, 'branch_merged', {
+        previousBranch, previousCommit, baseBranch: branch, baseCommit: previousCommit,
+        mergedIntoCommit: commit,
+      });
+      this.touch(ticket, actor);
+      moved.push(ticket.id);
+    }
+    if (moved.length) await this.persist();
+    return { moved, unresolved };
   }
 
   async archive(actor, id) {

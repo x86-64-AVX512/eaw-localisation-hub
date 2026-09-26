@@ -1,7 +1,7 @@
 import { WebSocket } from 'ws';
 import * as Y from 'yjs';
-import { currentGitFileBlob } from './git-ticket-context.mjs';
-import { preserveChangedFile } from './git-recovery.mjs';
+import { currentGitFileBlob } from './git-ticket-context.mts';
+import { preserveChangedFile } from './git-recovery.mts';
 import { resetPersonalRequest, seedAttachedDocument } from './personal-document.mjs';
 
 export function appendGitHead(binding, url) {
@@ -26,6 +26,8 @@ export function applySyncedGit(binding, message) {
 export function documentStatus(gitState) {
   if (!gitState || gitState.status === 'current') return 'online';
   if (gitState.status === 'branch-outdated') return 'git-branch-outdated';
+  if (gitState.status === 'branch-deleted') return 'git-branch-deleted';
+  if (gitState.status === 'git-unavailable') return 'git-unavailable';
   if (gitState.status === 'conflict') return 'git-conflict';
   return 'git-file-outdated';
 }

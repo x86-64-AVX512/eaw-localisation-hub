@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { normaliseTrackedPath, withoutUtf8Bom } from '../../../packages/shared/src/text.mjs';
+import { normaliseTrackedPath, withoutUtf8Bom } from '../../../packages/shared/src/text.mts';
 
 function counterpart(relativePath) {
   const value = relativePath.replaceAll('\\', '/');

@@ -1,7 +1,7 @@
 {
   "name": "eaw-localisation-hub",
   "private": true,
-  "version": "0.8.8-beta.3",
+  "version": "0.8.8-beta.4",
   "description": "EaW collaborative localisation early beta",
   "license": "GPL-2.0-only",
   "author": "EaW Localisation Hub contributors",
@@ -13,16 +13,19 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18.0"
   },
   "scripts": {
     "server": "node apps/server/src/main.mjs",
     "agent": "node apps/agent/src/main.mjs",
     "pretest": "node scripts/build-review-web.mjs",
+    "typecheck": "tsc --project tsconfig.typecheck.json && tsc --project tsconfig.boundary.json && tsc --project tsconfig.review-typescript.json && tsc --project tsconfig.review.json",
+    "typecheck:boundary": "tsc --project tsconfig.boundary.json",
+    "typecheck:review-ts": "tsc --project tsconfig.review-typescript.json",
     "test": "node --test --test-concurrency=1 \"test/*.test.mjs\"",
     "test:plugin": "node scripts/verify-plugin.mjs",
     "test:live-plugin": "npm run build:plugin && npm run test:plugin",
-    "check": "npm run check:publication && npm test && npm run build:client && npm run build:installer && npm run build:deployer && npm run build:source && npm run test:plugin && npm run test:launcher && npm run test:credentials && npm run test:status && npm run test:client && npm run test:deployer && npm run test:source && npm run test:installer",
+    "check": "npm run typecheck && npm run check:publication && npm test && npm run build:client && npm run build:installer && npm run build:deployer && npm run build:source && npm run test:plugin && npm run test:launcher && npm run test:credentials && npm run test:status && npm run test:client && npm run test:deployer && npm run test:source && npm run test:installer",
     "check:publication": "node scripts/check-publication.mjs",
     "test:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-powershell.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-backup-schedule.ps1",
     "test:client": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-package.ps1",
@@ -53,12 +56,14 @@
     "yjs": "^13.6.27"
   },
   "eawHub": {
-    "displayVersion": "0.8.8F3",
-    "windowsFileVersion": "0.8.8.3"
+    "displayVersion": "0.8.8F4",
+    "windowsFileVersion": "0.8.8.4"
   },
   "devDependencies": {
+    "@types/node": "^22.20.4",
     "esbuild": "0.28.2",
-    "ssh2": "^1.17.0"
+    "ssh2": "^1.17.0",
+    "typescript": "^7.0.2"
   },
   "overrides": {
     "dompurify": "3.4.14"

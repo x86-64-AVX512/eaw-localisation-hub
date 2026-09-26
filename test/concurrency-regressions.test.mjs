@@ -10,8 +10,8 @@ import { TicketStore } from '../apps/server/src/ticket-store.mjs';
 import { TicketService } from '../apps/server/src/ticket-service.mjs';
 import { RoomRegistry } from '../apps/server/src/room-registry.mjs';
 import { DocumentRoom, closeDocumentRoomValidator } from '../apps/server/src/document-room.mjs';
-import { attachDocumentSocket } from '../apps/server/src/document-socket.mjs';
-import { createInboundBudget } from '../apps/server/src/protocol-limits.mjs';
+import { attachDocumentSocket } from '../apps/server/src/document-socket.mts';
+import { createInboundBudget } from '../apps/server/src/protocol-limits.mts';
 import { checkDiskChange } from '../apps/agent/src/disk-reconciliation.mjs';
 import { DiffCache } from '../apps/agent/src/diff-cache.mjs';
 import {

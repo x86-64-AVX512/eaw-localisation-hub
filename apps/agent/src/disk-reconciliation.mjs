@@ -7,8 +7,8 @@ import {
   readTrackedTextFile,
   withoutUtf8Bom,
   utf8ByteOffsetToUtf16Index,
-} from '../../../packages/shared/src/text.mjs';
-import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mjs';
+} from '../../../packages/shared/src/text.mts';
+import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mts';
 
 const MAXIMUM_CONFLICT_TEXT = 60 * 1024;
 function conflictText(value) {

@@ -19,9 +19,9 @@ test('entrypoints stay coordinators instead of absorbing extracted subsystems', 
     ['apps/server/src/main.mjs', 450],
     ['apps/agent/src/document-binding.mjs', 550],
     ['apps/server/src/auth.mjs', 600],
-    ['apps/review/src/app.js', 300],
-    ['apps/review/src/collaboration-panel.js', 220],
-    ['apps/review/src/review-cards.js', 190],
+    ['apps/review/src/app.ts', 300],
+    ['apps/review/src/collaboration-panel.ts', 220],
+    ['apps/review/src/review-cards.ts', 190],
     ['plugin/src/EawLocalisationHub.cpp', 2200],
   ]);
   for (const [relativePath, maximumLines] of budgets) {
@@ -40,8 +40,8 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/server/src/auth-recovery.mjs',
     'apps/server/src/auth-spelling.mjs',
     'apps/server/src/recovery-code.mjs',
-    'apps/server/src/protocol-limits.mjs',
-    'apps/server/src/document-socket.mjs',
+    'apps/server/src/protocol-limits.mts',
+    'apps/server/src/document-socket.mts',
     'apps/server/src/document-room.mjs',
     'apps/server/src/room-metadata.mjs',
     'apps/server/src/room-registry.mjs',
@@ -57,49 +57,49 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/agent/src/document-view.mjs',
     'apps/agent/src/disk-reconciliation.mjs',
     'apps/agent/src/personal-document.mjs',
-    'apps/agent/src/document-lifecycle.mjs',
+    'apps/agent/src/document-lifecycle.mts',
     'apps/agent/src/workspace-transition.mjs',
-    'apps/agent/src/review-endpoint.mjs',
-    'apps/agent/src/local-presence.mjs',
-    'apps/review/src/history-panel.js',
-    'apps/agent/src/git-ticket-context.mjs',
-    'apps/agent/src/git-executable.mjs',
-    'apps/agent/src/git-file-history.mjs',
+    'apps/agent/src/review-endpoint.mts',
+    'apps/agent/src/local-presence.mts',
+    'apps/review/src/history-panel.ts',
+    'apps/agent/src/git-ticket-context.mts',
+    'apps/agent/src/git-executable.mts',
+    'apps/agent/src/git-file-history.mts',
     'apps/agent/src/ticket-workflow.mjs',
     'apps/agent/src/ticket-review-api.mjs',
     'apps/agent/src/key-replacement-workflow.mjs',
-    'apps/review/src/collaboration-panel.js',
-    'apps/review/src/avatar-profile.js',
-    'apps/review/src/avatar-view.js',
-    'apps/review/src/editor-decorations.js',
-    'apps/review/src/editor-settings.js',
-    'apps/review/src/spellcheck.js',
-    'apps/review/src/spellcheck-worker.js',
-    'packages/shared/src/spelling-issues.mjs',
-    'packages/shared/src/spelling-bloom.mjs',
-    'apps/review/src/workspace-tabs.js',
-    'apps/review/src/editing-mode.js',
-    'apps/review/src/english-original.js',
-    'apps/review/src/presence-cursors.js',
-    'apps/review/src/presence-controller.js',
-    'apps/review/src/review-cards.js',
-    'apps/review/src/review-card-layout.js',
-    'apps/review/src/review-navigation.js',
-    'apps/review/src/review-card-elements.js',
-    'apps/review/src/recovery-banner.js',
-    'apps/review/src/scroll-sync.js',
-    'apps/review/src/read-only-review.js',
-    'apps/review/src/key-replacement-panel.js',
-    'apps/review/src/review-utilities.js',
-    'apps/review/src/suggestion-history.js',
-    'apps/review/src/ticket-panel.js',
-    'apps/review/src/appbar-layout.js',
-    'apps/review/src/agent-connection.js',
-    'apps/review/src/git-conflict-diff.js',
-    'apps/review/src/git-conflict-state.js',
-    'apps/review/src/git-history-panel.js',
-    'apps/review/src/document-variants.js',
-    'apps/review/src/remote-document.js',
+    'apps/review/src/collaboration-panel.ts',
+    'apps/review/src/avatar-profile.ts',
+    'apps/review/src/avatar-view.ts',
+    'apps/review/src/editor-decorations.ts',
+    'apps/review/src/editor-settings.ts',
+    'apps/review/src/spellcheck.ts',
+    'apps/review/src/spellcheck-worker.ts',
+    'packages/shared/src/spelling-issues.mts',
+    'packages/shared/src/spelling-bloom.mts',
+    'apps/review/src/workspace-tabs.ts',
+    'apps/review/src/editing-mode.ts',
+    'apps/review/src/english-original.ts',
+    'apps/review/src/presence-cursors.ts',
+    'apps/review/src/presence-controller.ts',
+    'apps/review/src/review-cards.ts',
+    'apps/review/src/review-card-layout.ts',
+    'apps/review/src/review-navigation.ts',
+    'apps/review/src/review-card-elements.ts',
+    'apps/review/src/recovery-banner.ts',
+    'apps/review/src/scroll-sync.ts',
+    'apps/review/src/read-only-review.ts',
+    'apps/review/src/key-replacement-panel.ts',
+    'apps/review/src/review-utilities.ts',
+    'apps/review/src/suggestion-history.ts',
+    'apps/review/src/ticket-panel.ts',
+    'apps/review/src/appbar-layout.ts',
+    'apps/review/src/agent-connection.ts',
+    'apps/review/src/git-conflict-diff.ts',
+    'apps/review/src/git-conflict-state.ts',
+    'apps/review/src/git-history-panel.ts',
+    'apps/review/src/document-variants.ts',
+    'apps/review/src/remote-document.ts',
     'plugin/src/CollaborationOverlays.cpp',
     'plugin/src/EditorInterop.cpp',
     'plugin/src/IpcSecurity.cpp',
@@ -129,12 +129,12 @@ test('local prototype exercises the production canonical Git path', () => {
 
 test('Review owns the complete collaboration UI while the Notepad++ plugin is a Review bridge', () => {
   const reviewSources = [
-    'apps/review/src/app.js',
-    'apps/review/src/collaboration-panel.js',
-    'apps/review/src/editing-mode.js',
-    'apps/review/src/review-cards.js',
-    'apps/review/src/avatar-profile.js',
-    'apps/review/src/recovery-banner.js',
+    'apps/review/src/app.ts',
+    'apps/review/src/collaboration-panel.ts',
+    'apps/review/src/editing-mode.ts',
+    'apps/review/src/review-cards.ts',
+    'apps/review/src/avatar-profile.ts',
+    'apps/review/src/recovery-banner.ts',
   ].map(source).join('\n');
   for (const command of [
     'undo', 'redo', 'reservationCreate', 'reservationDeleteAt', 'reservationDelete',
@@ -147,10 +147,10 @@ test('Review owns the complete collaboration UI while the Notepad++ plugin is a 
   }
   assert.match(source('README.md'), /плагине Notepad\+\+ оставлена только команда/u);
   assert.doesNotMatch(source('plugin/src/EawLocalisationHub.cpp'), /Legacy-панель совместной работы/u);
-  assert.match(source('apps/review/src/presence-controller.js'), /setInterval\(publish, HEARTBEAT_MILLISECONDS\)/u);
-  assert.match(source('apps/review/src/app.js'), /encodeBase64, utf16ToByte/u,
+  assert.match(source('apps/review/src/presence-controller.ts'), /setInterval\(publish, HEARTBEAT_MILLISECONDS\)/u);
+  assert.match(source('apps/review/src/app.ts'), /encodeBase64, utf16ToByte/u,
     'Review selection commands must import their UTF-8 offset converter');
-  const cursorLayer = source('apps/review/src/presence-cursors.js');
+  const cursorLayer = source('apps/review/src/presence-cursors.ts');
   assert.match(cursorLayer, /addContentWidget/u,
     'Review caret must use a non-layout-shifting Monaco content widget');
   assert.match(cursorLayer, /ContentWidgetPositionPreference\.EXACT/u,
@@ -206,7 +206,7 @@ test('Notepad++ plugin exposes only the Review bridge and cannot enable editor i
 test('Notepad++ Review bridge IPC protocol comes from the shared build constant', () => {
   const build = source('scripts/build-plugin.mjs');
   const plugin = source('plugin/src/EawLocalisationHub.cpp');
-  assert.match(build, /import \{ PROTOCOL_VERSION \} from '\.\.\/packages\/shared\/src\/constants\.mjs'/u);
+  assert.match(build, /import \{ PROTOCOL_VERSION \} from '\.\.\/packages\/shared\/src\/constants\.mts'/u);
   assert.match(build, /`-DEAW_HUB_PROTOCOL_VERSION=\$\{PROTOCOL_VERSION\}`/u);
   assert.match(plugin, /constexpr std::int64_t kProtocolVersion = EAW_HUB_PROTOCOL_VERSION/u);
   assert.match(plugin, /message\.Integer\("protocol", 0\) != kProtocolVersion/u);
@@ -281,8 +281,8 @@ test('Review-only Notepad++ plugin exposes no collaboration shortcuts', () => {
 });
 
 test('inline suggestion editing validates the canonical range before projecting text', () => {
-  const editing = source('apps/review/src/editing-mode.js');
-  const app = source('apps/review/src/app.js');
+  const editing = source('apps/review/src/editing-mode.ts');
+  const app = source('apps/review/src/app.ts');
   const block = editing.slice(
     editing.indexOf('function editSuggestion'),
     editing.indexOf('const contentSubscription'),
@@ -296,12 +296,12 @@ test('inline suggestion editing validates the canonical range before projecting 
 });
 
 test('suggestion typing is not split by an idle finalisation timer', () => {
-  const editing = source('apps/review/src/editing-mode.js');
+  const editing = source('apps/review/src/editing-mode.ts');
   assert.doesNotMatch(editing, /SUGGESTION_IDLE|setTimeout\(flushSuggestion/u);
 });
 
 test('Review keeps inserted and deleted suggestion text visible without hover', () => {
-  const decorations = source('apps/review/src/editor-decorations.js');
+  const decorations = source('apps/review/src/editor-decorations.ts');
   assert.match(decorations, /const activeProjection = state\.suggestionProjection/u);
   assert.match(decorations, /suggestionTraceParts\(original, replacement, activeProjection\.traceJson\)/u);
   assert.match(decorations, /before: \{ content: part\.text, inlineClassName: strikeClass \}/u);
@@ -318,8 +318,8 @@ test('Review keeps inserted and deleted suggestion text visible without hover', 
 });
 
 test('Review lane anchors cards beside their text and resolves vertical collisions', () => {
-  const cards = source('apps/review/src/review-cards.js');
-  const layout = source('apps/review/src/review-card-layout.js');
+  const cards = source('apps/review/src/review-cards.ts');
+  const layout = source('apps/review/src/review-card-layout.ts');
   const styles = source('apps/review/src/style.css');
   assert.match(layout, /desiredTop: editor\.getTopForLineNumber/u);
   assert.match(layout, /nextTop = top \+ height \+ 8/u);
@@ -336,9 +336,9 @@ test('Review lane anchors cards beside their text and resolves vertical collisio
 
 test('Review editor preferences and spelling remain explicit user-controlled aids', () => {
   const markup = source('apps/review/src/index.html');
-  const settings = source('apps/review/src/editor-settings.js');
-  const spelling = source('apps/review/src/spellcheck.js');
-  const spellingWorker = source('apps/review/src/spellcheck-worker.js');
+  const settings = source('apps/review/src/editor-settings.ts');
+  const spelling = source('apps/review/src/spellcheck.ts');
+  const spellingWorker = source('apps/review/src/spellcheck-worker.ts');
   const spellingHttp = source('apps/server/src/spelling-http.mjs');
   const spellingDictionary = source('apps/server/src/spelling-dictionary.mjs');
   const styles = source('apps/review/src/style.css');
@@ -363,7 +363,7 @@ test('Review editor preferences and spelling remain explicit user-controlled aid
   assert.match(spelling, /new Worker\('\/spellcheck-worker\.js'/u);
   assert.match(spelling, /start\(\)[\s\S]*started = true[\s\S]*schedule\(\)/u,
     'spellcheck must wait until the collaborative document is ready');
-  assert.match(source('apps/review/src/app.js'), /documentReady[\s\S]*spellcheck\.start\(\)/u);
+  assert.match(source('apps/review/src/app.ts'), /documentReady[\s\S]*spellcheck\.start\(\)/u);
   assert.doesNotMatch(spelling, /onDidChangeModelContent\([^)]*clear/u,
     'typing must keep the previous markers visible until the replacement result is ready');
   assert.doesNotMatch(spelling, /onDidScrollChange[\s\S]{0,240}clear\(\)/u,
@@ -388,16 +388,16 @@ test('Review editor preferences and spelling remain explicit user-controlled aid
     'building the large supplemental dictionary must not block authentication or document sockets');
   assert.doesNotMatch(spellingHttp, /body\.text|spellingIssues|suggestRussianSpelling/u,
     'the server must distribute dictionaries, not process user documents');
-  assert.doesNotMatch(source('apps/review/src/app.js'), /KeyCode\.(?:Equal|NumpadAdd)/u,
+  assert.doesNotMatch(source('apps/review/src/app.ts'), /KeyCode\.(?:Equal|NumpadAdd)/u,
     'the application zoom shortcut must remain available');
 });
 
 test('Review suppresses ambiguous Unicode boxes in every editor while retaining invisible-character warnings', () => {
   for (const file of [
-    'apps/review/src/app.js',
-    'apps/review/src/standard-diff-view.js',
-    'apps/review/src/ticket-panel.js',
-    'apps/review/src/git-conflict-diff.js',
+    'apps/review/src/app.ts',
+    'apps/review/src/standard-diff-view.ts',
+    'apps/review/src/ticket-panel.ts',
+    'apps/review/src/git-conflict-diff.ts',
   ]) {
     assert.match(source(file), /unicodeHighlight:\s*\{\s*ambiguousCharacters:\s*false,\s*invisibleCharacters:\s*true\s*\}/u, file);
   }
@@ -405,7 +405,7 @@ test('Review suppresses ambiguous Unicode boxes in every editor while retaining 
 
 test('Review hides the Git conflict section unless unresolved conflicts exist', () => {
   const markup = source('apps/review/src/index.html');
-  const panel = source('apps/review/src/collaboration-panel.js');
+  const panel = source('apps/review/src/collaboration-panel.ts');
   const styles = source('apps/review/src/style.css');
   assert.match(markup, /class="side-section conflicts-section" hidden/u,
     'the empty section must not flash while Review is loading');
@@ -416,7 +416,7 @@ test('Review hides the Git conflict section unless unresolved conflicts exist', 
 });
 
 test('Review workspace tabs persist document position and the launcher restores the last file', () => {
-  const tabs = source('apps/review/src/workspace-tabs.js');
+  const tabs = source('apps/review/src/workspace-tabs.ts');
   const launcher = source('scripts/start-hub.ps1');
   const cmd = source('Launch EaW Hub Review.cmd');
   assert.match(tabs, /eaw-hub-workspace-tabs-v1/u);
@@ -441,7 +441,7 @@ test('Review collaboration sections scroll instead of overlapping at short windo
 
 test('Review header grows when its actions wrap instead of clipping the ticket switcher', () => {
   const styles = source('apps/review/src/style.css');
-  const layout = source('apps/review/src/appbar-layout.js');
+  const layout = source('apps/review/src/appbar-layout.ts');
   assert.match(styles, /\.appbar\.appbar-stacked[\s\S]*grid-template-areas: "brand" "actions" "status"/u);
   assert.match(styles, /\.ticket-switcher \{[^}]*flex-wrap: wrap/u);
   assert.match(styles, /\.appbar \{[\s\S]*align-items: start/u);
@@ -452,7 +452,7 @@ test('Review header grows when its actions wrap instead of clipping the ticket s
 
 test('personal file controls expose per-key gutter and dialog selection with a visible warning', () => {
   const markup = source('apps/review/src/index.html');
-  const variants = source('apps/review/src/document-variants.js');
+  const variants = source('apps/review/src/document-variants.ts');
   const hub = source('apps/agent/src/agent-hub.mjs');
   assert.match(markup, /id="personal-file-open"/u);
   assert.match(markup, /<dialog id="personal-file-dialog"/u);
@@ -477,7 +477,7 @@ test('personal file controls expose per-key gutter and dialog selection with a v
 });
 
 test('Review updates its document context and becomes read-only while Git switches branches', () => {
-  const app = source('apps/review/src/app.js');
+  const app = source('apps/review/src/app.ts');
   const handler = app.slice(app.indexOf("message.type === 'workspaceChanged'"), app.indexOf("message.type === 'error'"));
   assert.match(handler, /#document-name/u);
   assert.match(handler, /state\.ready = false/u);
@@ -496,11 +496,11 @@ test('Agent never treats an unavailable Git result as a branch switch', () => {
 });
 
 test('Git history, document history, and localisation audit share the compact wrapped diff view', () => {
-  const history = source('apps/review/src/git-history-panel.js');
-  const historyDiffViews = source('apps/review/src/git-history-diff-views.js');
-  const documentHistory = source('apps/review/src/history-panel.js');
-  const audit = source('apps/review/src/localisation-audit-panel.js');
-  const standard = source('apps/review/src/standard-diff-view.js');
+  const history = source('apps/review/src/git-history-panel.ts');
+  const historyDiffViews = source('apps/review/src/git-history-diff-views.ts');
+  const documentHistory = source('apps/review/src/history-panel.ts');
+  const audit = source('apps/review/src/localisation-audit-panel.ts');
+  const standard = source('apps/review/src/standard-diff-view.ts');
   const style = source('apps/review/src/style.css');
   assert.match(history, /createGitHistoryDiffViews/u);
   for (const consumer of [historyDiffViews, documentHistory, audit]) {
@@ -510,7 +510,7 @@ test('Git history, document history, and localisation audit share the compact wr
   assert.match(standard, /wordWrapOverride2: 'on'/u);
   assert.match(standard, /hideUnchangedRegions: \{ enabled: false \}/u);
   assert.match(standard, /diff\.onDidUpdateDiff\(showChangedRegionsOnly\)/u);
-  assert.match(standard, /setHiddenAreas\(hiddenRanges/u);
+  assert.match(standard, /setHiddenAreas\(diff\.getOriginalEditor\(\), hiddenRanges/u);
   assert.match(standard, /layoutFrame = window\.requestAnimationFrame\([\s\S]*diff\.layout\(\);[\s\S]*showChangedRegionsOnly\(\)/u);
   assert.match(standard, /automaticLayout: !preserveOnDeactivate/u);
   assert.match(standard, /if \(preserveOnDeactivate\) diff\.getOriginalEditor\(\)\.layout\(\)/u);

@@ -3,7 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { writeTrackedTextFile } from '../packages/shared/src/text.mjs';
+import { writeTrackedTextFile } from '../packages/shared/src/text.mts';
 
 function fixture(t) {
   const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'eaw-atomic-write-'));

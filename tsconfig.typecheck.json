@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": [
+    "apps/agent/src/**/*.mjs", "apps/agent/src/**/*.mts",
+    "apps/server/src/**/*.mjs", "apps/server/src/**/*.mts",
+    "apps/deployer/src/**/*.mjs", "apps/deployer/src/**/*.mts",
+    "packages/shared/src/**/*.mts"
+  ]
+}

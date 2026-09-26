@@ -56,7 +56,7 @@ test('server deployment payload excludes runtime secrets and data', async (conte
     writeFile(path.join(root, 'package-lock.json'), '{}'),
     writeFile(path.join(root, 'VERSION'), '0.8.6F4'),
     writeFile(path.join(root, 'apps/server/main.mjs'), 'export {}'),
-    writeFile(path.join(root, 'packages/shared/constants.mjs'), 'export {}'),
+    writeFile(path.join(root, 'packages/shared/constants.mts'), 'export {}'),
     writeFile(path.join(root, 'deploy/docker-compose.yml'), 'services: {}'),
     writeFile(path.join(root, 'scripts/manage-server.mjs'), 'export {}'),
     writeFile(path.join(root, 'deploy/.env'), 'SECRET=yes'),

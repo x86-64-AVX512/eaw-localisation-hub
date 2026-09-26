@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { restoreBackupBundle } from './backup.mjs';
-import { decryptBackup, isEncryptedBackup } from '../../../packages/shared/src/backup-crypto.mjs';
+import { decryptBackup, isEncryptedBackup } from '../../../packages/shared/src/backup-crypto.mts';
 
 function parseArguments(argv) {
   const options = { backup: null, data: null, force: false, passphrase: process.env.EAW_HUB_BACKUP_PASSPHRASE ?? '' };
@@ -38,7 +38,7 @@ if (options.data === root || options.data.length < root.length + 4) {
   throw new Error(`Refusing to restore into a broad path: ${options.data}`);
 }
 const existing = [];
-for (const name of ['auth.json', 'tickets.json', 'documents']) {
+for (const name of ['auth.json', 'tickets.json', 'branch-merges.json', 'room-index.json', 'documents']) {
   try {
     await fs.access(path.join(options.data, name));
     existing.push(name);
@@ -69,7 +69,7 @@ try {
   );
   console.log(JSON.stringify({ restored, data: options.data, recoveryDirectory }, null, 2));
 } catch (error) {
-  for (const name of ['auth.json', 'tickets.json', 'documents']) {
+  for (const name of ['auth.json', 'tickets.json', 'branch-merges.json', 'room-index.json', 'documents']) {
     await fs.rm(path.join(options.data, name), { recursive: true, force: true });
   }
   if (recoveryDirectory) {

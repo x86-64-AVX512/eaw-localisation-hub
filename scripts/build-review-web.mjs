@@ -11,7 +11,7 @@ await fs.rm(outputRoot, { recursive: true, force: true });
 await fs.mkdir(outputRoot, { recursive: true });
 await Promise.all([
   esbuild.build({
-    entryPoints: [path.join(sourceRoot, 'app.js')],
+    entryPoints: [path.join(sourceRoot, 'app.ts')],
     bundle: true,
     minify: true,
     sourcemap: false,
@@ -29,7 +29,7 @@ await Promise.all([
     outfile: path.join(outputRoot, 'editor.worker.js'),
   }),
   esbuild.build({
-    entryPoints: [path.join(sourceRoot, 'spellcheck-worker.js')],
+    entryPoints: [path.join(sourceRoot, 'spellcheck-worker.ts')],
     bundle: true,
     minify: true,
     format: 'esm',
@@ -37,7 +37,7 @@ await Promise.all([
     outfile: path.join(outputRoot, 'spellcheck-worker.js'),
   }),
   esbuild.build({
-    entryPoints: [path.join(sourceRoot, 'syntax-worker.js')],
+    entryPoints: [path.join(sourceRoot, 'syntax-worker.ts')],
     bundle: true,
     minify: true,
     format: 'esm',

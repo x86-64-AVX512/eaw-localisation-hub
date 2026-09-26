@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   createSuggestionTrace, parseSuggestionTrace, suggestionTraceOrigins, suggestionTraceParts,
-} from '../packages/shared/src/suggestion-trace.mjs';
+} from '../packages/shared/src/suggestion-trace.mts';
 
 test('suggestion trace distinguishes preserved, deleted, and manually inserted letters', () => {
   const original = 'олица';

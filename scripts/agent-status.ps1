@@ -1,7 +1,7 @@
 ﻿function Get-EawHubClientStatusMetadata {
     param([Parameter(Mandatory = $true)][string]$ProjectRoot)
     $versionPath = Join-Path $ProjectRoot 'VERSION'
-    $constantsPath = Join-Path $ProjectRoot 'packages\shared\src\constants.mjs'
+    $constantsPath = Join-Path $ProjectRoot 'packages\shared\src\constants.mts'
     $version = (Get-Content -LiteralPath $versionPath -Raw -Encoding utf8).Trim()
     $constants = Get-Content -LiteralPath $constantsPath -Raw -Encoding utf8
     $protocolMatch = [regex]::Match($constants, 'PROTOCOL_VERSION\s*=\s*(\d+)')

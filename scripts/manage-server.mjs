@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { encryptBackup } from '../packages/shared/src/backup-crypto.mjs';
+import { encryptBackup } from '../packages/shared/src/backup-crypto.mts';
 
 function parseArguments(argv) {
   const options = {

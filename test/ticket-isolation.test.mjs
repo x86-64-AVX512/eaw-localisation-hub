@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { ticketBootstrap } from '../apps/agent/src/git-ticket-context.mjs';
+import { ticketBootstrap } from '../apps/agent/src/git-ticket-context.mts';
 import {
   checkDiskChange,
   reconcileInitialDisk,

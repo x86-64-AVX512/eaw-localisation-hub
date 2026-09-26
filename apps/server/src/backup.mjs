@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
-const ALLOWED_ROOTS = new Set(['auth.json', 'recovery-pepper.key', 'tickets.json', 'documents', 'audit', 'events.json']);
+const ALLOWED_ROOTS = new Set(['auth.json', 'recovery-pepper.key', 'tickets.json', 'branch-merges.json', 'room-index.json', 'documents', 'audit', 'events.json']);
 
 async function collectFiles(root, relative = '') {
   const absolute = path.join(root, relative);
@@ -60,7 +60,7 @@ function safeBackupPath(dataDirectory, relativePath) {
   if (!ALLOWED_ROOTS.has(first)) throw new Error(`Unsupported backup path: ${relativePath}`);
   const target = path.resolve(dataDirectory, normalised);
   const root = `${path.resolve(dataDirectory)}${path.sep}`;
-  const allowedRootFile = ['auth.json', 'recovery-pepper.key', 'tickets.json']
+  const allowedRootFile = ['auth.json', 'recovery-pepper.key', 'tickets.json', 'branch-merges.json', 'room-index.json']
     .some((name) => target === path.resolve(dataDirectory, name));
   if (!allowedRootFile && !target.startsWith(root)) {
     throw new Error(`Backup path escapes the data directory: ${relativePath}`);

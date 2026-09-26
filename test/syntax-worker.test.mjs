@@ -22,7 +22,7 @@ test('syntax worker fetches the repository index and checks references off the U
     globalThis.clearInterval = previousClearInterval;
   });
 
-  await import('../apps/review/src/syntax-worker.js');
+  await import('../apps/review/src/syntax-worker.ts');
   globalThis.self.onmessage({ data: { type: 'init-key-index', token: 'local-token' } });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests[0].url, '/api/localisation-key-index');

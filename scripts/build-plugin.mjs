@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { PROTOCOL_VERSION } from '../packages/shared/src/constants.mjs';
+import { PROTOCOL_VERSION } from '../packages/shared/src/constants.mts';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDirectory, '..');
@@ -75,7 +75,7 @@ if (exitCode !== 0) process.exit(exitCode);
 await fs.writeFile(
   path.join(outputDirectory, 'README.txt'),
   [
-    'EaW Localisation Hub 0.8.8F3',
+    'EaW Localisation Hub 0.8.8F4',
     '',
     'Early beta build; the program is still rough. Copy this entire EawLocalisationHub directory into the Notepad++ plugins directory.',
     'The Desktop Agent must be running before Notepad++ connects.',

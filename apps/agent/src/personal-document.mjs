@@ -1,11 +1,11 @@
 import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
-import { applyUtf8ByteEdit, computeSingleReplace, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mjs';
+import { applyUtf8ByteEdit, computeSingleReplace, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mts';
 import {
   localisationSelectionChanges,
   mergeLocalisationThreeWay,
   setLocalisationSelection,
-} from '../../../packages/shared/src/merge.mjs';
+} from '../../../packages/shared/src/merge.mts';
 
 const PERSONAL_REFRESH_DELAY_MS = 250;
 const PERSONAL_REFRESH_MAX_WAIT_MS = 2_000;

@@ -4,7 +4,7 @@ import {
   pluginMessageTypes,
   validatePluginMessage,
   validateServerMessage,
-} from '../packages/shared/src/protocol-schema.mjs';
+} from '../packages/shared/src/protocol-schema.mts';
 
 test('plugin protocol schema accepts typed edit messages', () => {
   const message = {

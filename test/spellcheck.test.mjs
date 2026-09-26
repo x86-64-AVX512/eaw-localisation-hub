@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import nspell from 'nspell';
 import dictionary from 'dictionary-ru';
-import { spellingIssues } from '../packages/shared/src/spelling-issues.mjs';
+import { spellingIssues } from '../packages/shared/src/spelling-issues.mts';
 import { AuthStore } from '../apps/server/src/auth.mjs';
 import { russianDictionaryPayload } from '../apps/server/src/spelling-dictionary.mjs';
-import { spellingIssueAtPosition } from '../apps/review/src/spellcheck.js';
+import { spellingIssueAtPosition } from '../apps/review/src/spellcheck.ts';
 import {
   SPELLING_BLOOM_BYTES, addSpellingBloom, hasSpellingBloom,
-} from '../packages/shared/src/spelling-bloom.mjs';
+} from '../packages/shared/src/spelling-bloom.mts';
 
 const checker = nspell(dictionary);
 

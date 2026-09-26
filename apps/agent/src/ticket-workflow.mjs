@@ -1,10 +1,10 @@
 import path from 'node:path';
-import { runGitSync } from './git-executable.mjs';
-import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mjs';
+import { runGitSync } from './git-executable.mts';
+import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mts';
 import {
   readTrackedTextFile,
   withoutUtf8Bom,
-} from '../../../packages/shared/src/text.mjs';
+} from '../../../packages/shared/src/text.mts';
 
 function decode(value) {
   return Buffer.from(String(value ?? ''), 'base64').toString('utf8');

@@ -3,10 +3,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
   localisationEntries, parseKeyReplacementBatch, replaceLocalisationValues,
-} from '../../../packages/shared/src/localisation-replace.mjs';
+} from '../../../packages/shared/src/localisation-replace.mts';
 import {
   readTrackedTextFile, withoutUtf8Bom, withUtf8Bom, writeTrackedTextFile,
-} from '../../../packages/shared/src/text.mjs';
+} from '../../../packages/shared/src/text.mts';
 
 const MAX_BATCH_ENTRIES = 500;
 

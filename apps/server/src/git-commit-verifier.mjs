@@ -3,10 +3,14 @@ import { AuthError } from './auth.mjs';
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/u;
 
 export class GitCommitVerifier {
-  constructor(repository, fetchImplementation = fetch) {
+  constructor(repository, fetchImplementation = fetch, branchRepositories = {}) {
     this.repository = String(repository ?? '').trim();
     if (this.repository && !REPOSITORY_PATTERN.test(this.repository)) {
       throw new Error('EAW_HUB_GITHUB_REPOSITORY must be owner/repository');
+    }
+    this.branchRepositories = new Map(Object.entries(branchRepositories));
+    for (const value of this.branchRepositories.values()) {
+      if (!REPOSITORY_PATTERN.test(value)) throw new Error('Branch repository must be owner/repository');
     }
     this.fetch = fetchImplementation;
     this.cache = new Map();
@@ -14,6 +18,7 @@ export class GitCommitVerifier {
 
   async verify(branch, commit) {
     if (!this.repository) return;
+    const repository = this.branchRepositories.get(branch) ?? this.repository;
     const key = `${branch}\n${commit}`;
     const cached = this.cache.get(key);
     if (cached && cached > Date.now()) return;
@@ -23,7 +28,7 @@ export class GitCommitVerifier {
     let response;
     try {
       response = await this.fetch(
-        `https://api.github.com/repos/${this.repository}/compare/${encodeURIComponent(commit)}...${encodeURIComponent(branch)}`,
+        `https://api.github.com/repos/${repository}/compare/${encodeURIComponent(commit)}...${encodeURIComponent(branch)}`,
         { signal: controller.signal, headers: {
           Accept: 'application/vnd.github+json', 'User-Agent': 'EaW-Localisation-Hub',
         } },

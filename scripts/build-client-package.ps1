@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $distRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
-$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Hub-Client-0.8.8F3'))
+$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Hub-Client-0.8.8F4'))
 if (-not $packageRoot.StartsWith($distRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Refusing to rebuild a package outside dist: $packageRoot"
 }
@@ -13,6 +13,8 @@ New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $packageRoot 'apps'), (Join-Path $packageRoot 'packages') -Force | Out-Null
 
 $node = (Get-Command node.exe -ErrorAction Stop).Source
+$nodeVersion = [version](& $node -p process.versions.node)
+if ($nodeVersion -lt [version]'22.18.0') { throw "Node.js 22.18.0 or newer is required for TypeScript source: $nodeVersion" }
 Copy-Item -LiteralPath $node -Destination (Join-Path $packageRoot 'node.exe')
 $nodeLicense = Join-Path (Split-Path -Parent $node) 'LICENSE'
 if (-not (Test-Path -LiteralPath $nodeLicense -PathType Leaf)) { throw "Bundled Node.js license is missing: $nodeLicense" }
@@ -65,7 +67,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'Launch EaW Hub Team Management.c
     "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0scripts\install-client.ps1`"`r`npause`r`n",
     [System.Text.Encoding]::ASCII)
 
-$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Hub-Client-0.8.8F3.zip'))
+$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Hub-Client-0.8.8F4.zip'))
 $checksumPath = "$archivePath.sha256"
 if (-not $archivePath.StartsWith($distRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Refusing to create an archive outside dist: $archivePath"

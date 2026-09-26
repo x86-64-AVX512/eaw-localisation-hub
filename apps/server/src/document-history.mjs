@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import zlib from 'node:zlib';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { byteLength } from './protocol-limits.mjs';
+import { byteLength } from './protocol-limits.mts';
 import {
   captureLocalisationVariant,
   localisationVariantConflicts,
@@ -11,7 +11,7 @@ import {
   projectLocalisationVariant,
   projectLocalisationOwnership,
   mergeLocalisationThreeWay,
-} from '../../../packages/shared/src/merge.mjs';
+} from '../../../packages/shared/src/merge.mts';
 
 const MAX_ENTRIES = 100;
 const MAX_TEXT_BYTES = 8 * 1024 * 1024;

@@ -17,7 +17,7 @@ import {
   writeTrackedTextFile,
   utf16IndexToUtf8ByteOffset,
   utf8ByteOffsetToUtf16Index,
-} from '../packages/shared/src/text.mjs';
+} from '../packages/shared/src/text.mts';
 
 test('collaborative text removes BOM while materialised localisation restores it', () => {
   assert.equal(withoutUtf8Bom('\uFEFFl_russian:'), 'l_russian:');

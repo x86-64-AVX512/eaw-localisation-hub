@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { keyAtLine, lineForKey } from '../apps/review/src/scroll-sync.js';
+import { keyAtLine, lineForKey } from '../apps/review/src/scroll-sync.ts';
 
 function modelFrom(lines) {
   return {

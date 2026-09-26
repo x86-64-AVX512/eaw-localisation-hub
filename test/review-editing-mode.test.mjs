@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validatePluginMessage } from '../packages/shared/src/protocol-schema.mjs';
+import { validatePluginMessage } from '../packages/shared/src/protocol-schema.mts';
 import {
   baseToProjectedOffset, batchSuggestionActions, createEditingModeController, projectedToBaseOffset,
   isLineBreakBoundary, singleReplacement, suggestionAction, suggestionProjection,
-} from '../apps/review/src/editing-mode.js';
-import { suggestionTraceParts } from '../packages/shared/src/suggestion-trace.mjs';
+} from '../apps/review/src/editing-mode.ts';
+import { suggestionTraceParts } from '../packages/shared/src/suggestion-trace.mts';
 
 function controllerHarness(initial = 'abc') {
   const buttons = new Map();

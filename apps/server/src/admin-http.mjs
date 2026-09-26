@@ -2,7 +2,7 @@ import { bearerToken } from './auth.mjs';
 import { createBackupBundle } from './backup.mjs';
 import { anonymisePersistedHistory } from './document-history.mjs';
 import { anonymisePersistedReservationUser } from './room-metadata.mjs';
-import { DISPLAY_VERSION } from '../../../packages/shared/src/constants.mjs';
+import { DISPLAY_VERSION } from '../../../packages/shared/src/constants.mts';
 
 export async function handleAdminHttp(context) {
   const {

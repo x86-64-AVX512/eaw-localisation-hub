@@ -7,16 +7,28 @@ import path from 'node:path';
 import test from 'node:test';
 import * as Y from 'yjs';
 import { AgentHub } from '../apps/agent/src/agent-hub.mjs';
-import { closeDocument } from '../apps/agent/src/document-lifecycle.mjs';
+import { closeDocument } from '../apps/agent/src/document-lifecycle.mts';
 import { DocumentBinding } from '../apps/agent/src/document-binding.mjs';
-import { attachDocumentSocket } from '../apps/server/src/document-socket.mjs';
-import { createInboundBudget } from '../apps/server/src/protocol-limits.mjs';
+import { handleFlushAcknowledgement } from '../apps/agent/src/document-delivery.mts';
+import { attachDocumentSocket } from '../apps/server/src/document-socket.mts';
+import { createInboundBudget } from '../apps/server/src/protocol-limits.mts';
 
 function deferred() {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
   return { promise, resolve };
 }
+
+test('flush acknowledgement without a pending waiter cannot complete a missing request', () => {
+  const binding = { flushWaiter: null };
+  assert.equal(handleFlushAcknowledgement(binding, { type: 'sync-flushed' }), true);
+  let completed = false;
+  binding.flushWaiter = { id: 'expected', finish() { completed = true; } };
+  assert.equal(handleFlushAcknowledgement(binding, { type: 'sync-flushed', requestId: 'other' }), true);
+  assert.equal(completed, false);
+  assert.equal(handleFlushAcknowledgement(binding, { type: 'sync-flushed', requestId: 'expected' }), true);
+  assert.equal(completed, true);
+});
 
 test('sync flush acknowledgement follows the queued edit and durable room flush', async () => {
   const received = deferred();
@@ -44,6 +56,28 @@ test('sync flush acknowledgement follows the queued edit and durable room flush'
   durable.resolve();
   await socket.messageQueue;
   assert.deepEqual(messages, [{ type: 'sync-flushed', requestId }]);
+});
+
+test('document socket rejects non-object control JSON before passing it to the room', async () => {
+  const socket = new EventEmitter();
+  const messages = [];
+  let dispatched = false;
+  Object.assign(socket, {
+    readyState: 1, bufferedAmount: 0, inboundBudget: createInboundBudget(),
+    send(data) { messages.push(JSON.parse(data)); }, close() {},
+  });
+  attachDocumentSocket({
+    socket, documentId: 'main:localisation/russian/a.yml',
+    ticketStore: { documentWritable: () => true }, isShuttingDown: () => false,
+    room: {
+      clientWritable: () => true, flush() {}, receiveBinary() {},
+      receiveJson() { dispatched = true; },
+    },
+  });
+  socket.emit('message', Buffer.from('[]'), false);
+  await socket.messageQueue;
+  assert.equal(dispatched, false);
+  assert.match(messages[0].message, /Invalid document control message/u);
 });
 
 test('closing retains an unsent update and clears only one acknowledged as sent', async () => {

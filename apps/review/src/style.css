@@ -202,6 +202,27 @@ button.primary { border-color: #517bdc; background: #315db8; }
 .ticket-events { display: grid; gap: 6px; }
 .ticket-event { padding: 8px 10px; border-left: 3px solid #53627a; background: #161d29; }
 .ticket-event time { color: #8997ab; font-size: 12px; }
+.deleted-branches-dialog { width: min(1400px, 96vw); height: min(860px, 94vh); padding: 0; border: 1px solid #39445a; background: #111722; color: #d9e0ec; }
+.deleted-branches-dialog::backdrop { background: #05080dcc; }
+.deleted-branches-shell { display: grid; grid-template-columns: minmax(270px, 330px) minmax(0, 1fr); height: 100%; }
+.deleted-branches-sidebar { display: flex; flex-direction: column; gap: 9px; min-height: 0; padding: 14px; overflow: auto; border-right: 1px solid #30394a; }
+.deleted-branches-sidebar h3 { margin: 10px 0 0; }
+.deleted-branches-sidebar label { color: #9eabc0; }
+.deleted-branches-sidebar input { width: 100%; box-sizing: border-box; }
+#deleted-branches-list, #deleted-branches-files { display: grid; align-content: start; gap: 5px; }
+#deleted-branches-files { min-height: 60px; max-height: 40%; overflow: auto; }
+#deleted-branches-list button, #deleted-branches-files button { width: 100%; text-align: left; overflow-wrap: anywhere; }
+#deleted-branches-list button.active, #deleted-branches-files button.active { border-color: #5c91ff; background: #253149; }
+.deleted-branches-preview { display: grid; grid-template-rows: auto auto minmax(0, 1fr) minmax(130px, 28%); min-width: 0; min-height: 0; }
+.deleted-branches-preview .history-toolbar { padding: 10px 14px; }
+#deleted-branches-notice { margin: 0; padding: 8px 14px; border-bottom: 1px solid #30394a; }
+#deleted-branches-editor { min-height: 0; }
+#deleted-branches-comments { overflow: auto; padding: 8px 14px; border-top: 1px solid #30394a; }
+#deleted-branches-comments h3 { margin: 8px 0; }
+.deleted-branch-comment { margin: 7px 0; padding: 8px 10px; border: 1px solid #39445a; border-radius: 6px; background: #1b2432; }
+.deleted-branch-comment strong { margin-left: 8px; }
+.deleted-branch-comment p { margin: 7px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .deleted-branches-shell { grid-template-columns: 1fr; grid-template-rows: 37% minmax(0, 1fr); } .deleted-branches-sidebar { border-right: 0; border-bottom: 1px solid #30394a; } }
 .status { color: #aeb8c8; text-align: center; }
 .status.error { color: #ff8a91; }
 .actions { display: flex; align-items: center; gap: 8px; }

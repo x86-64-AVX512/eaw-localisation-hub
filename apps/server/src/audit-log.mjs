@@ -38,7 +38,7 @@ export class AuditLog {
     });
     // A failed write blocks later audited operations until the storage is fixed
     // and the server is restarted. Never report success while silently dropping logs.
-    this.persistence = write;
+    this.persistence = write.then(() => undefined);
     this.persistence.catch(() => {});
     return write;
   }

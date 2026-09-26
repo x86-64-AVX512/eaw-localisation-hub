@@ -7,22 +7,22 @@ import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
-import { MAX_MESSAGE_BYTES } from '../../../packages/shared/src/constants.mjs';
+import { MAX_MESSAGE_BYTES } from '../../../packages/shared/src/constants.mts';
 import {
   normaliseTrackedPath,
   readTrackedTextFile,
   withoutUtf8Bom,
   withUtf8Bom,
   writeTrackedTextFile,
-} from '../../../packages/shared/src/text.mjs';
-import { validatePluginMessage } from '../../../packages/shared/src/protocol-schema.mjs';
+} from '../../../packages/shared/src/text.mts';
+import { validatePluginMessage } from '../../../packages/shared/src/protocol-schema.mts';
 import { handleTicketReviewApi } from './ticket-review-api.mjs';
-import { persistentReviewEndpoint } from './review-endpoint.mjs';
-import { fileHistoryDiff, listFileHistory } from './git-file-history.mjs';
-import { runGitSync } from './git-executable.mjs';
+import { persistentReviewEndpoint } from './review-endpoint.mts';
+import { fileHistoryDiff, listFileHistory } from './git-file-history.mts';
+import { runGitSync } from './git-executable.mts';
 import { prepareLocalisationAudit } from './localisation-audit.mjs';
 import { getLocalisationKeyIndex } from './localisation-key-index.mjs';
-import { currentGitFileBlobAsync } from './git-ticket-context.mjs';
+import { currentGitFileBlobAsync } from './git-ticket-context.mts';
 import { confirmDiskMaterialisation } from './disk-reconciliation.mjs';
 import { DiffCache } from './diff-cache.mjs';
 
@@ -156,7 +156,8 @@ class ReviewClient {
       const message = validatePluginMessage(JSON.parse(data.toString('utf8')));
       if (message.type === 'open') this.reviewCrdt = message.crdt === 'yjs-v1';
       this.hub.receivePluginMessage(this, message);
-      if (['edit', 'snapshot', 'reviewUpdate', 'undo', 'redo', 'suggestionAccept', 'suggestionRevert', 'historyRestore', 'externalConflictResolve'].includes(message.type)) {
+      if (typeof message.path === 'string' && typeof message.type === 'string'
+        && ['edit', 'snapshot', 'reviewUpdate', 'undo', 'redo', 'suggestionAccept', 'suggestionRevert', 'historyRestore', 'externalConflictResolve'].includes(message.type)) {
         this.scheduleMaterialisation(message.path);
       }
     } catch {
@@ -300,6 +301,21 @@ export async function startReviewServer(hub, options) {
         response.end(JSON.stringify({ files }));
       } catch (error) {
         response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+    if (request.method === 'GET' && [
+      '/api/deleted-branches', '/api/deleted-branches/document',
+    ].includes(requestUrl.pathname)) {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      try {
+        const route = `${requestUrl.pathname}${requestUrl.search}`;
+        const payload = await hub.authRequest(route, { method: 'GET' });
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify(payload));
+      } catch (error) {
+        response.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ error: error.message }));
       }
       return;
@@ -628,9 +644,11 @@ export async function startReviewServer(hub, options) {
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(preferredPort, '127.0.0.1', resolve);
+    server.listen(preferredPort, '127.0.0.1', () => resolve(undefined));
   });
-  const { port } = server.address();
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Review server did not bind a TCP port');
+  const { port } = address;
   const discoveryPath = await writeDiscovery(options, {
     schema: 1,
     pid: process.pid,

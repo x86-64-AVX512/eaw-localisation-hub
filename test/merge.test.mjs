@@ -5,7 +5,7 @@ import {
   localisationSelectionChanges,
   mergeLocalisationThreeWay,
   setLocalisationSelection,
-} from '../packages/shared/src/merge.mjs';
+} from '../packages/shared/src/merge.mts';
 
 const base = [
   'l_russian:',

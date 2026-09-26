@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
-import { DISPLAY_VERSION, SEMVER_VERSION } from '../packages/shared/src/constants.mjs';
+import { DISPLAY_VERSION, SEMVER_VERSION } from '../packages/shared/src/constants.mts';
 
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
 

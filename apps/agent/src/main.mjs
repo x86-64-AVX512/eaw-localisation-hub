@@ -4,11 +4,11 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { DISPLAY_VERSION } from '../../../packages/shared/src/constants.mjs';
+import { DISPLAY_VERSION } from '../../../packages/shared/src/constants.mts';
 import { AgentHub } from './agent-hub.mjs';
-import { runGitSync } from './git-executable.mjs';
+import { runGitSync } from './git-executable.mts';
 import { startReviewServer } from './review-server.mjs';
-import { registerAgentInstance, unregisterAgentInstance } from './instance-registry.mjs';
+import { registerAgentInstance, unregisterAgentInstance } from './instance-registry.mts';
 
 function parseArguments(argv) {
   const environmentToken = process.env.EAW_HUB_TOKEN?.trim() ?? '';
@@ -111,7 +111,7 @@ pipeServer.on('error', () => {
 });
 await new Promise((resolve, reject) => {
   pipeServer.once('error', reject);
-  pipeServer.listen(pipePath, resolve);
+  pipeServer.listen(pipePath, () => resolve(undefined));
 });
 const instanceRegistration = await registerAgentInstance(options, { version: DISPLAY_VERSION });
 

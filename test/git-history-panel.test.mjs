@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createGitHistoryPanel } from '../apps/review/src/git-history-panel.js';
+import { createGitHistoryPanel } from '../apps/review/src/git-history-panel.ts';
 
 function fakeElement() {
   const listeners = new Map();

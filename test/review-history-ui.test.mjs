@@ -5,8 +5,8 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const html = fs.readFileSync(path.join(root, 'apps/review/src/index.html'), 'utf8');
-const app = fs.readFileSync(path.join(root, 'apps/review/src/app.js'), 'utf8');
-const panel = fs.readFileSync(path.join(root, 'apps/review/src/history-panel.js'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'apps/review/src/app.ts'), 'utf8');
+const panel = fs.readFileSync(path.join(root, 'apps/review/src/history-panel.ts'), 'utf8');
 
 test('Review exposes version comparison and non-destructive restoration', () => {
   assert.match(html, /id="history-open"/u);

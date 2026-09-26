@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createReviewCardLayout } from '../apps/review/src/review-card-layout.js';
-import { reviewCardFingerprint } from '../apps/review/src/review-cards.js';
+import { createReviewCardLayout } from '../apps/review/src/review-card-layout.ts';
+import { reviewCardFingerprint } from '../apps/review/src/review-cards.ts';
 
 test('moving a card anchor does not invalidate its rendered contents', () => {
   const item = { id: 'comment-1', kind: 'comment', summaryBase64: 'dGV4dA==', startByte: 10, endByte: 20 };

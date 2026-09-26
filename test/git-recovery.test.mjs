@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { preserveChangedFile } from '../apps/agent/src/git-recovery.mjs';
+import { preserveChangedFile } from '../apps/agent/src/git-recovery.mts';
 
 function git(cwd, ...args) {
   execFileSync('git', args, { cwd, windowsHide: true });

@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { parentPort } from 'node:worker_threads';
 import {
   SPELLING_BLOOM_BYTES, addSpellingBloom,
-} from '../../../packages/shared/src/spelling-bloom.mjs';
+} from '../../../packages/shared/src/spelling-bloom.mts';
 
 const require = createRequire(import.meta.url);
 

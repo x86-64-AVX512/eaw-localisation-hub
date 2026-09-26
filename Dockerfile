@@ -1,5 +1,7 @@
 FROM node:22-alpine
 
+RUN node -e "const [major, minor] = process.versions.node.split('.').map(Number); if (major < 22 || (major === 22 && minor < 18)) process.exit(1)"
+
 ENV NODE_ENV=production
 WORKDIR /app
 

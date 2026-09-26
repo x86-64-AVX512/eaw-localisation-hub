@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 import * as Y from 'yjs';
 import {
   computeSingleReplace,
-} from '../../../packages/shared/src/text.mjs';
+} from '../../../packages/shared/src/text.mts';
 
 const COORDINATE_STEP = 4096;
 
@@ -65,6 +65,9 @@ export function emitDocumentStatus(binding, status) {
     syncing: 'Agent подключается к совместному документу на сервере.',
     offline: 'Соединение с сервером потеряно; Agent повторит подключение автоматически.',
     unauthorized: 'Сервер отклонил сохранённую сессию пользователя.',
+    'git-branch-merged': 'Ветка влита в general-dev. Комментарии и тикеты перенесены; переключите локальный Git на general-dev.',
+    'git-branch-deleted': 'Ветка удалена без подтверждённого слияния с general-dev. Данные и тикеты сохранены; редактирование приостановлено.',
+    'git-unavailable': 'Канонический Git временно недоступен. Данные сохранены; редактирование приостановлено.',
     'git-branch-outdated': 'В ветке появился новый коммит, но Git blob этого файла совпадает с сервером.',
     'git-file-outdated': git.reason === 'local-file-not-in-head'
       ? 'Файл отсутствует в локальном HEAD. Добавьте его в Git или обновите репозиторий.'

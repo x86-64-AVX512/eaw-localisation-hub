@@ -668,4 +668,4 @@ test('password auth supports multiple roles, private reset, identity enforcement
     await fs.rm(temporary, { recursive: true, force: true });
   }
 });
-import { PROTOCOL_VERSION } from '../packages/shared/src/constants.mjs';
+import { PROTOCOL_VERSION } from '../packages/shared/src/constants.mts';

@@ -16,8 +16,10 @@ if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath
 if (Test-Path -LiteralPath $checksumPath) { Remove-Item -LiteralPath $checksumPath -Force }
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 
-Copy-Item -LiteralPath (Get-Command node.exe -ErrorAction Stop).Source -Destination (Join-Path $packageRoot 'node.exe')
 $nodeExecutable = (Get-Command node.exe -ErrorAction Stop).Source
+$nodeVersion = [version](& $nodeExecutable -p process.versions.node)
+if ($nodeVersion -lt [version]'22.18.0') { throw "Node.js 22.18.0 or newer is required for TypeScript source: $nodeVersion" }
+Copy-Item -LiteralPath $nodeExecutable -Destination (Join-Path $packageRoot 'node.exe')
 $nodeLicense = Join-Path (Split-Path -Parent $nodeExecutable) 'LICENSE'
 if (-not (Test-Path -LiteralPath $nodeLicense -PathType Leaf)) { throw "Bundled Node.js license is missing: $nodeLicense" }
 Copy-Item -LiteralPath $nodeLicense -Destination (Join-Path $packageRoot 'THIRD-PARTY-NODE-LICENSE.txt')

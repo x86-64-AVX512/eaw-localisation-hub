@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createSuggestionHistory } from '../apps/review/src/suggestion-history.js';
+import { createSuggestionHistory } from '../apps/review/src/suggestion-history.ts';
 
 test('suggestion history removes and recreates an automatic review suggestion', () => {
   const sent = [];

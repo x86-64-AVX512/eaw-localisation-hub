@@ -9,8 +9,8 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import * as Y from 'yjs';
-import { MAX_CRDT_UPDATE_BYTES } from '../packages/shared/src/constants.mjs';
-import { applyUtf8ByteEdit } from '../packages/shared/src/text.mjs';
+import { MAX_CRDT_UPDATE_BYTES } from '../packages/shared/src/constants.mts';
+import { applyUtf8ByteEdit } from '../packages/shared/src/text.mts';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 

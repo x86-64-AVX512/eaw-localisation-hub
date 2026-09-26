@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseLocalisationDiagnostics } from '../packages/shared/src/localisation-syntax.mjs';
+import { parseLocalisationDiagnostics } from '../packages/shared/src/localisation-syntax.mts';
 
 test('clean versioned and versionless entries, comments and legacy inner quotes stay clean', () => {
   const source = [

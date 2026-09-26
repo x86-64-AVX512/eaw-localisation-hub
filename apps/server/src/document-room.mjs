@@ -11,19 +11,25 @@ import {
   controlledString,
   controlledText,
   sendWithBackpressure,
-} from './protocol-limits.mjs';
+} from './protocol-limits.mts';
 import {
   minimalCommentThread,
   minimalDiscussionMessage,
   minimalReservation,
   minimalSuggestion,
 } from './room-metadata.mjs';
-import { expiredPresenceIds } from '../../../packages/shared/src/presence.mjs';
-import { parseSuggestionTrace } from '../../../packages/shared/src/suggestion-trace.mjs';
-import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mjs';
-import { computeSingleReplace } from '../../../packages/shared/src/text.mjs';
+import { expiredPresenceIds } from '../../../packages/shared/src/presence.mts';
+import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mts';
+import { computeSingleReplace } from '../../../packages/shared/src/text.mts';
 import { textChangeSummary } from './notification-summary.mjs';
 import { auditDocumentControl, auditDocumentEdit } from './document-audit.mjs';
+import {
+  editableSuggestionDraft,
+  newCommentThread,
+  newDiscussionMessage,
+  newSuggestion,
+} from './document-review-policy.mjs';
+import { projectedSuggestionStateBytes } from './document-suggestion-projection.mjs';
 import { repairReservationAnchors } from './reservation-anchors.mjs';
 import {
   captureReviewAnchor,
@@ -40,15 +46,12 @@ import {
   PRESENCE_SWEEP_MILLISECONDS,
   PRESENCE_TTL_MILLISECONDS,
   PROTOCOL_VERSION,
-} from '../../../packages/shared/src/constants.mjs';
+} from '../../../packages/shared/src/constants.mts';
 
 const MAX_ROOM_METADATA_BYTES = 2 * 1024 * 1024;
 const MAX_RESERVATIONS_PER_ROOM = 500;
 const MAX_COMMENT_THREADS_PER_ROOM = 500;
 const MAX_SUGGESTIONS_PER_ROOM = 500;
-const MAX_DISCUSSION_MESSAGES = 100;
-const MAX_DISCUSSION_TEXT_BYTES = 2048;
-const MAX_SUGGESTION_TEXT_BYTES = 16 * 1024;
 const crdtValidator = new CrdtUpdateValidator({ maximumStateBytes: MAX_ROOM_STATE_BYTES });
 
 export async function closeDocumentRoomValidator() {
@@ -61,7 +64,17 @@ export class DocumentRoom {
     const room = new DocumentRoom(dataDirectory, documentId, hash, authStore, registry, canonicalSource);
     await room.loadFromDisk();
     if (canonicalSource?.enabled) {
-      await room.applyCanonicalSnapshot(await canonicalSource.snapshot(documentId));
+      try {
+        await room.applyCanonicalSnapshot(await canonicalSource.snapshot(documentId));
+      } catch (error) {
+        if (!room.gitBase || !room.hasStoredState) {
+          room.destroy();
+          throw error;
+        }
+        room.gitBase.stale = true;
+        room.schedulePersist();
+        console.warn(`[server] using persisted read-only Git base for ${documentId}`);
+      }
     }
     return room;
   }
@@ -185,6 +198,8 @@ export class DocumentRoom {
           changedFiles: Array.isArray(metadata.gitBase.changedFiles)
             ? metadata.gitBase.changedFiles.map(String).slice(0, 5000) : [],
           text: String(metadata.gitBase.text ?? ''),
+          stale: metadata.gitBase.stale === true,
+          deleted: metadata.gitBase.deleted === true,
         };
       }
       if (repairReservationAnchors(this.document, this.reservations)) this.schedulePersist();
@@ -207,6 +222,11 @@ export class DocumentRoom {
   }
 
   addClient(socket) {
+    if (this.registry.isUnavailableBranch(this.documentId)) {
+      const branch = this.documentId.split(':', 1)[0];
+      throw new ProtocolLimitError('Branch merge is in progress or complete',
+        this.registry.mergedBranches.has(branch) ? 4002 : 1013);
+    }
     if (this.clients.size >= MAX_CLIENTS_PER_ROOM) {
       throw new ProtocolLimitError('This document already has too many connected clients', 1013);
     }
@@ -214,7 +234,7 @@ export class DocumentRoom {
     socket.presenceIds = new Set();
     this.lastAccessAt = Date.now();
     const content = this.document.getText('content');
-    socket.gitWritable = !this.gitBase || (!this.gitConflict
+    socket.gitWritable = !this.gitBase || (!this.gitBase.stale && !this.gitConflict
       && Boolean(socket.localBlob && socket.localBlob === this.gitBase.blob));
     const canSeed = !this.gitBase && content.length === 0 && !this.seedClaimed;
     if (canSeed) this.seedClaimed = true;
@@ -252,6 +272,14 @@ export class DocumentRoom {
   }
 
   gitStatusFor(client, snapshot = this.gitBase) {
+    if (snapshot.stale) return {
+      type: 'git-status', status: snapshot.deleted ? 'branch-deleted' : 'git-unavailable',
+      branch: snapshot.branch, localHead: client.localHead ?? '', remoteHead: snapshot.commit,
+      reason: snapshot.deleted ? 'remote-branch-deleted' : 'canonical-git-unavailable',
+      message: snapshot.deleted
+        ? 'The branch was deleted without a verified merge; server data and tickets are preserved'
+        : 'Canonical Git is unavailable; editing is paused until it recovers',
+    };
     const writable = Boolean(client.localBlob && client.localBlob === snapshot.blob);
     const changedFiles = [...new Set([
       ...(client.changedFiles ?? []), ...(snapshot.changedFiles ?? []),
@@ -326,6 +354,17 @@ export class DocumentRoom {
 
   async applyCanonicalSnapshot(snapshot) {
     if (!snapshot) return;
+    if (snapshot.stale) {
+      this.gitBase = { ...(this.gitBase ?? snapshot), stale: true, deleted: snapshot.deleted === true };
+      for (const client of this.clients) {
+        client.gitWritable = false;
+        if (client.readyState === WebSocket.OPEN) {
+          sendWithBackpressure(client, JSON.stringify(this.gitStatusFor(client)));
+        }
+      }
+      this.schedulePersist();
+      return;
+    }
     const current = this.document.getText('content').toString();
     if (!this.gitBase) {
       this.history.updateGitBase(snapshot.text);
@@ -336,6 +375,13 @@ export class DocumentRoom {
     }
     if (this.gitBase.commit === snapshot.commit && this.gitBase.blob === snapshot.blob) {
       this.gitBase.checkedAt = snapshot.checkedAt;
+      this.gitBase.stale = false;
+      this.gitBase.deleted = false;
+      for (const client of this.clients) {
+        const status = this.gitStatusFor(client);
+        client.gitWritable = ['current', 'branch-outdated'].includes(status.status);
+        if (client.readyState === WebSocket.OPEN) sendWithBackpressure(client, JSON.stringify(status));
+      }
       return;
     }
     const continuingConflict = this.pendingGitSnapshot?.blob === snapshot.blob;
@@ -499,21 +545,9 @@ export class DocumentRoom {
   }
 
   appendDiscussionMessage(target, actor, message) {
-    if (target.messages.length >= MAX_DISCUSSION_MESSAGES) {
-      throw new ProtocolLimitError('This discussion has reached its message limit');
-    }
-    const id = controlledString(message.messageId, 'Discussion message id', 128, { required: true });
-    if (target.messages.some((item) => item.id === id)) return false;
-    const body = controlledText(message.body, 'Discussion message', MAX_DISCUSSION_TEXT_BYTES, { required: true });
-    if (!body.trim()) throw new ProtocolLimitError('Discussion message must contain visible text');
-    target.messages.push({
-      id,
-      authorId: actor.id,
-      author: actor.displayName,
-      color: actor.color ?? '#8a8a8a',
-      body,
-      createdAt: new Date().toISOString(),
-    });
+    const next = newDiscussionMessage(target, actor, message);
+    if (!next) return false;
+    target.messages.push(next);
     try {
       this.assertMetadataBudget();
     } catch (error) {
@@ -536,6 +570,11 @@ export class DocumentRoom {
   }
 
   receiveBinary(socket, update, authorise = () => {}) {
+    if (this.registry.isUnavailableBranch(this.documentId)) {
+      const branch = this.documentId.split(':', 1)[0];
+      throw new ProtocolLimitError('Branch merge is in progress or complete',
+        this.registry.mergedBranches.has(branch) ? 4002 : 1013);
+    }
     const incoming = Uint8Array.from(update);
     if (incoming.byteLength === 0 || incoming.byteLength > MAX_CRDT_UPDATE_BYTES) {
       throw new ProtocolLimitError('CRDT update exceeds the per-message limit');
@@ -584,6 +623,11 @@ export class DocumentRoom {
 
   receiveJson(socket, message, authorise = () => {}) {
     return this.enqueueMessage(() => {
+      if (this.registry.isUnavailableBranch(this.documentId)) {
+        const branch = this.documentId.split(':', 1)[0];
+        throw new ProtocolLimitError('Branch merge is in progress or complete',
+          this.registry.mergedBranches.has(branch) ? 4002 : 1013);
+      }
       authorise();
       return auditDocumentControl(this, socket, message, () => this.applyJson(socket, message));
     });
@@ -735,17 +779,7 @@ export class DocumentRoom {
           throw new ProtocolLimitError('This document has reached its comment limit');
         }
         const actor = this.actorFor(socket, message, 'Comment');
-        const thread = {
-          id,
-          authorId: actor.id,
-          author: actor.displayName,
-          color: actor.color ?? '#8a8a8a',
-          status: 'open',
-          createdAt: new Date().toISOString(),
-          startRelative: controlledString(message.startRelative, 'Comment start', 4096, { required: true }),
-          endRelative: controlledString(message.endRelative, 'Comment end', 4096, { required: true }),
-          messages: [],
-        };
+        const thread = newCommentThread(id, actor, message);
         captureReviewAnchor(this.document, thread);
         this.commentThreads.push(thread);
         try {
@@ -809,33 +843,7 @@ export class DocumentRoom {
           throw new ProtocolLimitError('This document has reached its suggestion limit');
         }
         const actor = this.actorFor(socket, message, 'Suggestion');
-        const originalText = controlledText(
-          message.originalText, 'Suggestion original text', MAX_SUGGESTION_TEXT_BYTES,
-        );
-        const replacementText = controlledText(
-          message.replacementText, 'Suggestion replacement text', MAX_SUGGESTION_TEXT_BYTES,
-        );
-        const traceJson = controlledString(message.traceJson ?? '', 'Suggestion trace', 64 * 1024);
-        if (traceJson) parseSuggestionTrace(traceJson, originalText, replacementText);
-        if (!originalText && !replacementText) {
-          throw new ProtocolLimitError('Suggestion must insert or delete text');
-        }
-        const suggestion = {
-          id,
-          authorId: actor.id,
-          author: actor.displayName,
-          color: actor.color ?? '#8a8a8a',
-          status: 'open',
-          createdAt: new Date().toISOString(),
-          decidedById: null,
-          decidedBy: null,
-          startRelative: controlledString(message.startRelative, 'Suggestion start', 4096, { required: true }),
-          endRelative: controlledString(message.endRelative, 'Suggestion end', 4096, { required: true }),
-          originalText,
-          replacementText,
-          traceJson,
-          messages: [],
-        };
+        const suggestion = newSuggestion(id, actor, message);
         captureReviewAnchor(this.document, suggestion);
         this.suggestions.push(suggestion);
         try {
@@ -874,21 +882,7 @@ export class DocumentRoom {
         throw new ProtocolLimitError('Suggestion is no longer editable');
       }
       const actor = this.actorFor(socket, message, 'Suggestion');
-      const sameAuthor = suggestion.authorId
-        ? suggestion.authorId === actor.id
-        : suggestion.author === actor.displayName;
-      if (!sameAuthor) throw new ProtocolLimitError('Only the suggestion author may update its draft');
-      const next = {
-        startRelative: controlledString(message.startRelative, 'Suggestion start', 4096, { required: true }),
-        endRelative: controlledString(message.endRelative, 'Suggestion end', 4096, { required: true }),
-        originalText: controlledText(message.originalText, 'Suggestion original text', MAX_SUGGESTION_TEXT_BYTES),
-        replacementText: controlledText(message.replacementText, 'Suggestion replacement text', MAX_SUGGESTION_TEXT_BYTES),
-        traceJson: controlledString(message.traceJson ?? '', 'Suggestion trace', 64 * 1024),
-      };
-      if (next.traceJson) parseSuggestionTrace(next.traceJson, next.originalText, next.replacementText);
-      if (!next.originalText && !next.replacementText) {
-        throw new ProtocolLimitError('Suggestion must insert or delete text');
-      }
+      const next = editableSuggestionDraft(suggestion, actor, message);
       const previous = {
         startRelative: suggestion.startRelative,
         endRelative: suggestion.endRelative,
@@ -931,21 +925,13 @@ export class DocumentRoom {
         this.broadcastReview();
         return;
       }
-      const candidate = new Y.Doc();
-      let projectedBytes;
-      try {
-        Y.applyUpdate(candidate, Y.encodeStateAsUpdate(this.document));
-        const candidateText = candidate.getText('content');
-        candidateText.delete(resolved.start, resolved.end - resolved.start);
-        if (suggestion.replacementText) candidateText.insert(resolved.start, suggestion.replacementText);
-        projectedBytes = Y.encodeStateAsUpdate(candidate).byteLength;
-        if (projectedBytes > MAX_ROOM_STATE_BYTES) {
-          throw new ProtocolLimitError('Accepted suggestion would exceed the room state limit');
-        }
-        this.registry.assertStateBudget(this, projectedBytes);
-      } finally {
-        candidate.destroy();
+      const projectedBytes = projectedSuggestionStateBytes(
+        this.document, resolved.start, resolved.end, suggestion.replacementText,
+      );
+      if (projectedBytes > MAX_ROOM_STATE_BYTES) {
+        throw new ProtocolLimitError('Accepted suggestion would exceed the room state limit');
       }
+      this.registry.assertStateBudget(this, projectedBytes);
       suggestion.status = 'accepted';
       suggestion.decidedById = actor.id;
       suggestion.decidedBy = actor.displayName;
@@ -989,17 +975,13 @@ export class DocumentRoom {
       if (!resolved || current !== suggestion.replacementText) {
         throw new ProtocolLimitError('Accepted suggestion can no longer be reverted because its text changed');
       }
-      const candidate = new Y.Doc();
-      let projectedBytes;
-      try {
-        Y.applyUpdate(candidate, Y.encodeStateAsUpdate(this.document));
-        const candidateText = candidate.getText('content');
-        candidateText.delete(resolved.start, resolved.end - resolved.start);
-        if (suggestion.originalText) candidateText.insert(resolved.start, suggestion.originalText);
-        projectedBytes = Y.encodeStateAsUpdate(candidate).byteLength;
-        if (projectedBytes > MAX_ROOM_STATE_BYTES) throw new ProtocolLimitError('Reverted suggestion would exceed the room state limit');
-        this.registry.assertStateBudget(this, projectedBytes);
-      } finally { candidate.destroy(); }
+      const projectedBytes = projectedSuggestionStateBytes(
+        this.document, resolved.start, resolved.end, suggestion.originalText,
+      );
+      if (projectedBytes > MAX_ROOM_STATE_BYTES) {
+        throw new ProtocolLimitError('Reverted suggestion would exceed the room state limit');
+      }
+      this.registry.assertStateBudget(this, projectedBytes);
       suggestion.status = 'open';
       suggestion.decidedById = null;
       suggestion.decidedBy = null;

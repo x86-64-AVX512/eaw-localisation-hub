@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { WebSocket } from 'ws';
 import { startReviewServer } from '../apps/agent/src/review-server.mjs';
-import { persistentReviewEndpoint } from '../apps/agent/src/review-endpoint.mjs';
+import { persistentReviewEndpoint } from '../apps/agent/src/review-endpoint.mts';
 import { DiffCache } from '../apps/agent/src/diff-cache.mjs';
 
 function waitForOpen(socket) {
@@ -40,6 +40,20 @@ test('review endpoint keeps its loopback port and capability across Agent restar
     assert.equal(second.token, first.token);
     assert.match(first.token, /^[A-Za-z0-9_-]{43}$/u);
     assert.equal(JSON.parse(await fs.readFile(first.endpointPath, 'utf8')).port, first.port);
+  } finally {
+    await fs.rm(state, { recursive: true, force: true });
+  }
+});
+
+test('review endpoint replaces a malformed persisted capability', async () => {
+  const state = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-review-endpoint-invalid-'));
+  try {
+    const endpointPath = path.join(state, 'review-endpoint.json');
+    await fs.writeFile(endpointPath, JSON.stringify({ schema: 1, port: '49152', token: 'invalid' }));
+    const endpoint = await persistentReviewEndpoint({ state });
+    assert.equal(Number.isInteger(endpoint.port), true);
+    assert.match(endpoint.token, /^[A-Za-z0-9_-]{43}$/u);
+    assert.equal(JSON.parse(await fs.readFile(endpointPath, 'utf8')).port, endpoint.port);
   } finally {
     await fs.rm(state, { recursive: true, force: true });
   }
@@ -89,6 +103,11 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       received.push({ type: 'authRequest', route, options });
       if (route === '/api/spelling/dictionary') return { version: 'test', affBase64: 'YQ==', dicBase64: 'ZA==' };
       if (route === '/api/spelling/words') return { words: ['эквестрия'] };
+      if (route === '/api/deleted-branches') return { branches: [{ branch: 'old', files: [] }] };
+      if (route.startsWith('/api/deleted-branches/document?')) {
+        return { branch: 'old', relativePath: 'localisation/russian/review_l_russian.yml',
+          textBase64: Buffer.from('archived', 'utf8').toString('base64'), comments: [] };
+      }
       throw new Error('Unexpected auth route');
     },
   };
@@ -126,6 +145,18 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       'localisation/replace/english/review_l_english.yml',
       'localisation/russian/review_l_russian.yml',
     ]);
+    assert.equal((await fetch(`${discovery.origin}/api/deleted-branches`)).status, 401);
+    const archivedBranches = await fetch(`${discovery.origin}/api/deleted-branches`, {
+      headers: { Authorization: `Bearer ${discovery.token}` },
+    });
+    assert.equal(archivedBranches.status, 200);
+    assert.equal((await archivedBranches.json()).branches[0].branch, 'old');
+    const archivedDocument = await fetch(
+      `${discovery.origin}/api/deleted-branches/document?branch=old&path=localisation%2Frussian%2Freview_l_russian.yml`,
+      { headers: { Authorization: `Bearer ${discovery.token}` } },
+    );
+    assert.equal(archivedDocument.status, 200);
+    assert.equal(Buffer.from((await archivedDocument.json()).textBase64, 'base64').toString('utf8'), 'archived');
     const keyIndexUnauthorized = await fetch(`${discovery.origin}/api/localisation-key-index`);
     assert.equal(keyIndexUnauthorized.status, 401);
     const keyIndexResponse = await fetch(`${discovery.origin}/api/localisation-key-index`, {

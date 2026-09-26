@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { discoverGitExecutable, runGitAsync } from '../apps/agent/src/git-executable.mjs';
+import { discoverGitExecutable, runGitAsync } from '../apps/agent/src/git-executable.mts';
 
 test('Agent discovers the Git executable bundled with the newest GitHub Desktop', () => {
   const environment = { LOCALAPPDATA: 'C:\\Users\\Tester\\AppData\\Local' };

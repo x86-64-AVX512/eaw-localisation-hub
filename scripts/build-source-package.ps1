@@ -4,8 +4,8 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $distRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
-$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F3'))
-$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F3.zip'))
+$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F4'))
+$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F4.zip'))
 $checksumPath = "$archivePath.sha256"
 if (-not $packageRoot.StartsWith($distRoot + '\', [StringComparison]::OrdinalIgnoreCase) `
     -or -not $archivePath.StartsWith($distRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
@@ -21,7 +21,7 @@ $rootFiles = @(
     '.dockerignore', '.editorconfig', '.gitattributes', '.gitignore', '.gitmodules',
     'Dockerfile', 'README.md', 'CHANGELOG.md', 'VERSION', 'LICENSE',
     'SECURITY.md', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md',
-    'package.json', 'package-lock.json',
+    'package.json', 'package-lock.json', 'tsconfig.typecheck.json', 'tsconfig.review.json', 'tsconfig.review-typescript.json', 'tsconfig.boundary.json',
     'Launch EaW Hub Admin.cmd', 'Launch EaW Hub Team Management.cmd', 'Launch EaW Hub Agent.cmd', 'Launch EaW Hub Review.cmd',
     'Launch EaW Hub Prototype.cmd', 'Launch EaW Hub Deployer.cmd'
 )

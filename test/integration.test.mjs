@@ -10,9 +10,9 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import * as Y from 'yjs';
-import { createReviewDocument } from '../apps/review/src/review-document.js';
-import { DISPLAY_VERSION, PROTOCOL_VERSION } from '../packages/shared/src/constants.mjs';
-import { applyUtf8ByteEdit } from '../packages/shared/src/text.mjs';
+import { createReviewDocument } from '../apps/review/src/review-document.ts';
+import { DISPLAY_VERSION, PROTOCOL_VERSION } from '../packages/shared/src/constants.mts';
+import { applyUtf8ByteEdit } from '../packages/shared/src/text.mts';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const pipePath = (name) => process.platform === 'win32'

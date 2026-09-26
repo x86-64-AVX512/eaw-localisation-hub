@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { fileHistoryDiff, listFileHistory } from '../apps/agent/src/git-file-history.mjs';
+import { fileHistoryDiff, listFileHistory } from '../apps/agent/src/git-file-history.mts';
 
 function git(repository, ...args) {
   return execFileSync('git', args, { cwd: repository, encoding: 'utf8', windowsHide: true });

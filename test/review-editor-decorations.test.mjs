@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { completedSuggestionZoneAfterLine } from '../apps/review/src/editor-decorations.js';
+import { completedSuggestionZoneAfterLine } from '../apps/review/src/editor-decorations.ts';
 
 test('a completed leading-newline replacement is rendered below its original line', () => {
   const range = {

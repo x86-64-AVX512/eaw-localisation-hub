@@ -4,7 +4,7 @@ import process from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'ssh2';
-import { DISPLAY_VERSION } from '../../../packages/shared/src/constants.mjs';
+import { DISPLAY_VERSION } from '../../../packages/shared/src/constants.mts';
 import {
   createServerPayload,
   deploymentId,
@@ -88,7 +88,7 @@ function upload(client, localPath, remotePath) {
   return new Promise((resolve, reject) => {
     client.sftp((error, sftp) => {
       if (error) return reject(error);
-      sftp.fastPut(localPath, remotePath, {}, (uploadError) => uploadError ? reject(uploadError) : resolve());
+      sftp.fastPut(localPath, remotePath, {}, (uploadError) => uploadError ? reject(uploadError) : resolve(undefined));
     });
   });
 }

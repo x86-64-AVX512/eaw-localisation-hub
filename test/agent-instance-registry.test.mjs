@@ -7,7 +7,7 @@ import {
   instanceRegistryPath,
   registerAgentInstance,
   unregisterAgentInstance,
-} from '../apps/agent/src/instance-registry.mjs';
+} from '../apps/agent/src/instance-registry.mts';
 
 test('Agent instance registry is discoverable and removed only by its owner', async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-agent-instance-'));

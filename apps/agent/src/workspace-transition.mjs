@@ -5,7 +5,7 @@ import { Buffer } from 'node:buffer';
 import {
   clearTrackedLineEndingPreferences, computeSingleReplace, normaliseLineEndings,
   readTrackedTextFile, withoutUtf8Bom,
-} from '../../../packages/shared/src/text.mjs';
+} from '../../../packages/shared/src/text.mts';
 import { DocumentBinding } from './document-binding.mjs';
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));

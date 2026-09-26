@@ -13,7 +13,7 @@ const forbiddenPaths = [
   /(?:^|\/)(?:auth\.json|bootstrap-invite\.txt)$/i,
   /\.eawhub\.enc$/i,
 ];
-const textExtensions = new Set(['.c', '.cc', '.cpp', '.css', '.h', '.hpp', '.html', '.iss', '.js', '.json', '.md', '.mjs', '.ps1', '.sh', '.txt', '.yml', '.yaml', '.cmd', '.example']);
+const textExtensions = new Set(['.c', '.cc', '.cpp', '.css', '.h', '.hpp', '.html', '.iss', '.js', '.json', '.md', '.mjs', '.mts', '.ts', '.ps1', '.sh', '.txt', '.yml', '.yaml', '.cmd', '.example']);
 const maximumPublicFileBytes = 5 * 1024 * 1024;
 
 function candidateFiles() {

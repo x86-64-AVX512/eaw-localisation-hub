@@ -6,7 +6,7 @@ import {
   schedulePersonalDocumentRefresh, emitDocumentVariants,
   localFileText, replacePersonalDocument, setPersonalSelection, requestDocumentVariant,
 } from '../apps/agent/src/personal-document.mjs';
-import { retainedAuthorPreviews, variantTexts } from '../apps/review/src/document-variants.js';
+import { retainedAuthorPreviews, variantTexts } from '../apps/review/src/document-variants.ts';
 
 function bindingFixture() {
   const sent = [];

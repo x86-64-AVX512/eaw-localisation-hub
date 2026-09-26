@@ -91,7 +91,7 @@ export class DiffCache {
       await this.prune();
       return true;
     });
-    this.maintenance = operation.catch(() => {});
+    this.maintenance = operation.then(() => undefined, () => undefined);
     return operation;
   }
 

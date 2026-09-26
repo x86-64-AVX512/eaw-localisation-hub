@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import * as Y from 'yjs';
-import { keysInsideRange, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mjs';
+import { keysInsideRange, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mts';
 
 function encodeRelativePosition(position) {
   return Buffer.from(Y.encodeRelativePosition(position)).toString('base64');

@@ -1,6 +1,14 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F3` form; package metadata uses `0.8.8-beta.3`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F4` form; package metadata uses `0.8.8-beta.4`.
+
+## 0.8.8F4
+
+- The shared runtime package and Review UI are migrated to TypeScript. Security, Git, document-delivery and socket boundaries in Agent and Server use strict TypeScript contracts; the remaining large JavaScript coordinators are covered by `checkJs` to avoid a mechanical rewrite of stable code. The regular `typecheck` command runs both checks.
+- Document synchronisation no longer accepts an acknowledgement without a pending flush, and the server rejects malformed JSON control messages before dispatching them to a room.
+- Verified branch merges into `general-dev` transfer comment threads, retarget tickets while retaining their original comparison commit, and remove the old branch rooms only after the target comments are persisted. Missing files, unmerged personal/shared text, or legacy documents that cannot be identified stop the cleanup. Deleting a Git branch without a verified merge leaves its server data intact and pauses editing.
+- Review has a read-only «Удалённые ветки» archive for saved server documents, comments and suggestions. Legacy rooms whose paths were not indexed can be opened by entering their known localisation path; opening the archive never creates a room or restores the Git branch.
+- The approved `barrad` branch reads its canonical localisation and verifies ticket base commits from `MiszczTheMaste/equestria_dev`; all other branches continue using the official EaW repository.
 
 ## 0.8.8F3 – 2026-09-22
 

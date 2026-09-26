@@ -8,17 +8,17 @@ import {
   DISPLAY_VERSION,
   MAX_MESSAGE_BYTES,
   PROTOCOL_VERSION,
-} from '../../../packages/shared/src/constants.mjs';
-import { normaliseTrackedPath, withoutUtf8Bom } from '../../../packages/shared/src/text.mjs';
-import { validatePluginMessage } from '../../../packages/shared/src/protocol-schema.mjs';
+} from '../../../packages/shared/src/constants.mts';
+import { normaliseTrackedPath, withoutUtf8Bom } from '../../../packages/shared/src/text.mts';
+import { validatePluginMessage } from '../../../packages/shared/src/protocol-schema.mts';
 import { DocumentBinding } from './document-binding.mjs';
-import * as ticketContext from './git-ticket-context.mjs';
+import * as ticketContext from './git-ticket-context.mts';
 import { TicketWorkflow } from './ticket-workflow.mjs';
 import { KeyReplacementWorkflow } from './key-replacement-workflow.mjs';
 import { resolveReviewAnchors } from './review-document.mjs';
-import { serverHttpUrl } from './server-http-url.mjs';
+import { serverHttpUrl } from './server-http-url.mts';
 import { transitionWorkspace } from './workspace-transition.mjs';
-import { runGitAsync, runGitSync } from './git-executable.mjs';
+import { runGitAsync, runGitSync } from './git-executable.mts';
 import { DiffCache } from './diff-cache.mjs';
 
 function sendLine(socket, message) {
@@ -798,8 +798,12 @@ export class AgentHub {
         ...(options.headers ?? {}),
       },
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `Authentication API failed with HTTP ${response.status}`);
+    const rawPayload = await response.json().catch(() => ({}));
+    if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+      throw new TypeError('Authentication API returned a non-object response');
+    }
+    const payload = /** @type {Record<string, unknown>} */ (rawPayload);
+    if (!response.ok) throw new Error(String(payload.error || `Authentication API failed with HTTP ${response.status}`));
     return payload;
   }
 

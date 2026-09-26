@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { byteToUtf16, utf16ToByte } from '../apps/review/src/review-utilities.js';
+import { byteToUtf16, utf16ToByte } from '../apps/review/src/review-utilities.ts';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

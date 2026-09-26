@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { expiredPresenceIds } from '../packages/shared/src/presence.mjs';
-import { LocalPresenceMux } from '../apps/agent/src/local-presence.mjs';
+import { expiredPresenceIds } from '../packages/shared/src/presence.mts';
+import { LocalPresenceMux } from '../apps/agent/src/local-presence.mts';
 
 test('presence expiry removes only clients whose in-memory heartbeat is stale', () => {
   const lastSeen = new Map([

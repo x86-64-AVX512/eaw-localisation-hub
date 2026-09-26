@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
   currentGitCommit, currentGitCommitAsync, currentGitFileBlob, currentGitFileBlobAsync,
-} from '../apps/agent/src/git-ticket-context.mjs';
+} from '../apps/agent/src/git-ticket-context.mts';
 
 test('asynchronous Git blob check agrees with the synchronous path and rejects unsupported files', async (t) => {
   const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'eaw-git-blob-'));

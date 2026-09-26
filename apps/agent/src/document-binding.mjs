@@ -1,20 +1,20 @@
 import { Buffer } from 'node:buffer';
 import { WebSocket } from 'ws';
 import * as Y from 'yjs';
-import { LocalPresenceMux } from './local-presence.mjs';
-import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION } from '../../../packages/shared/src/constants.mjs';
+import { LocalPresenceMux } from './local-presence.mts';
+import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION } from '../../../packages/shared/src/constants.mts';
 import {
   utf8ByteOffsetToUtf16Index,
-} from '../../../packages/shared/src/text.mjs';
-import { validateServerMessage } from '../../../packages/shared/src/protocol-schema.mjs';
+} from '../../../packages/shared/src/text.mts';
+import { validateServerMessage } from '../../../packages/shared/src/protocol-schema.mts';
 import * as actions from './document-actions.mjs';
 import * as disk from './disk-reconciliation.mjs';
 import * as view from './document-view.mjs';
 import * as gitState from './git-document-state.mjs';
-import * as delivery from './document-delivery.mjs';
+import * as delivery from './document-delivery.mts';
 import * as personalDocument from './personal-document.mjs';
 import { broadcastReviewUpdate, applyReviewUpdate } from './review-document.mjs';
-import { handleUnavailableTicketClose } from './document-lifecycle.mjs';
+import { handleMergedBranchClose, handleUnavailableTicketClose } from './document-lifecycle.mts';
 const REMOTE_ORIGIN = Symbol('remote-server-update');
 function encodeRelativePosition(position) {
   return Buffer.from(Y.encodeRelativePosition(position)).toString('base64');
@@ -47,7 +47,8 @@ export class DocumentBinding {
     this.reconnectTimer = null;
     this.refreshScheduled = false;
     this.baseWrites = new Set();
-    delivery.initialiseDelivery(this);
+    this.localUpdatePending = false; this.pendingUpdateSent = false;
+    this.deliveryFailed = false; this.flushWaiter = null;
     this.personalRequestId = '';
     this.personalRefreshTimer = null;
     this.personalRefreshStartedAt = null;
@@ -59,9 +60,7 @@ export class DocumentBinding {
     this.personalConflicts = [];
     this.personalSelectionRevision = ''; this.personalSelectionGit = ''; this.personalSelectionShared = '';
     this.personalMaterialisationMode = this.ticketId ? 'mine' : this.hub.loadPersonalMode(this.relativePath);
-
     delivery.restorePendingDocument(this);
-
     this.document.on('update', (update, origin) => {
       broadcastReviewUpdate(this, update, origin);
       delivery.forwardLocalUpdate(this, update, origin !== REMOTE_ORIGIN);
@@ -103,6 +102,7 @@ export class DocumentBinding {
       personalDocument.resetPersonalRequest(this);
       console.warn('[agent] document disconnected');
       const closeReason = reason?.toString('utf8') || '';
+      if (handleMergedBranchClose(this, code)) return;
       if (handleUnavailableTicketClose(this, code, closeReason)) return;
       if (code === 1008) {
         this.paused = true;

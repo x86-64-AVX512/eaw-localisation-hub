@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import * as Y from 'yjs';
-import { parseLocalisationKeys } from '../../../packages/shared/src/text.mjs';
+import { parseLocalisationKeys } from '../../../packages/shared/src/text.mts';
 
 const CONTEXT_CHARACTERS = 96;
 const SELECTED_TEXT_CHARACTERS = 512;

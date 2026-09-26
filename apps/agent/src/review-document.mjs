@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import * as Y from 'yjs';
-import { utf16IndexToUtf8ByteOffset } from '../../../packages/shared/src/text.mjs';
+import { utf16IndexToUtf8ByteOffset } from '../../../packages/shared/src/text.mts';
 
 export function resolveReviewAnchors(binding, client, message) {
   if (!message.reviewAnchors) return message;

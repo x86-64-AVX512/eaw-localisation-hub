@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "packages/shared/src/backup-crypto.mts",
+    "packages/shared/src/constants.mts",
+    "packages/shared/src/localisation-replace.mts",
+    "packages/shared/src/localisation-syntax.mts",
+    "packages/shared/src/merge.mts",
+    "packages/shared/src/presence.mts",
+    "packages/shared/src/protocol-schema.mts",
+    "packages/shared/src/spelling-bloom.mts",
+    "packages/shared/src/spelling-issues.mts",
+    "packages/shared/src/suggestion-trace.mts",
+    "packages/shared/src/text.mts",
+    "apps/server/src/auth-scrypt.mts",
+    "apps/agent/src/git-executable.mts",
+    "apps/agent/src/git-file-history.mts",
+    "apps/agent/src/server-http-url.mts",
+    "apps/agent/src/instance-registry.mts",
+    "apps/agent/src/review-endpoint.mts",
+    "apps/agent/src/git-recovery.mts",
+    "apps/agent/src/git-ticket-context.mts",
+    "apps/agent/src/local-presence.mts",
+    "apps/agent/src/document-delivery.mts",
+    "apps/agent/src/document-lifecycle.mts",
+    "apps/server/src/protocol-limits.mts",
+    "apps/server/src/document-socket.mts"
+  ]
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { serverHttpUrl } from '../apps/agent/src/server-http-url.mjs';
+import { serverHttpUrl } from '../apps/agent/src/server-http-url.mts';
 
 test('Agent keeps ticket query parameters separate from the request pathname', () => {
   const endpoint = serverHttpUrl(

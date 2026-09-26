@@ -8,15 +8,17 @@ import { AuthError, AuthStore, bearerToken } from './auth.mjs';
 import { AdminSessionStore } from './admin-session.mjs';
 import { handleAdminHttp } from './admin-http.mjs';
 import { DocumentRoom, closeDocumentRoomValidator } from './document-room.mjs';
-import { attachDocumentSocket } from './document-socket.mjs';
+import { attachDocumentSocket } from './document-socket.mts';
 import {
   ProtocolLimitError, createInboundBudget, validDocumentId,
-} from './protocol-limits.mjs';
+} from './protocol-limits.mts';
 import { minimisePersistedDocumentMetadata } from './room-metadata.mjs';
 import { RoomRegistry } from './room-registry.mjs';
 import { TicketStore } from './ticket-store.mjs'; import { handleTicketHttp } from './ticket-http.mjs';
 import { TicketService } from './ticket-service.mjs'; import { GitCommitVerifier } from './git-commit-verifier.mjs';
-import { GitBranchCache } from './git-branch-cache.mjs';
+import { GitBranchCache } from './git-branch-cache.mjs'; import { branchRepositoriesFor } from './branch-repositories.mjs';
+import { BranchMergeService } from './branch-merge-service.mjs';
+import { DeletedBranchArchive } from './deleted-branch-archive.mjs'; import { handleDeletedBranchHttp } from './deleted-branch-http.mjs';
 import { EventJournal } from './event-journal.mjs';
 import { watchTicketCatalog } from './ticket-catalog.mjs';
 import { AuditLog } from './audit-log.mjs';
@@ -27,7 +29,7 @@ import {
   MAX_CONNECTIONS_TOTAL,
   MAX_MESSAGE_BYTES,
   PROTOCOL_VERSION,
-} from '../../../packages/shared/src/constants.mjs';
+} from '../../../packages/shared/src/constants.mts';
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(sourceDirectory, '../../..');
 function parseArguments(argv) {
@@ -82,13 +84,11 @@ await eventJournal.initialise();
 const auditLog = new AuditLog(options.data); await auditLog.initialise();
 const adminSessions = new AdminSessionStore(authStore);
 const configuredGitRefresh = Number(process.env.EAW_HUB_GIT_REFRESH_MILLISECONDS ?? 60_000);
-const gitRefreshMilliseconds = Number.isFinite(configuredGitRefresh) && configuredGitRefresh >= 250
-  ? configuredGitRefresh : 60_000;
-const canonicalSource = new GitBranchCache(
-  options.data,
-  process.env.EAW_HUB_CANONICAL_REPOSITORY || process.env.EAW_HUB_GITHUB_REPOSITORY,
-  { refreshMilliseconds: gitRefreshMilliseconds },
-);
+const gitRefreshMilliseconds = Number.isFinite(configuredGitRefresh) && configuredGitRefresh >= 250 ? configuredGitRefresh : 60_000;
+const canonicalRepository = process.env.EAW_HUB_CANONICAL_REPOSITORY || process.env.EAW_HUB_GITHUB_REPOSITORY;
+const branchRepositories = branchRepositoriesFor(canonicalRepository);
+const canonicalSource = new GitBranchCache(options.data, canonicalRepository,
+  { refreshMilliseconds: gitRefreshMilliseconds, branchRepositories });
 const roomRegistry = new RoomRegistry(
   options.data,
   authStore,
@@ -102,11 +102,14 @@ await roomRegistry.initialise();
 roomRegistry.eventJournal = eventJournal;
 roomRegistry.auditLog = auditLog;
 const rooms = roomRegistry.rooms;
-const ticketStore = new TicketStore(options.data, atomicWrite, new GitCommitVerifier(process.env.EAW_HUB_GITHUB_REPOSITORY));
+const ticketStore = new TicketStore(options.data, atomicWrite,
+  new GitCommitVerifier(process.env.EAW_HUB_GITHUB_REPOSITORY, undefined, branchRepositories));
 ticketStore.eventJournal = eventJournal;
 roomRegistry.ticketStore = ticketStore;
 await ticketStore.initialise();
 const ticketService = new TicketService(ticketStore, roomRegistry);
+roomRegistry.branchMergeService = new BranchMergeService(canonicalSource, roomRegistry, ticketStore);
+const deletedBranchArchive = new DeletedBranchArchive(canonicalSource, roomRegistry, ticketStore);
 watchTicketCatalog(ticketStore, rooms);
 
 async function getRoom(documentId) {
@@ -221,9 +224,13 @@ async function handleHttp(request, response) {
     sendJson(response, 200, await canonicalSource.head(branch));
     return;
   }
+  if (await handleDeletedBranchHttp({
+    request, response, url, archive: deletedBranchArchive, authenticatedUser, sendJson,
+  })) return;
   if (request.method === 'GET' && url.pathname === '/api/events') {
     const actor = await authenticatedUser(request);
-    sendJson(response, 200, eventJournal.list(actor.id, url.searchParams.get('after'), url.searchParams.get('limit')));
+    sendJson(response, 200, eventJournal.list(actor.id,
+      Number(url.searchParams.get('after')), Number(url.searchParams.get('limit'))));
     return;
   }
   if (await handleSpellingHttp({
@@ -378,6 +385,12 @@ websocketServer.on('connection', async (socket, request) => {
     const url = new URL(request.url, `http://${request.headers.host ?? 'localhost'}`);
     const documentId = url.searchParams.get('document');
     if (!validDocumentId(documentId)) throw new ProtocolLimitError('Missing or invalid document id');
+    if (roomRegistry.isUnavailableBranch(documentId)) {
+      const branch = documentId.split(':', 1)[0];
+      throw new ProtocolLimitError(roomRegistry.mergedBranches.has(branch)
+        ? 'Branch merged into general-dev' : 'Branch merge is in progress',
+      roomRegistry.mergedBranches.has(branch) ? 4002 : 1013);
+    }
     ticketStore.assertDocumentAccess(documentId);
     await ticketStore.noteParticipant(documentId, socket.identity);
     socket.localHead = String(url.searchParams.get('head') ?? '').toLowerCase();
@@ -408,7 +421,7 @@ websocketServer.on('connection', async (socket, request) => {
   }
 });
 
-await new Promise((resolve) => httpServer.listen(options.port, options.host, resolve));
+await new Promise((resolve) => httpServer.listen(options.port, options.host, () => resolve(undefined)));
 console.log(`[server] EaW Localisation Hub ${DISPLAY_VERSION}`);
 console.log(`[server] listening on http://${options.host}:${options.port}`);
 console.log(`[server] authentication: ${options.auth}`);

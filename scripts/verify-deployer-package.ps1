@@ -11,7 +11,7 @@ $required = @(
     'node.exe', 'VERSION', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'THIRD-PARTY-NODE-LICENSE.txt',
     'Launch EaW Hub Deployer.cmd', 'apps\deployer\src\main.mjs',
     'apps\deployer\src\deployment-core.mjs', 'apps\server\src\main.mjs',
-    'packages\shared\src\constants.mjs', 'scripts\deploy-server-ui.ps1',
+    'packages\shared\src\constants.mts', 'scripts\deploy-server-ui.ps1',
     'scripts\manage-server.mjs', 'deploy\Dockerfile.incremental', 'node_modules\ssh2\package.json'
 )
 foreach ($relative in $required) {
