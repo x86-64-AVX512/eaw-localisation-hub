@@ -88,9 +88,10 @@ begin
   Result := '';
   if not IsWebView2Installed then
   begin
-    if MsgBox('Для Review необходим Microsoft Edge WebView2 Runtime. Открыть официальный установщик Microsoft?',
-      mbConfirmation, MB_YESNO) = IDYES then
-      ShellExec('open', '{#WebView2DownloadUrl}', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
+    if not WizardSilent then
+      if MsgBox('Для Review необходим Microsoft Edge WebView2 Runtime. Открыть официальный установщик Microsoft?',
+        mbConfirmation, MB_YESNO) = IDYES then
+        ShellExec('open', '{#WebView2DownloadUrl}', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
     Result := 'Установите WebView2 Runtime и повторите установку EaW Hub.';
   end;
 end;

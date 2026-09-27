@@ -17,6 +17,7 @@ $releaseDownloadPrefix = 'https://github.com/x86-64-AVX512/eaw-localisation-hub/
 $mutex = [System.Threading.Mutex]::new($false, 'Local\EaWHubClientUpdater')
 $hasMutex = $false
 $workRoot = $null
+$clientStopped = $false
 
 function Write-UpdateStatus {
     param([string]$Stage, [string]$Message, [string]$Version = '')
@@ -63,7 +64,9 @@ function Find-NewClientRelease {
         'User-Agent' = 'EaWLocalisationHub-Updater'
         'X-GitHub-Api-Version' = '2022-11-28'
     }
-    $releases = @(Invoke-RestMethod -Uri $releaseApi -Headers $headers -TimeoutSec 20)
+    # Windows PowerShell 5.1 can return a JSON array as one array-valued
+    # object. Wrapping the command in @() would nest it and hide every release.
+    $releases = Invoke-RestMethod -Uri $releaseApi -Headers $headers -TimeoutSec 20
     $best = $null
     foreach ($release in $releases) {
         if ($release.draft) { continue }
@@ -75,18 +78,18 @@ function Find-NewClientRelease {
         } else { continue }
         if ((Compare-EawHubDisplayVersion -Installed $InstalledVersion -Recommended $version) -ge 0) { continue }
         if ($best -and (Compare-EawHubDisplayVersion -Installed $best.Version -Recommended $version) -ge 0) { continue }
-        $archiveName = "EaW-Hub-Client-$version.zip"
-        $checksumName = "$archiveName.sha256"
-        $archive = Get-ReleaseAsset -Release $release -Name $archiveName
+        $installerName = "EaW-Localisation-Hub-Setup-$version.exe"
+        $checksumName = "$installerName.sha256"
+        $installer = Get-ReleaseAsset -Release $release -Name $installerName
         $checksum = Get-ReleaseAsset -Release $release -Name $checksumName
-        if (-not $archive -or -not $checksum) { continue }
-        Assert-ReleaseDownloadUrl -Url ([string]$archive.browser_download_url) -ExpectedFileName $archiveName
+        if (-not $installer -or -not $checksum) { continue }
+        Assert-ReleaseDownloadUrl -Url ([string]$installer.browser_download_url) -ExpectedFileName $installerName
         Assert-ReleaseDownloadUrl -Url ([string]$checksum.browser_download_url) -ExpectedFileName $checksumName
         $best = [pscustomobject]@{
             Version = $version
-            Archive = $archive
+            Installer = $installer
             Checksum = $checksum
-            ArchiveName = $archiveName
+            InstallerName = $installerName
         }
     }
     $best
@@ -121,74 +124,36 @@ function Stop-CurrentClient {
     }
 }
 
-function Move-AutostartToNewClient {
-    param([string]$NewRoot)
-    $startupPath = Join-Path ([Environment]::GetFolderPath('Startup')) 'EaW Localisation Hub Agent.lnk'
-    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    $legacyRun = [string](Get-ItemProperty -Path $runKey -Name 'EaWLocalisationHubAgent' -ErrorAction SilentlyContinue).EaWLocalisationHubAgent
-    $oldLauncher = Join-Path $projectRoot 'Launch EaW Hub Agent.cmd'
-    $migrateLegacyRun = $legacyRun.Trim('"') -ieq $oldLauncher
-    if (-not (Test-Path -LiteralPath $startupPath) -and -not $migrateLegacyRun) { return }
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($startupPath)
-    $shortcut.TargetPath = (Get-Command powershell.exe -ErrorAction Stop).Source
-    $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
-        (Join-Path $NewRoot 'scripts\start-agent-ui.ps1') + '" -StartMinimized'
-    $shortcut.WorkingDirectory = $NewRoot
-    $shortcut.IconLocation = Join-Path $NewRoot 'review\EaWReview.exe'
-    $shortcut.Save()
-    if ($migrateLegacyRun) {
-        Remove-ItemProperty -Path $runKey -Name 'EaWLocalisationHubAgent' -ErrorAction Stop
-    }
-}
-
-function Expand-CheckedClientArchive {
-    param([string]$ArchivePath, [string]$Destination)
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $destinationRoot = [System.IO.Path]::GetFullPath($Destination).TrimEnd('\') + '\'
-    $archive = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
-    try {
-        $totalBytes = [int64]0
-        foreach ($entry in $archive.Entries) {
-            if ([System.IO.Path]::IsPathRooted($entry.FullName)) { throw 'Client archive contains an absolute path.' }
-            $entryPath = [System.IO.Path]::GetFullPath((Join-Path $Destination $entry.FullName))
-            if (-not $entryPath.StartsWith($destinationRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                throw 'Client archive contains a path outside its extraction directory.'
-            }
-            $totalBytes += $entry.Length
-            if ($totalBytes -gt 1GB) { throw 'Client archive is unexpectedly large after extraction.' }
-        }
-    } finally { $archive.Dispose() }
-    Expand-Archive -LiteralPath $ArchivePath -DestinationPath $Destination -Force
-}
-
-function Assert-ClientReleaseArchive {
-    param($Release, [string]$ArchivePath, [string]$ChecksumPath)
-    if ((Get-Item -LiteralPath $ArchivePath).Length -ne [int64]$Release.Archive.size -or
+function Assert-ClientReleaseInstaller {
+    param($Release, [string]$InstallerPath, [string]$ChecksumPath)
+    if ((Get-Item -LiteralPath $InstallerPath).Length -ne [int64]$Release.Installer.size -or
         (Get-Item -LiteralPath $ChecksumPath).Length -gt 1024) {
         throw 'Downloaded release asset has an unexpected size.'
     }
     $checksumText = (Get-Content -LiteralPath $ChecksumPath -Raw -Encoding ascii).Trim()
-    $checksumMatch = [regex]::Match($checksumText, '^([0-9a-fA-F]{64})[ \t]+(EaW-Hub-Client-[0-9]+\.[0-9]+\.[0-9]+F[0-9]+\.zip)$')
-    if (-not $checksumMatch.Success -or $checksumMatch.Groups[2].Value -cne $Release.ArchiveName) {
-        throw 'Release checksum file does not describe the selected client archive.'
+    $checksumMatch = [regex]::Match($checksumText,
+        '^([0-9a-fA-F]{64})[ \t]+(EaW-Localisation-Hub-Setup-([0-9]+\.[0-9]+\.[0-9]+F[0-9]+)\.exe)$')
+    if (-not $checksumMatch.Success -or $checksumMatch.Groups[2].Value -cne $Release.InstallerName -or
+        $checksumMatch.Groups[3].Value -cne $Release.Version) {
+        throw 'Release checksum file does not describe the selected installer.'
     }
-    $actualHash = Get-EawFileSha256 -LiteralPath $ArchivePath
-    if ($actualHash -ine $checksumMatch.Groups[1].Value) { throw 'Client archive SHA-256 mismatch.' }
-    if ($Release.Archive.digest -and [string]$Release.Archive.digest -ine "sha256:$actualHash") {
-        throw 'Client archive disagrees with the GitHub asset digest.'
+    $actualHash = Get-EawFileSha256 -LiteralPath $InstallerPath
+    if ($actualHash -ine $checksumMatch.Groups[1].Value) { throw 'Installer SHA-256 mismatch.' }
+    if ($Release.Installer.digest -and [string]$Release.Installer.digest -ine "sha256:$actualHash") {
+        throw 'Installer disagrees with the GitHub asset digest.'
     }
 }
 
-function Assert-ClientPackage {
-    param([string]$PackageRoot, [string]$Version)
-    $packageVersion = (Get-Content -LiteralPath (Join-Path $PackageRoot 'VERSION') -Raw -Encoding utf8).Trim()
-    if ($packageVersion -cne $Version) { throw 'Client package version does not match the GitHub release tag.' }
-    foreach ($required in @('node.exe', 'scripts\install-client.ps1', 'scripts\start-agent-ui.ps1', 'scripts\update-client.ps1', 'scripts\hash-utils.ps1', 'review\EaWReview.exe')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $PackageRoot $required) -PathType Leaf)) {
-            throw "Client archive is missing $required"
-        }
+function Invoke-ClientInstaller {
+    param([string]$InstallerPath, [string]$InstallRoot)
+    if ($InstallRoot.Contains('"') -or $InstallRoot.Contains("`r") -or $InstallRoot.Contains("`n")) {
+        throw 'Installation path contains unsupported characters.'
     }
+    $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/SP-', '/NORESTART',
+        '/RESTARTEXITCODE=3010', '/CLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS',
+        ('/DIR="' + $InstallRoot + '"'))
+    $process = Start-Process -FilePath $InstallerPath -ArgumentList $arguments -Verb RunAs -Wait -PassThru
+    if ($process.ExitCode -ne 0) { throw "Installer finished with exit code $($process.ExitCode)." }
 }
 
 try {
@@ -210,25 +175,14 @@ try {
     New-Item -ItemType Directory -Path $updatesRoot -Force | Out-Null
     $workRoot = Join-Path $updatesRoot ([Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $workRoot -Force | Out-Null
-    $archivePath = Join-Path $workRoot $release.ArchiveName
-    $checksumPath = "$archivePath.sha256"
-    Write-UpdateStatus -Stage 'downloading' -Message "Скачивается клиент $($release.Version) с GitHub Releases…" -Version $release.Version
-    Invoke-WebRequest -Uri $release.Archive.browser_download_url -UseBasicParsing -TimeoutSec 600 -OutFile $archivePath
+    $installerPath = Join-Path $workRoot $release.InstallerName
+    $checksumPath = "$installerPath.sha256"
+    Write-UpdateStatus -Stage 'downloading' -Message "Скачивается установщик $($release.Version) с GitHub Releases…" -Version $release.Version
+    Invoke-WebRequest -Uri $release.Installer.browser_download_url -UseBasicParsing -TimeoutSec 600 -OutFile $installerPath
     Invoke-WebRequest -Uri $release.Checksum.browser_download_url -UseBasicParsing -TimeoutSec 30 -OutFile $checksumPath
-    Assert-ClientReleaseArchive -Release $release -ArchivePath $archivePath -ChecksumPath $checksumPath
-
-    $packageRoot = Join-Path $workRoot 'package'
-    Expand-CheckedClientArchive -ArchivePath $archivePath -Destination $packageRoot
-    Assert-ClientPackage -PackageRoot $packageRoot -Version $release.Version
+    Assert-ClientReleaseInstaller -Release $release -InstallerPath $installerPath -ChecksumPath $checksumPath
     if (-not (Get-OwnerProcess)) { return }
-    Write-UpdateStatus -Stage 'installing' -Message "Устанавливается клиент $($release.Version)…" -Version $release.Version
-    & (Join-Path $packageRoot 'scripts\install-client.ps1') -DoNotLaunch | Out-Null
-    $newRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "Programs\EaW Localisation Hub\Client-$($release.Version)"
-    if (-not (Test-Path -LiteralPath (Join-Path $newRoot 'installation.json') -PathType Leaf)) {
-        throw 'The new client installation did not complete.'
-    }
-    Move-AutostartToNewClient -NewRoot $newRoot
-    Write-UpdateStatus -Stage 'switching' -Message "Обновление $($release.Version) установлено; перезапуск клиента…" -Version $release.Version
+    Write-UpdateStatus -Stage 'installing' -Message "Устанавливается клиент $($release.Version); Windows может запросить права администратора…" -Version $release.Version
     $oldReviewPath = Join-Path $projectRoot 'review\EaWReview.exe'
     $reviewWasOpen = $false
     foreach ($candidate in @(Get-Process -Name 'EaWReview' -ErrorAction SilentlyContinue)) {
@@ -239,13 +193,21 @@ try {
         } catch {}
     }
     Stop-CurrentClient
+    $clientStopped = $true
+    Invoke-ClientInstaller -InstallerPath $installerPath -InstallRoot $projectRoot
+    $installedAfter = Get-EawHubClientStatusMetadata -ProjectRoot $projectRoot
+    if ($installedAfter.Version -cne $release.Version) {
+        throw "Installer did not update the client at $projectRoot."
+    }
+    Write-UpdateStatus -Stage 'switching' -Message "Обновление $($release.Version) установлено; перезапуск клиента…" -Version $release.Version
     $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
-        (Join-Path $newRoot 'scripts\start-agent-ui.ps1') + '" -StartMinimized'
+        (Join-Path $projectRoot 'scripts\start-agent-ui.ps1') + '" -StartMinimized'
     Start-Process -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
-        -ArgumentList $arguments -WorkingDirectory $newRoot -WindowStyle Hidden
+        -ArgumentList $arguments -WorkingDirectory $projectRoot -WindowStyle Hidden
+    $clientStopped = $false
     if ($reviewWasOpen) {
         $sessionPath = Join-Path $stateRoot 'review-session.json'
-        $newNodePath = Join-Path $newRoot 'node.exe'
+        $newNodePath = Join-Path $projectRoot 'node.exe'
         $reviewReady = $false
         for ($attempt = 0; $attempt -lt 60; $attempt++) {
             Start-Sleep -Milliseconds 500
@@ -260,9 +222,9 @@ try {
         }
         if ($reviewReady) {
             $reviewArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
-                (Join-Path $newRoot 'scripts\start-hub.ps1') + '"'
+                (Join-Path $projectRoot 'scripts\start-hub.ps1') + '"'
             Start-Process -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
-                -ArgumentList $reviewArguments -WorkingDirectory $newRoot -WindowStyle Hidden
+                -ArgumentList $reviewArguments -WorkingDirectory $projectRoot -WindowStyle Hidden
         } else {
             Write-UpdateStatus -Stage 'complete' -Message "Клиент обновлён до $($release.Version), но Review не удалось открыть автоматически." -Version $release.Version
             return
@@ -271,6 +233,14 @@ try {
     Write-UpdateStatus -Stage 'complete' -Message "Клиент обновлён до $($release.Version)." -Version $release.Version
 } catch {
     Write-UpdateStatus -Stage 'error' -Message "Автообновление не удалось: $($_.Exception.Message)"
+    if ($clientStopped -and (Test-Path -LiteralPath (Join-Path $projectRoot 'scripts\start-agent-ui.ps1') -PathType Leaf)) {
+        try {
+            $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+                (Join-Path $projectRoot 'scripts\start-agent-ui.ps1') + '" -StartMinimized'
+            Start-Process -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
+                -ArgumentList $arguments -WorkingDirectory $projectRoot -WindowStyle Hidden
+        } catch {}
+    }
 } finally {
     if ($workRoot) {
         $resolvedUpdates = [System.IO.Path]::GetFullPath($updatesRoot).TrimEnd('\') + '\'

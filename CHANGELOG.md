@@ -10,6 +10,7 @@ All notable public changes to EaW Localisation Hub are recorded here. Version na
 - Review's file picker keeps search results at a consistent row height even when only a few files match.
 - Manual server backups use the dedicated backup token, refresh expired credentials, and show the underlying failure instead of only a process exit code.
 - The updater's PowerShell source is UTF-8 with BOM, so Russian error/status text remains readable in the Agent window and Windows notifications; packaging checks enforce this encoding.
+- Automatic updates now download the published Windows installer and its SHA-256 file, run the installer over the current client with administrator approval, and restart Agent and Review. Live GitHub release selection is covered by a published-asset check.
 
 ## 0.8.8F4
 
