@@ -6,11 +6,9 @@ import process from 'node:process';
 import { Buffer } from 'node:buffer';
 import {
   DISPLAY_VERSION,
-  MAX_MESSAGE_BYTES,
   PROTOCOL_VERSION,
 } from '../../../packages/shared/src/constants.mts';
 import { normaliseTrackedPath, withoutUtf8Bom } from '../../../packages/shared/src/text.mts';
-import { validatePluginMessage } from '../../../packages/shared/src/protocol-schema.mts';
 import { DocumentBinding } from './document-binding.mjs';
 import * as ticketContext from './git-ticket-context.mts';
 import { TicketWorkflow } from './ticket-workflow.mjs';
@@ -20,20 +18,6 @@ import { serverHttpUrl } from './server-http-url.mts';
 import { transitionWorkspace } from './workspace-transition.mjs';
 import { runGitAsync, runGitSync } from './git-executable.mts';
 import { DiffCache } from './diff-cache.mjs';
-
-function sendLine(socket, message) {
-  if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
-}
-
-function ipcProof(secret, role, nonce) {
-  return crypto.createHmac('sha256', secret).update(`${role}:${nonce}`, 'utf8').digest('hex');
-}
-
-function validIpcProof(actual, expected) {
-  const actualBytes = Buffer.from(String(actual ?? ''), 'hex');
-  const expectedBytes = Buffer.from(expected, 'hex');
-  return actualBytes.length === expectedBytes.length && crypto.timingSafeEqual(actualBytes, expectedBytes);
-}
 
 function gitPath(repository, relative) {
   const result = runGitSync(['rev-parse', '--git-path', relative], {
@@ -63,72 +47,6 @@ function removeLegacyCommitGuard(repository) {
     console.log('[agent] removed obsolete mixed-author commit guard');
   } catch {
     console.warn('[agent] could not remove obsolete mixed-author commit guard');
-  }
-}
-
-class PluginClient {
-  constructor(socket, hub) {
-    this.socket = socket;
-    this.hub = hub;
-    this.clientId = `plugin-${process.pid}-${crypto.randomUUID()}`;
-    this.kind = 'plugin';
-    this.documents = new Map();
-    this.ignoredDocuments = new Set();
-    this.activeDocumentPath = null;
-    this.buffer = '';
-    this.closed = false;
-    this.authenticated = false;
-    this.challenge = crypto.randomBytes(32).toString('hex');
-    this.handshakeTimer = setTimeout(() => this.socket.destroy(), 5000);
-    this.handshakeTimer.unref();
-    this.bindSocket();
-  }
-
-  bindSocket() {
-    this.socket.setEncoding('utf8');
-    this.socket.on('data', (chunk) => {
-      this.buffer += chunk;
-      if (Buffer.byteLength(this.buffer, 'utf8') > MAX_MESSAGE_BYTES) {
-        this.fail(new Error('IPC message buffer exceeded the prototype limit'));
-        return;
-      }
-      while (true) {
-        const newline = this.buffer.indexOf('\n');
-        if (newline < 0) break;
-        const line = this.buffer.slice(0, newline);
-        this.buffer = this.buffer.slice(newline + 1);
-        if (!line.trim()) continue;
-        try {
-          this.hub.receivePluginMessage(this, validatePluginMessage(JSON.parse(line)));
-        } catch (error) {
-          this.fail(error);
-        }
-      }
-    });
-    this.socket.on('error', () => console.error('[agent] plugin socket error'));
-    this.socket.on('close', () => this.close());
-    this.send({
-      type: 'ipcChallenge',
-      protocol: PROTOCOL_VERSION,
-      nonce: this.challenge,
-      agentProof: ipcProof(this.hub.options.ipcSecret, 'agent', this.challenge),
-    });
-  }
-
-  send(message) {
-    sendLine(this.socket, message);
-  }
-
-  fail(error) {
-    console.error('[agent] plugin message failed');
-    this.send({ type: 'error', message: error.message });
-  }
-
-  close() {
-    if (this.closed) return;
-    this.closed = true;
-    clearTimeout(this.handshakeTimer);
-    this.hub.detachClient(this);
   }
 }
 
@@ -268,6 +186,44 @@ export class AgentHub {
   personalModePath(relativePath) {
     return this.baseSnapshotPath(relativePath)
       .replace(`${path.sep}merge-bases${path.sep}`, `${path.sep}personal-modes${path.sep}`);
+  }
+
+  personalSelectionPath(relativePath) {
+    return this.baseSnapshotPath(relativePath)
+      .replace(`${path.sep}merge-bases${path.sep}`, `${path.sep}personal-selections${path.sep}`);
+  }
+
+  loadPersonalSelection(relativePath) {
+    try {
+      const value = JSON.parse(fs.readFileSync(this.personalSelectionPath(relativePath), 'utf8'));
+      if (value.schema !== 1 || value.relativePath !== relativePath
+        || typeof value.gitHash !== 'string' || typeof value.textBase64 !== 'string') return null;
+      return { gitHash: value.gitHash, text: Buffer.from(value.textBase64, 'base64').toString('utf8') };
+    } catch (error) {
+      if (error.code !== 'ENOENT') console.warn('[agent] invalid personal selection ignored');
+      return null;
+    }
+  }
+
+  savePersonalSelection(relativePath, gitText, text) {
+    const target = this.personalSelectionPath(relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const temporary = `${target}.${crypto.randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, `${JSON.stringify({
+        schema: 1, relativePath,
+        gitHash: crypto.createHash('sha256').update(gitText).digest('hex'),
+        textBase64: Buffer.from(text, 'utf8').toString('base64'),
+      })}\n`, { flag: 'wx', mode: 0o600 });
+      fs.renameSync(temporary, target);
+    } finally {
+      try { fs.unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+  }
+
+  clearPersonalSelection(relativePath) {
+    try { fs.unlinkSync(this.personalSelectionPath(relativePath)); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
 
   pendingDocumentUpdatePath(documentId) {
@@ -529,28 +485,7 @@ export class AgentHub {
       });
   }
 
-  receivePluginMessage(client, message) {
-    if (!client.authenticated) {
-      if (message.type !== 'hello'
-        || Number(message.protocol) !== PROTOCOL_VERSION
-        || !validIpcProof(
-          message.proof,
-          ipcProof(this.options.ipcSecret, 'plugin', client.challenge),
-        )) {
-        client.socket.destroy();
-        return;
-      }
-      client.authenticated = true;
-      clearTimeout(client.handshakeTimer);
-      if (message.clientId) {
-        this.clientsById.delete(client.clientId);
-        client.clientId = String(message.clientId).slice(0, 128);
-        this.clientsById.set(client.clientId, client);
-      }
-      this.sendAgentHello(client);
-      return;
-    }
-    if (message.type === 'hello') return;
+  receiveClientMessage(client, message) {
     if (message.type === 'recoveryIssue') {
       this.issueRecoveryCode(client).catch(() => client.send({
         type: 'error', message: 'Не удалось выпустить код восстановления.',
@@ -571,7 +506,7 @@ export class AgentHub {
     }
     if (this.workspaceTransitioning) {
       this.workspaceTransitionPromise?.then(() => {
-        if (!client.closed) this.receivePluginMessage(client, message);
+        if (!client.closed) this.receiveClientMessage(client, message);
       });
       return;
     }
@@ -602,14 +537,6 @@ export class AgentHub {
     }
 
     const absolutePath = path.resolve(String(message.path ?? ''));
-    if (message.type === 'reviewOpen') {
-      normaliseTrackedPath(this.options.repo, absolutePath);
-      Promise.resolve(this.options.reviewOpen?.(absolutePath)).catch((error) => client.send({
-        type: 'error', code: 'review-open-failed',
-        message: `Не удалось открыть Review: ${error.message}`,
-      }));
-      return;
-    }
     const state = client.documents.get(absolutePath);
     if (!state && message.type === 'close') {
       client.workspaceUnavailableDocuments?.delete(absolutePath);
@@ -629,7 +556,7 @@ export class AgentHub {
       return;
     }
     if (!state && ['activate', 'deactivate', 'cursor', 'close', 'edit', 'snapshot'].includes(message.type)) return;
-    if (!state) throw new Error(`The plugin has not opened ${absolutePath}`);
+    if (!state) throw new Error(`Review has not opened ${absolutePath}`);
     // Activation belongs to the local connection, even when old CRDT cursor
     // anchors cannot be resolved in a fresh binding after the Agent restarts.
     if (message.type === 'activate') {
@@ -756,7 +683,7 @@ export class AgentHub {
       });
     }
     else if (message.type === 'externalConflictResolve') state.binding.resolveExternalConflict(client, absolutePath, message);
-    else throw new Error(`Unknown plugin message type: ${message.type}`);
+    else throw new Error(`Unknown Review message type: ${message.type}`);
   }
 
   historyCacheKey(binding, id) {
@@ -836,17 +763,6 @@ export class AgentHub {
     client.send({ type: 'notice', message: 'Несохранённый код аннулирован. Можно выпустить новый.' });
   }
 
-  attachSocket(socket) {
-    if (this.clients.size >= 4) {
-      socket.destroy();
-      return;
-    }
-    const client = new PluginClient(socket, this);
-    this.clients.add(client);
-    this.clientsById.set(client.clientId, client);
-    console.log('[agent] plugin connected');
-  }
-
   attachAuthenticatedClient(client) {
     if (this.clients.size >= 8 || !client?.authenticated) return false;
     this.clients.add(client);
@@ -870,7 +786,7 @@ export class AgentHub {
       this.documents.delete(binding.documentId);
       binding.close().catch(() => console.error('[agent] document close failed'));
     }
-    console.log('[agent] plugin disconnected');
+    console.log('[agent] local review client disconnected');
   }
 
   async close() {
@@ -879,7 +795,7 @@ export class AgentHub {
     clearInterval(this.gitCommitTimer);
     if (this.branchDebounce) clearTimeout(this.branchDebounce);
     this.branchWatcher?.close();
-    for (const client of this.clients) client.socket.destroy();
+    for (const client of this.clients) client.websocket?.close();
     await Promise.all([...this.documents.values()].map((binding) => binding.close()));
   }
 }

@@ -95,3 +95,14 @@ test('source parser replaces versionless entries and detects mixed-version dupli
   const changed = replaceLocalisationValues(source, new Map([['key', 'новое']]));
   assert.equal(changed.text, 'l_russian:\n key: "новое"\n duplicate:0 "first"\n duplicate: "second"\n');
 });
+
+test('low-level replacement refuses an ambiguous key before changing either occurrence', () => {
+  const source = 'l_russian:\n repeated:0 "first"\n repeated: "second"\n safe:0 "old"\n';
+  assert.deepEqual(localisationEntries(source).filter(({ key }) => key === 'repeated')
+    .map(({ line }) => line), [2, 3]);
+  assert.throws(() => replaceLocalisationValues(source, new Map([
+    ['repeated', 'new'], ['safe', 'updated'],
+  ])), /встречается в файле несколько раз/u);
+  assert.equal(replaceLocalisationValues(source, new Map([['safe', 'updated']])).text,
+    source.replace('safe:0 "old"', 'safe:0 "updated"'));
+});

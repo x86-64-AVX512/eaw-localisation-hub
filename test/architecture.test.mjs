@@ -22,7 +22,6 @@ test('entrypoints stay coordinators instead of absorbing extracted subsystems', 
     ['apps/review/src/app.ts', 300],
     ['apps/review/src/collaboration-panel.ts', 220],
     ['apps/review/src/review-cards.ts', 190],
-    ['plugin/src/EawLocalisationHub.cpp', 2200],
   ]);
   for (const [relativePath, maximumLines] of budgets) {
     assert.ok(
@@ -100,10 +99,6 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/review/src/git-history-panel.ts',
     'apps/review/src/document-variants.ts',
     'apps/review/src/remote-document.ts',
-    'plugin/src/CollaborationOverlays.cpp',
-    'plugin/src/EditorInterop.cpp',
-    'plugin/src/IpcSecurity.cpp',
-    'plugin/src/ProtocolMessage.cpp',
   ];
   for (const relativePath of requiredModules) {
     assert.ok(fs.statSync(path.join(projectRoot, relativePath)).isFile(), `${relativePath} is missing`);
@@ -127,7 +122,7 @@ test('local prototype exercises the production canonical Git path', () => {
   assert.match(launcher, /Invoke-GitLabAction 'SyncB'/u);
 });
 
-test('Review owns the complete collaboration UI while the Notepad++ plugin is a Review bridge', () => {
+test('Review owns the complete collaboration UI without a native editor plugin', () => {
   const reviewSources = [
     'apps/review/src/app.ts',
     'apps/review/src/collaboration-panel.ts',
@@ -145,8 +140,6 @@ test('Review owns the complete collaboration UI while the Notepad++ plugin is a 
   ]) {
     assert.match(reviewSources, new RegExp(`['\"]${command}['\"]`, 'u'), `${command} is absent from Review`);
   }
-  assert.match(source('README.md'), /плагине Notepad\+\+ оставлена только команда/u);
-  assert.doesNotMatch(source('plugin/src/EawLocalisationHub.cpp'), /Legacy-панель совместной работы/u);
   assert.match(source('apps/review/src/presence-controller.ts'), /setInterval\(publish, HEARTBEAT_MILLISECONDS\)/u);
   assert.match(source('apps/review/src/app.ts'), /encodeBase64, utf16ToByte/u,
     'Review selection commands must import their UTF-8 offset converter');
@@ -157,129 +150,15 @@ test('Review owns the complete collaboration UI while the Notepad++ plugin is a 
     'Review caret must be anchored at the exact Monaco column');
 });
 
-test('dormant native suggestion display uses a product-neutral name', () => {
-  const plugin = source('plugin/src/EawLocalisationHub.cpp');
-  assert.match(plugin, /Карточки у текста/u);
-  assert.doesNotMatch(plugin, /Как в Google Docs/u);
+test('standalone Review has no Notepad++ bridge or plugin build', () => {
+  for (const directory of ['plugin/src', 'plugin/resource']) {
+    const absolute = path.join(projectRoot, directory);
+    assert.ok(!fs.existsSync(absolute) || fs.readdirSync(absolute).length === 0);
+  }
+  assert.doesNotMatch(source('apps/agent/src/main.mjs'), /namedPipePath|createServer\(\(socket\)/u);
+  assert.doesNotMatch(source('package.json'), /build:plugin|test:plugin/u);
+  assert.doesNotMatch(source('installer/EaWLocalisationHub.iss'), /notepad\+\+|EawLocalisationHub\.dll/iu);
 });
-
-test('Notepad++ Review bridge backs off while the Desktop Agent pipe is absent', () => {
-  const plugin = source('plugin/src/EawLocalisationHub.cpp');
-  const connectionLoop = plugin.slice(
-    plugin.indexOf('if (!WaitNamedPipeW'),
-    plugin.indexOf('EnterCriticalSection(&g_pipeLock)', plugin.indexOf('if (!WaitNamedPipeW')),
-  );
-  assert.match(connectionLoop, /WaitForSingleObject\(g_stopEvent, 250\)/u,
-    'a missing named pipe must not cause an unbounded busy loop');
-  assert.match(connectionLoop, /pipe == INVALID_HANDLE_VALUE[\s\S]*WaitForSingleObject\(g_stopEvent, 100\)/u,
-    'a pipe-open race must also have a stop-aware retry delay');
-});
-
-test('Notepad++ plugin exposes only the Review bridge and cannot enable editor integration', () => {
-  const plugin = source('plugin/src/EawLocalisationHub.cpp');
-  const menu = plugin.slice(
-    plugin.indexOf('void ConfigureMenu()'),
-    plugin.indexOf('} // namespace', plugin.indexOf('void ConfigureMenu()')),
-  );
-  assert.match(plugin, /FuncItem g_functions\[1\]/u);
-  assert.match(menu, /Открыть текущий файл в Review/u);
-  assert.doesNotMatch(menu, /Legacy|интеграц|панел|брон|комментар|правк|отмен|повтор|статус/iu);
-  assert.doesNotMatch(plugin, /LegacyIntegrationSettings|SetIntegrationEnabled|ToggleIntegration/u,
-    'no setting or hidden activation function may restore editor integration');
-  assert.match(plugin, /if \(type != "agentHello"\) return;/u,
-    'the bridge must ignore every authenticated IPC message except Agent readiness');
-  const notified = plugin.slice(plugin.indexOf('extern "C" __declspec(dllexport) void beNotified'));
-  assert.doesNotMatch(notified, /SCN_MODIFIED|SCN_UPDATEUI|NPPN_BUFFERACTIVATED|NPPN_FILEOPENED/u,
-    'Notepad++ editor notifications must not reach the collaboration implementation');
-  const reviewOpenStart = plugin.lastIndexOf('void OpenReviewApplication()');
-  const reviewOpen = plugin.slice(reviewOpenStart, plugin.indexOf('void ShowConnectionStatus()', reviewOpenStart));
-  assert.match(reviewOpen, /g_pendingReviewPath = pathUtf8; StartReviewBridgeTransport\(\)/u,
-    'opening Review must establish its dedicated bridge connection');
-  const transport = plugin.slice(
-    plugin.indexOf('void StartReviewBridgeTransport()'),
-    plugin.indexOf('void StopTransport()'),
-  );
-  assert.doesNotMatch(transport, /ScintillaSubclassProcedure|SetTimer|SetIndicatorStyle/u,
-    'the Review bridge must not install editor hooks, timers, or decorations');
-});
-
-test('Notepad++ Review bridge IPC protocol comes from the shared build constant', () => {
-  const build = source('scripts/build-plugin.mjs');
-  const plugin = source('plugin/src/EawLocalisationHub.cpp');
-  assert.match(build, /import \{ PROTOCOL_VERSION \} from '\.\.\/packages\/shared\/src\/constants\.mts'/u);
-  assert.match(build, /`-DEAW_HUB_PROTOCOL_VERSION=\$\{PROTOCOL_VERSION\}`/u);
-  assert.match(plugin, /constexpr std::int64_t kProtocolVersion = EAW_HUB_PROTOCOL_VERSION/u);
-  assert.match(plugin, /message\.Integer\("protocol", 0\) != kProtocolVersion/u);
-  assert.match(plugin, /std::to_string\(kProtocolVersion\)/u);
-  assert.doesNotMatch(plugin, /message\.Integer\("protocol", 0\) != \d+/u);
-});
-
-test('dormant native document code cannot publish before IPC is ready', () => {
-  const plugin = source('plugin/src/EawLocalisationHub.cpp');
-  const writer = plugin.slice(
-    plugin.indexOf('void WritePipeLine(const std::string& message, bool priority)'),
-    plugin.indexOf('void SetIndicatorStyle'),
-  );
-  assert.match(writer, /!priority[\s\S]*!g_ipcAuthenticated\.load\(\)[\s\S]*!g_lifecycle\.Connected\(\)/u);
-  assert.match(plugin, /type == "ipcChallenge"[\s\S]*g_outbound\.clear\(\)[\s\S]*g_ipcAuthenticated\.store\(true\)/u);
-  assert.match(plugin, /g_ipcAuthenticated\.store\(false\)[\s\S]*g_outbound\.clear\(\)[\s\S]*g_pipe = pipe/u);
-});
-
-test('dormant native document code validates the active document generation', () => {
-  const plugin = source('plugin/src/EawLocalisationHub.cpp');
-  const closeStart = plugin.lastIndexOf('void CloseDocument(UINT_PTR bufferId)');
-  const closeDocument = plugin.slice(
-    closeStart,
-    plugin.indexOf('void PollCurrentDocument()', closeStart),
-  );
-  const pollStart = plugin.lastIndexOf('void PollCurrentDocument()');
-  const pollDocument = plugin.slice(
-    pollStart,
-    plugin.indexOf('void ScheduleAutoSave', pollStart),
-  );
-  const sendEdit = plugin.slice(
-    plugin.indexOf('void SendEdit(const SCNotification* notification)'),
-    plugin.indexOf('void SendCursor(bool force)'),
-  );
-  assert.match(closeDocument, /g_lifecycle\.DocumentClosed\(\)/u,
-    'closing the current buffer must invalidate its ready state');
-  assert.match(closeDocument, /g_currentDocumentPath\.clear\(\)/u,
-    'reopening the same path must create a new document generation');
-  assert.match(pollDocument, /normalisedPath != g_currentDocumentPath[\s\S]*SendCurrentDocument\(\)/u,
-    'polling must register a switched buffer before considering snapshots');
-  assert.match(pollDocument, /!g_lifecycle\.Ready\(\)/u,
-    'polling must not publish snapshots before documentReady');
-  assert.match(sendEdit, /!g_lifecycle\.Ready\(\)/u,
-    'Scintilla notifications must not publish edits before documentReady');
-  assert.match(sendEdit, /normalisedPath != g_currentDocumentPath/u,
-    'late notifications from another buffer generation must be ignored');
-});
-
-test('Agent tolerates late document events after a plugin buffer closes', () => {
-  const hub = source('apps/agent/src/agent-hub.mjs');
-  assert.match(hub, /\['activate', 'deactivate', 'cursor', 'close', 'edit', 'snapshot'\]\.includes/u);
-  assert.doesNotMatch(source('apps/agent/src/document-binding.mjs'), /Document is not synchronised yet/u);
-});
-
-test('Agent opens Review without requiring the Notepad++ bridge to bind the document', () => {
-  const hub = source('apps/agent/src/agent-hub.mjs');
-  const directOpen = hub.slice(
-    hub.indexOf("if (message.type === 'reviewOpen')"),
-    hub.indexOf('const state = client.documents.get(absolutePath)'),
-  );
-  assert.match(directOpen, /normaliseTrackedPath\(this\.options\.repo, absolutePath\)/u,
-    'the direct command must retain repository containment checks');
-  assert.match(directOpen, /this\.options\.reviewOpen\?\.\(absolutePath\)/u);
-  assert.match(directOpen, /return;/u,
-    'reviewOpen must be handled before the document binding requirement');
-});
-
-test('Review-only Notepad++ plugin exposes no collaboration shortcuts', () => {
-  const plugin = source('plugin/src/EawLocalisationHub.cpp');
-  assert.doesNotMatch(plugin, /ShortcutKey g_/u);
-  assert.doesNotMatch(plugin, /_pShKey\s*=/u);
-});
-
 test('inline suggestion editing validates the canonical range before projecting text', () => {
   const editing = source('apps/review/src/editing-mode.ts');
   const app = source('apps/review/src/app.ts');
@@ -488,7 +367,7 @@ test('Agent never treats an unavailable Git result as a branch switch', () => {
   const hub = source('apps/agent/src/agent-hub.mjs');
   const current = hub.slice(hub.indexOf('currentGitWorkspace()'), hub.indexOf('currentGitCommit()'));
   const changeStart = hub.lastIndexOf('  checkWorkspaceChange(');
-  const change = hub.slice(changeStart, hub.indexOf('  receivePluginMessage(', changeStart));
+  const change = hub.slice(changeStart, hub.indexOf('  receiveClientMessage(', changeStart));
   assert.match(current, /return '';/u);
   assert.doesNotMatch(current, /unknown/u);
   assert.match(change, /if \(!workspace \|\| workspace === this\.options\.workspace\)/u);

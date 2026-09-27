@@ -10,8 +10,6 @@ function Get-LocalPrototypePaths {
         LogsDirectory = Join-Path $runtimeRoot 'logs'
         ServerDataDirectory = Join-Path $runtimeRoot 'server-data'
         ProtectedServerDataDirectory = Join-Path $runtimeRoot 'protected-server-data'
-        PortableA = Join-Path $runtimeRoot 'notepad-a'
-        PortableB = Join-Path $runtimeRoot 'notepad-b'
         WorkspaceA = Join-Path $runtimeRoot 'workspace-a'
         WorkspaceB = Join-Path $runtimeRoot 'workspace-b'
         AgentStateA = Join-Path $runtimeRoot 'agent-state-a'
@@ -19,7 +17,7 @@ function Get-LocalPrototypePaths {
         GitOriginDirectory = Join-Path $runtimeRoot 'git-origin.git'
         GitPublisherDirectory = Join-Path $runtimeRoot 'git-publisher'
         FixtureDirectory = Join-Path $script:LocalPrototypeProjectRoot 'test\fixtures\repo'
-        PluginBuildDirectory = Join-Path $script:LocalPrototypeProjectRoot 'dist\EawLocalisationHub'
+        ReviewHost = Join-Path $script:LocalPrototypeProjectRoot 'dist\EawReview\EaWReview.exe'
     }
 }
 

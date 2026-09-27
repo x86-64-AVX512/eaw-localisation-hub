@@ -1,14 +1,12 @@
-import { Buffer } from 'node:buffer';
 import { WebSocket } from 'ws';
 import * as Y from 'yjs';
 import { LocalPresenceMux } from './local-presence.mts';
 import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION } from '../../../packages/shared/src/constants.mts';
-import {
-  utf8ByteOffsetToUtf16Index,
-} from '../../../packages/shared/src/text.mts';
 import { validateServerMessage } from '../../../packages/shared/src/protocol-schema.mts';
 import * as actions from './document-actions.mjs';
 import * as disk from './disk-reconciliation.mjs';
+import * as diskRequests from './disk-merge-request.mjs';
+import * as documentCursor from './document-cursor.mjs';
 import * as view from './document-view.mjs';
 import * as gitState from './git-document-state.mjs';
 import * as delivery from './document-delivery.mts';
@@ -16,9 +14,6 @@ import * as personalDocument from './personal-document.mjs';
 import { broadcastReviewUpdate, applyReviewUpdate } from './review-document.mjs';
 import { handleMergedBranchClose, handleUnavailableTicketClose } from './document-lifecycle.mts';
 const REMOTE_ORIGIN = Symbol('remote-server-update');
-function encodeRelativePosition(position) {
-  return Buffer.from(Y.encodeRelativePosition(position)).toString('base64');
-}
 export class DocumentBinding {
   constructor(hub, documentId, relativePath, ticketId = '') {
     this.hub = hub;
@@ -54,12 +49,14 @@ export class DocumentBinding {
     this.personalRefreshStartedAt = null;
     this.personalRefreshPending = false;
     this.variantRequests = new Map();
-    this.personalText = ''; this.personalRevision = '';
+    this.diskMergeRequests = new Map();
+    this.personalText = ''; this.serverPersonalText = ''; this.personalRevision = ''; this.personalSelectionStale = false; this.personalSelectionSnapshot = this.ticketId ? null : this.hub.loadPersonalSelection(this.relativePath);
     this.personalReady = Boolean(this.ticketId);
     this.personalContributors = [];
     this.personalConflicts = [];
-    this.personalSelectionRevision = ''; this.personalSelectionGit = ''; this.personalSelectionShared = '';
+    this.personalSelectionRevision = ''; this.personalSelectionGit = ''; this.personalSelectionShared = ''; this.personalSelectionLocal = '';
     this.personalMaterialisationMode = this.ticketId ? 'mine' : this.hub.loadPersonalMode(this.relativePath);
+    this.materialisationWrite = Promise.resolve();
     delivery.restorePendingDocument(this);
     this.document.on('update', (update, origin) => {
       broadcastReviewUpdate(this, update, origin);
@@ -97,6 +94,7 @@ export class DocumentBinding {
       }
     });
     this.socket.on('close', (code, reason) => {
+      diskRequests.rejectDiskMergeRequests(this);
       delivery.handleSocketClose(this);
       this.synced = false;
       personalDocument.resetPersonalRequest(this);
@@ -132,6 +130,10 @@ export class DocumentBinding {
   }
 
   receiveServerMessage(message) {
+    if (message.type === 'disk-merge-result') {
+      diskRequests.receiveDiskMergeResult(this, message);
+      return;
+    }
     if (message.type === 'tickets-changed') {
       for (const client of this.clients) {
         if (client.kind === 'review') client.send({ type: 'ticketCatalogChanged', revision: message.revision });
@@ -141,9 +143,15 @@ export class DocumentBinding {
     if (delivery.handleFlushAcknowledgement(this, message)) return;
     if (message.type === 'synced') {
       if (message.protocol !== PROTOCOL_VERSION) {
-        throw new Error(`Protocol mismatch: server=${message.protocol}, agent=${PROTOCOL_VERSION}`);
+        this.paused = true;
+        this.gitWritable = false;
+        for (const client of this.clients) client.send({ type: 'notice',
+          message: `Несовместимый протокол: сервер ${message.protocol}, Agent ${PROTOCOL_VERSION}. Обновите клиент и сервер.` });
+        this.socket?.close(1002, 'Protocol version mismatch');
+        return;
       }
       gitState.applySyncedMessage(this, message);
+      disk.retryPendingDiskMerges(this);
       return;
     }
     if (message.type === 'git-status') {
@@ -346,6 +354,15 @@ export class DocumentBinding {
     return disk.checkDiskChange(this, client, absolutePath, state);
   }
 
+  queueExternalMerge(client, absolutePath, state, base, external, notice) {
+    return disk.queueExternalMerge(this, client, absolutePath, state, base, external, notice);
+  }
+
+  requestDiskMergeCheck(baseText, externalText, personalText, resolutions = new Map(), initialUnknown = false) {
+    return diskRequests.requestDiskMergeCheck(this, baseText, externalText, personalText,
+      resolutions, initialUnknown);
+  }
+
   persistBaseSnapshot(state, text) {
     return disk.persistBaseSnapshot(this, state, text);
   }
@@ -354,8 +371,8 @@ export class DocumentBinding {
     return disk.reconcileInitialDisk(this, client, absolutePath, state);
   }
 
-  emitExternalConflicts(client, absolutePath, state, knownConflicts = null) {
-    return disk.emitExternalConflicts(this, client, absolutePath, state, knownConflicts);
+  emitExternalConflicts(client, absolutePath, state) {
+    return disk.emitExternalConflicts(this, client, absolutePath, state);
   }
 
   applyMergedText(nextText) {
@@ -431,32 +448,7 @@ export class DocumentBinding {
   setPersonalSelection(absolutePath, changeId, include, revision) { return personalDocument.setPersonalSelection(this, absolutePath, changeId, include, revision); }
 
   cursor(client, absolutePath, message) {
-    const state = this.requireState(client, absolutePath);
-    const pendingCursor = {
-      positionByte: Number(message.positionByte),
-      anchorByte: Number(message.anchorByte ?? message.positionByte),
-    };
-    let caret;
-    let anchor;
-    try {
-      caret = utf8ByteOffsetToUtf16Index(state.mirror, pendingCursor.positionByte);
-      anchor = pendingCursor.anchorByte === pendingCursor.positionByte ? caret : utf8ByteOffsetToUtf16Index(state.mirror, pendingCursor.anchorByte);
-    } catch (error) {
-      if (error instanceof RangeError) return false;
-      throw error;
-    }
-    state.pendingCursor = pendingCursor;
-    if (!state.initialised) return true;
-    const payload = {
-      type: 'presence',
-      clientId: this.hub.presenceClientId,
-      user: this.hub.options.user,
-      color: this.hub.options.color,
-      caretRelative: encodeRelativePosition(Y.createRelativePositionFromTypeIndex(this.text, caret)),
-      anchorRelative: encodeRelativePosition(Y.createRelativePositionFromTypeIndex(this.text, anchor)),
-    };
-    this.localPresences.update(client, payload);
-    return true;
+    return documentCursor.cursor(this, client, absolutePath, message);
   }
 
   createReservation(client, absolutePath, message) {
@@ -501,7 +493,7 @@ export class DocumentBinding {
 
   requireState(client, absolutePath) {
     const state = client.documents.get(absolutePath);
-    if (!state || state.binding !== this) throw new Error('Document is not attached to this plugin client');
+    if (!state || state.binding !== this) throw new Error('Document is not attached to this Review client');
     return state;
   }
 

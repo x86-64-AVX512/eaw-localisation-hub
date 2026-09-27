@@ -18,7 +18,7 @@ $checksumOutput = "$output.sha256"
 if (-not (Test-Path -LiteralPath $definition -PathType Leaf)) {
     throw "Inno Setup definition is missing: $definition"
 }
-if (-not (Test-Path -LiteralPath (Join-Path $payloadDirectory 'plugin\EawLocalisationHub.dll') -PathType Leaf)) {
+if (-not (Test-Path -LiteralPath (Join-Path $payloadDirectory 'review\EaWReview.exe') -PathType Leaf)) {
     throw "Build the client package first; installer payload is missing: $payloadDirectory"
 }
 

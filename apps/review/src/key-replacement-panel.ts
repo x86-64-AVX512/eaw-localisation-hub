@@ -5,7 +5,7 @@ interface ReplacementPreview {
   errors: { line: number; message: string }[];
   duplicateKeys: string[];
   missingKeys: string[];
-  duplicateMatches: { key: string; matches: { file: string }[] }[];
+  duplicateMatches: { key: string; matches: { file: string; line: number }[] }[];
   changes: { key: string; file: string; oldText: string; newText: string }[];
   files: { path: string; hash: string }[];
 }
@@ -43,7 +43,7 @@ export function createKeyReplacementPanel({ token, state, showToast }: {
       ...payload.errors.map((item) => `Строка ${item.line}: ${item.message}`),
       ...(payload.duplicateKeys.length ? [`Повторяющиеся ключи во вводе: ${payload.duplicateKeys.join(', ')}`] : []),
       ...(payload.missingKeys.length ? [`Ключи не найдены: ${payload.missingKeys.join(', ')}`] : []),
-      ...payload.duplicateMatches.map((item) => `Ключ ${item.key} найден несколько раз: ${item.matches.map((match) => match.file).join(', ')}`),
+      ...payload.duplicateMatches.map((item) => `Замена ключа ${item.key} заблокирована: найдено несколько вхождений (${item.matches.map((match) => `${match.file}:${match.line}`).join(', ')}).`),
     ];
     for (const problem of problems) {
       const item = document.createElement('div'); item.className = 'key-result error'; item.textContent = problem;

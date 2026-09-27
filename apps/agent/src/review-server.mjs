@@ -15,7 +15,7 @@ import {
   withUtf8Bom,
   writeTrackedTextFile,
 } from '../../../packages/shared/src/text.mts';
-import { validatePluginMessage } from '../../../packages/shared/src/protocol-schema.mts';
+import { validateClientMessage } from '../../../packages/shared/src/protocol-schema.mts';
 import { handleTicketReviewApi } from './ticket-review-api.mjs';
 import { persistentReviewEndpoint } from './review-endpoint.mts';
 import { fileHistoryDiff, listFileHistory } from './git-file-history.mts';
@@ -130,6 +130,13 @@ function secureHeaders(response, contentType) {
   ].join('; '));
 }
 
+export function queueMaterialisation(binding, operation) {
+  const previous = Promise.resolve(binding.materialisationWrite).catch(() => {});
+  const current = previous.then(operation);
+  binding.materialisationWrite = current;
+  return current;
+}
+
 class ReviewClient {
   constructor(socket, hub) {
     this.websocket = socket;
@@ -153,9 +160,9 @@ class ReviewClient {
       return;
     }
     try {
-      const message = validatePluginMessage(JSON.parse(data.toString('utf8')));
+      const message = validateClientMessage(JSON.parse(data.toString('utf8')));
       if (message.type === 'open') this.reviewCrdt = message.crdt === 'yjs-v1';
-      this.hub.receivePluginMessage(this, message);
+      this.hub.receiveClientMessage(this, message);
       if (typeof message.path === 'string' && typeof message.type === 'string'
         && ['edit', 'snapshot', 'reviewUpdate', 'undo', 'redo', 'suggestionAccept', 'suggestionRevert', 'historyRestore', 'externalConflictResolve'].includes(message.type)) {
         this.scheduleMaterialisation(message.path);
@@ -178,57 +185,71 @@ class ReviewClient {
   scheduleMaterialisation(absolutePath) {
     if (!absolutePath) return;
     clearTimeout(this.materialisationTimers.get(absolutePath));
-    const timer = setTimeout(async () => {
+    const timer = setTimeout(() => {
       this.materialisationTimers.delete(absolutePath);
       const state = this.documents.get(path.resolve(absolutePath));
-      if (!state?.initialised || state.binding.gitWritable === false || state.pendingExternal
-        || state.binding.ticketId || this.hub.workspaceBlocked) return;
-      const materialisationMode = state.binding.personalMaterialisationMode;
-      const expectedGitBlob = state.binding.gitState?.localBlob;
-      const materialised = typeof state.binding.localFileText === 'function'
-        ? state.binding.localFileText() : state.binding.text.toString();
-      if (materialised === null || !state.binding.synced) return;
-      state.materialisationExpected = materialised;
-      state.materialisationDeadline = Date.now() + 5000;
-      state.materialisationMismatch = null;
-      let materialisationInvalidated = false;
-      let materialisationSucceeded = false;
-      try {
-        await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(materialised), {
-          expectedText: state.diskBase,
-          isCurrent: async () => {
-            const stillCurrent = () => !this.closed && state.binding.synced && state.binding.gitWritable !== false
+      if (!state) return;
+      // Several projection refreshes (or Review windows) can request the same
+      // file at once. Serialise writes so an older save cannot finish last.
+      const binding = state.binding;
+      void queueMaterialisation(binding, () => this.materialiseNow(absolutePath, state))
+        .catch(() => this.send({ type: 'error', message: 'Не удалось безопасно сохранить локальный файл.' }));
+    }, 500);
+    timer.unref();
+    this.materialisationTimers.set(absolutePath, timer);
+  }
+
+  async materialiseNow(absolutePath, state) {
+    if (this.closed || this.documents.get(path.resolve(absolutePath)) !== state
+      || !state.initialised || state.binding.gitWritable === false || state.pendingExternal
+      || state.binding.ticketId || this.hub.workspaceBlocked) return;
+    const materialisationMode = state.binding.personalMaterialisationMode;
+    const expectedGitBlob = state.binding.gitState?.localBlob;
+    const materialised = typeof state.binding.localFileText === 'function'
+      ? state.binding.localFileText() : state.binding.text.toString();
+    if (materialised === null || !state.binding.synced) return;
+    state.materialisationExpected = materialised;
+    state.materialisationDeadline = Date.now() + 5000;
+    state.materialisationMismatch = null;
+    let materialisationInvalidated = false;
+    let materialisationSucceeded = false;
+    try {
+      await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(materialised), {
+        expectedText: state.diskBase,
+        isCurrent: async () => {
+          const stillCurrent = () => !this.closed && state.binding.synced && state.binding.gitWritable !== false
             && !this.hub.workspaceBlocked && !state.pendingExternal && !this.hub.gitOperationInProgress?.()
             && state.binding.gitState?.localBlob === expectedGitBlob
             && state.binding.personalMaterialisationMode === materialisationMode
             && ((materialisationMode === 'git' && Boolean(expectedGitBlob))
               || (typeof state.binding.localFileText === 'function'
                 ? state.binding.localFileText() : state.binding.text.toString()) === materialised);
-            const gitMatches = stillCurrent() && (!expectedGitBlob || await currentGitFileBlobAsync(
-              this.hub.options.repo, state.binding.relativePath,
-            ) === expectedGitBlob);
-            const current = gitMatches && stillCurrent();
-            materialisationInvalidated = !current;
-            return current;
-          },
-        });
-        materialisationSucceeded = true;
-      } catch (error) {
-        if (error.code === 'EAW_EXTERNAL_CHANGE') {
-          state.materialisationExpected = null;
-          state.materialisationDeadline = 0;
-          state.binding.scheduleDiskCheck(this, absolutePath, state, 0);
-        } else this.send({ type: 'error', message: 'Не удалось безопасно сохранить локальный файл.' });
-      }
-      if (materialisationSucceeded && !materialisationInvalidated) {
-        confirmDiskMaterialisation(state.binding, absolutePath, state, materialised);
-      }
-      // State can advance while the temporary file is being flushed. A later
-      // projection may already be ready, so retry instead of losing the save.
-      if (materialisationInvalidated && !this.closed) this.scheduleMaterialisation(absolutePath);
-    }, 500);
-    timer.unref();
-    this.materialisationTimers.set(absolutePath, timer);
+          const gitMatches = stillCurrent() && (!expectedGitBlob || await currentGitFileBlobAsync(
+            this.hub.options.repo, state.binding.relativePath,
+          ) === expectedGitBlob);
+          const current = gitMatches && stillCurrent();
+          materialisationInvalidated = !current;
+          return current;
+        },
+      });
+      materialisationSucceeded = true;
+    } catch (error) {
+      if (error.code === 'EAW_EXTERNAL_CHANGE') {
+        state.materialisationExpected = null;
+        state.materialisationDeadline = 0;
+        state.binding.scheduleDiskCheck(this, absolutePath, state, 0);
+      } else this.send({ type: 'error', message: 'Не удалось безопасно сохранить локальный файл.' });
+    }
+    if (materialisationSucceeded && !materialisationInvalidated) {
+      confirmDiskMaterialisation(state.binding, absolutePath, state, materialised);
+    }
+    // State can advance while the temporary file is being flushed. A later
+    // projection may already be ready, so retry instead of losing the save.
+    const latest = typeof state.binding.localFileText === 'function'
+      ? state.binding.localFileText() : state.binding.text.toString();
+    if (!this.closed && (materialisationInvalidated || (latest !== null && latest !== materialised))) {
+      this.scheduleMaterialisation(absolutePath);
+    }
   }
 
   close() {

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import {
   computeSingleReplace,
@@ -8,7 +9,6 @@ import {
   withoutUtf8Bom,
   utf8ByteOffsetToUtf16Index,
 } from '../../../packages/shared/src/text.mts';
-import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mts';
 
 const MAXIMUM_CONFLICT_TEXT = 60 * 1024;
 function conflictText(value) {
@@ -28,25 +28,80 @@ function broadcastConflictReset(binding, absolutePath, source = 'disk') {
   }
 }
 
-function mergeDiskCopies(binding, baseText, externalText, resolutions = new Map()) {
-  const personalText = binding.localFileText();
-  return {
-    shared: mergeLocalisationThreeWay(
-      baseText, binding.text.toString(), externalText, resolutions,
-    ),
-    personal: personalText === null ? null : mergeLocalisationThreeWay(
-      baseText, personalText, externalText, resolutions,
-    ),
-  };
+function currentHash(binding) {
+  return crypto.createHash('sha256').update(binding.text.toString()).digest('hex');
 }
 
-function diskMergeConflicts(merges) {
-  const conflicts = new Map();
-  for (const conflict of merges.shared.conflicts) conflicts.set(conflict.key, conflict);
-  for (const conflict of merges.personal?.conflicts ?? []) {
-    if (!conflicts.has(conflict.key)) conflicts.set(conflict.key, conflict);
+function schedulePendingRetry(binding, client, absolutePath, state, pending, notice, delay) {
+  if (pending.retryTimer) return;
+  pending.retryTimer = setTimeout(() => {
+    pending.retryTimer = null;
+    if (state.pendingExternal === pending && binding.synced) {
+      void confirmDiskMerge(binding, client, absolutePath, state, pending, notice);
+    }
+  }, delay);
+  pending.retryTimer.unref?.();
+}
+
+async function confirmDiskMerge(binding, client, absolutePath, state, pending, notice) {
+  if (pending.checking) return;
+  pending.checking = true;
+  try {
+    const personalBefore = binding.localFileText();
+    if (personalBefore === null) throw new Error('Personal projection is unavailable');
+    const result = await binding.requestDiskMergeCheck(pending.base, pending.external,
+      personalBefore, pending.resolutions, pending.initialUnknown === true);
+    if (state.pendingExternal !== pending || state.binding !== binding
+      || client.documents.get(absolutePath) !== state) return;
+    if (result.error) throw new Error(result.error);
+    if (result.stale || result.sharedHash !== currentHash(binding)
+      || binding.localFileText() !== personalBefore) {
+      pending.conflicts = null;
+      binding.emitExternalConflicts(client, absolutePath, state);
+      client.send({ type: 'notice', path: absolutePath,
+        message: 'Совместный документ изменился во время проверки конфликта; проверка повторяется.' });
+      schedulePendingRetry(binding, client, absolutePath, state, pending, notice, 250);
+      return;
+    }
+    pending.conflicts = result.conflicts;
+    if (result.conflicts.length) {
+      binding.emitExternalConflicts(client, absolutePath, state);
+      client.send({ type: 'notice', path: absolutePath,
+        message: `Сервер подтвердил конфликтов: ${result.conflicts.length}.` });
+      return;
+    }
+    binding.finishExternalMerge(client, absolutePath, state, result.sharedText, result.personalText, notice);
+  } catch (error) {
+    if (state.pendingExternal === pending) {
+      pending.conflicts = null;
+      if (!pending.errorNotified) client.send({ type: 'notice', path: absolutePath,
+        message: 'Сервер не подтвердил состояние файла. Сохранение приостановлено до повторной проверки.' });
+      pending.errorNotified = true;
+      schedulePendingRetry(binding, client, absolutePath, state, pending, notice, 5000);
+    }
+  } finally {
+    pending.checking = false;
   }
-  return [...conflicts.values()];
+}
+
+export function retryPendingDiskMerges(binding) {
+  for (const client of binding.clients) {
+    for (const [absolutePath, state] of client.documents) {
+      const pending = state.pendingExternal;
+      if (state.binding === binding && pending && !pending.checking) {
+        if (pending.retryTimer) clearTimeout(pending.retryTimer);
+        pending.retryTimer = null;
+        void confirmDiskMerge(binding, client, absolutePath, state, pending,
+          'Файл согласован с совместным документом после повторной проверки.');
+      }
+    }
+  }
+}
+
+export function queueExternalMerge(binding, client, absolutePath, state, base, external, notice) {
+  const pending = { base, external, resolutions: new Map(), conflicts: null, checking: false };
+  state.pendingExternal = pending;
+  void confirmDiskMerge(binding, client, absolutePath, state, pending, notice);
 }
 
 export function startFileWatcher(binding, client, absolutePath, state) {
@@ -176,26 +231,11 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
   }
   if (personal === null) return;
 
-  const merges = mergeDiskCopies(binding, state.diskBase, externalText);
-  const conflicts = diskMergeConflicts(merges);
-  if (conflicts.length > 0) {
-    state.pendingExternal = {
-      base: state.diskBase,
-      external: externalText,
-      resolutions: new Map(),
-    };
-    binding.emitExternalConflicts(client, absolutePath, state, conflicts);
-    client.send({
-      type: 'notice',
-      message: `GitHub Desktop изменил файл: требуется разрешить конфликтов – ${conflicts.length}.`,
-    });
-    return;
-  }
-
-  binding.finishExternalMerge(
-    client, absolutePath, state, merges.shared.text, merges.personal.text,
-    'Изменения с диска объединены с совместным документом.',
-  );
+  const pending = { base: state.diskBase, external: externalText,
+    resolutions: new Map(), conflicts: null, checking: false };
+  state.pendingExternal = pending;
+  await confirmDiskMerge(binding, client, absolutePath, state, pending,
+    'Изменения с диска объединены с совместным документом.');
 }
 
 export function persistBaseSnapshot(binding, state, text) {
@@ -257,71 +297,36 @@ export function reconcileInitialDisk(binding, client, absolutePath, state) {
       resolutions: new Map(),
       initialUnknown: true,
     };
-    binding.emitExternalConflicts(client, absolutePath, state);
+    void confirmDiskMerge(binding, client, absolutePath, state, state.pendingExternal,
+      'Начальная база слияния создана; выбранная версия будет сохранена.');
     client.send({
       type: 'notice',
-      message: 'Нет сохранённой базы слияния: выберите текущую совместную версию или локальный файл Git.',
+      message: 'Нет сохранённой базы слияния: ожидается проверка начального состояния сервером.',
     });
     return;
   }
 
-  const merges = mergeDiskCopies(binding, state.diskBase, localText);
-  const conflicts = diskMergeConflicts(merges);
-  if (conflicts.length > 0) {
-    state.pendingExternal = {
-      base: state.diskBase,
-      external: localText,
-      resolutions: new Map(),
-    };
-    binding.emitExternalConflicts(client, absolutePath, state, conflicts);
-    client.send({
-      type: 'notice',
-      message: `После запуска найдены конфликты между Git и совместной сессией: ${conflicts.length}.`,
-    });
+  if (localText === personal) {
+    state.diskBase = personal;
+    binding.applyMergedText(canonical);
+    binding.persistBaseSnapshot(state, personal);
     return;
   }
 
-  if (localText === merges.personal.text) {
-    state.diskBase = merges.personal.text;
-    binding.applyMergedText(merges.shared.text);
-    binding.persistBaseSnapshot(state, merges.personal.text);
-    return;
-  }
-  binding.finishExternalMerge(
-    client,
-    absolutePath,
-    state,
-    merges.shared.text,
-    merges.personal.text,
-    'Локальный Git-файл согласован с совместной сессией после запуска.',
-  );
+  const pending = { base: state.diskBase, external: localText,
+    resolutions: new Map(), conflicts: null, checking: false };
+  state.pendingExternal = pending;
+  void confirmDiskMerge(binding, client, absolutePath, state, pending,
+    'Локальный Git-файл согласован с совместной сессией после запуска.');
 }
 
-export function emitExternalConflicts(binding, client, absolutePath, state, knownConflicts = null) {
+export function emitExternalConflicts(binding, client, absolutePath, state) {
   client.send({ type: 'externalConflictReset', path: absolutePath, source: 'disk' });
-  if (!state.pendingExternal) return;
-  if (state.pendingExternal.initialUnknown) {
-    client.send({
-      type: 'externalConflict',
-      path: absolutePath,
-      source: 'disk',
-      key: '__initial_state__',
-      label: 'Начальная версия файла',
-      detail: 'База слияния ещё не создана. Выберите совместную версию или локальный файл Git.',
-      baseLine: '', collaborativeLine: conflictText(binding.text.toString()),
-      externalLine: conflictText(state.pendingExternal.external),
-    });
-    return;
-  }
-  const conflicts = knownConflicts ?? diskMergeConflicts(mergeDiskCopies(
-    binding,
-    state.pendingExternal.base,
-    state.pendingExternal.external,
-    state.pendingExternal.resolutions,
-  ));
+  const conflicts = state.pendingExternal?.conflicts ?? [];
   for (const conflict of conflicts) {
     let detail = 'Один и тот же ключ изменён совместно и на диске.';
-    if (conflict.key === '__file_structure__') detail = 'Комментарии или структура файла изменены с обеих сторон.';
+    if (conflict.key === '__initial_state__') detail = 'База слияния ещё не создана. Выберите совместную версию или локальный файл Git.';
+    else if (conflict.key === '__file_structure__') detail = 'Комментарии или структура файла изменены с обеих сторон.';
     else if (conflict.key === '__duplicate_keys__') detail = `${conflict.label}. Выбор применяется ко всему файлу.`;
     else if (conflict.externalLine == null) detail = 'Git удаляет ключ, изменённый в совместной сессии.';
     else if (conflict.collaborativeLine == null) detail = 'Git и совместная сессия по-разному добавили ключ.';
@@ -370,6 +375,7 @@ export function finishExternalMerge(
   binding.personalText = personalText;
   binding.personalReady = true;
   binding.applyMergedText(sharedText);
+  binding.replacePersonalDocument?.(personalText);
   client.send({ type: 'saveRequested', path: absolutePath });
   client.send({ type: 'notice', message: notice });
 }
@@ -386,50 +392,14 @@ export function resolveExternalConflict(binding, client, absolutePath, message) 
   if (!key || !['collaborative', 'external'].includes(choice)) {
     throw new Error('Conflict resolution requires a key and a valid choice');
   }
-  if (state.pendingExternal.initialUnknown) {
-    if (key !== '__initial_state__') throw new Error('Unexpected initial-state conflict key');
-    const currentPersonal = binding.localFileText();
-    if (currentPersonal === null) {
-      client.send({ type: 'notice', message: 'Личная версия ещё обновляется. Повторите выбор после синхронизации.' });
-      return true;
-    }
-    const personalText = choice === 'external'
-      ? state.pendingExternal.external
-      : currentPersonal;
-    const sharedText = choice === 'external'
-      ? state.pendingExternal.external
-      : binding.text.toString();
-    binding.finishExternalMerge(
-      client,
-      absolutePath,
-      state,
-      sharedText,
-      personalText,
-      'Начальная база слияния создана; выбранная версия будет сохранена.',
-    );
+  const pending = state.pendingExternal;
+  if (!pending.conflicts?.some((conflict) => conflict.key === key)) {
+    client.send({ type: 'notice', message: 'Сервер ещё не подтвердил этот конфликт.' });
     return true;
   }
-  state.pendingExternal.resolutions.set(key, choice);
-  const merges = mergeDiskCopies(
-    binding, state.pendingExternal.base, state.pendingExternal.external,
-    state.pendingExternal.resolutions,
-  );
-  if (merges.personal === null) {
-    client.send({ type: 'notice', message: 'Личная версия ещё обновляется. Повторите выбор после синхронизации.' });
-    return true;
-  }
-  const conflicts = diskMergeConflicts(merges);
-  if (conflicts.length > 0) {
-    binding.emitExternalConflicts(client, absolutePath, state, conflicts);
-    return true;
-  }
-  binding.finishExternalMerge(
-    client,
-    absolutePath,
-    state,
-    merges.shared.text,
-    merges.personal.text,
-    'Конфликты разрешены; итоговый файл подготовлен к сохранению.',
-  );
+  pending.resolutions.set(key, choice);
+  pending.conflicts = null;
+  void confirmDiskMerge(binding, client, absolutePath, state, pending,
+    'Конфликты разрешены; итоговый файл подготовлен к сохранению.');
   return true;
 }

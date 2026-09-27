@@ -43,6 +43,28 @@ test('key replacement workflow blocks missing and duplicate repository keys', as
   }
 });
 
+test('mixed-version duplicates in one file block the whole batch without writing', async () => {
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-key-duplicate-file-'));
+  try {
+    const directory = path.join(repository, 'localisation', 'russian');
+    await fs.mkdir(directory, { recursive: true });
+    const file = path.join(directory, 'country.yml');
+    const original = 'l_russian:\n repeated:0 "first"\n repeated: "second"\n safe:0 "old"\n';
+    await fs.writeFile(file, original, 'utf8');
+    const workflow = new KeyReplacementWorkflow({ options: { repo: repository } });
+    const input = 'repeated:0 "new"\nsafe:0 "updated"';
+    const preview = await workflow.preview(input);
+    assert.deepEqual(preview.duplicateMatches.map(({ key, matches }) => ({
+      key, lines: matches.map(({ line }) => line),
+    })), [{ key: 'repeated', lines: [2, 3] }]);
+    assert.deepEqual(preview.changes.map(({ key }) => key), ['safe']);
+    await assert.rejects(workflow.apply(input, preview.files), /Предпросмотр содержит ошибки/u);
+    assert.equal(await fs.readFile(file, 'utf8'), original);
+  } finally {
+    await fs.rm(repository, { recursive: true, force: true });
+  }
+});
+
 test('key replacement workflow scopes changes to the selected localisation language', async () => {
   const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-key-language-'));
   try {

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createBackupBundle, restoreBackupBundle } from '../apps/server/src/backup.mjs';
+import { gunzipSync } from 'node:zlib';
+import { createBackupBundle, restoreBackupBundle, streamBackupBundle } from '../apps/server/src/backup.mjs';
 import { decryptBackup, encryptBackup, isEncryptedBackup } from '../packages/shared/src/backup-crypto.mts';
 
 async function atomicWrite(target, data) {
@@ -24,10 +25,17 @@ test('server backup round-trips through authenticated encryption', async () => {
     await fs.writeFile(path.join(source, 'room-index.json'), '{"schema":1,"documents":{}}\n');
     await fs.writeFile(path.join(source, 'documents', 'one.update'), Buffer.from([0, 1, 2, 255]));
     await fs.writeFile(path.join(source, 'documents', 'one.history.json'), '{"schema":1,"entries":[]}\n');
+    const largeDocument = Buffer.alloc(65537).map((_, index) => index % 251);
+    await fs.writeFile(path.join(source, 'documents', 'large.update'), largeDocument);
     await fs.writeFile(path.join(source, 'ignored-secret.txt'), 'not exported');
 
     const compressed = await createBackupBundle(source, '0.6.5F1');
-    const encrypted = await encryptBackup(compressed, 'correct horse battery staple');
+    const chunks = [];
+    for await (const chunk of await streamBackupBundle(source, '0.6.5F1')) chunks.push(chunk);
+    const streamed = Buffer.concat(chunks);
+    const bundledFiles = JSON.parse(gunzipSync(compressed)).files;
+    assert.deepEqual(JSON.parse(gunzipSync(streamed)).files, bundledFiles);
+    const encrypted = await encryptBackup(streamed, 'correct horse battery staple');
     assert.equal(isEncryptedBackup(encrypted), true);
     await assert.rejects(
       decryptBackup(encrypted, 'wrong password here'),
@@ -39,7 +47,7 @@ test('server backup round-trips through authenticated encryption', async () => {
       atomicWrite,
     );
     assert.equal(restored.version, '0.6.5F1');
-    assert.equal(restored.files, 7);
+    assert.equal(restored.files, 8);
     assert.equal(await fs.readFile(path.join(target, 'auth.json'), 'utf8'), '{"schema":1}\n');
     assert.equal(await fs.readFile(path.join(target, 'recovery-pepper.key'), 'utf8'), 'test-recovery-pepper\n');
     assert.equal(await fs.readFile(path.join(target, 'tickets.json'), 'utf8'), '{"schema":1,"tickets":[]}\n');
@@ -49,6 +57,7 @@ test('server backup round-trips through authenticated encryption', async () => {
       await fs.readFile(path.join(target, 'documents', 'one.update')),
       Buffer.from([0, 1, 2, 255]),
     );
+    assert.deepEqual(await fs.readFile(path.join(target, 'documents', 'large.update')), largeDocument);
     assert.equal(
       await fs.readFile(path.join(target, 'documents', 'one.history.json'), 'utf8'),
       '{"schema":1,"entries":[]}\n',

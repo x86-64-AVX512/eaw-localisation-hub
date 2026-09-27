@@ -42,11 +42,11 @@ export function attachDocumentSocket({
   const writableError = (isBinary: boolean, control: Record<string, unknown> | null): string => {
     const controlType = typeof control?.type === 'string' ? control.type : '';
     if (!ticketStore.documentWritable(documentId)
-      && (isBinary || !['presence', 'history-get', 'personal-projection-get', 'sync-flush'].includes(controlType))) {
+      && (isBinary || !['presence', 'history-get', 'personal-projection-get', 'disk-merge-check', 'sync-flush'].includes(controlType))) {
       return 'Ticket is read-only';
     }
     if (!room.clientWritable(socket)
-      && (isBinary || !['presence', 'history-get', 'personal-projection-get', 'git-conflict-resolve', 'sync-flush'].includes(controlType))) {
+      && (isBinary || !['presence', 'history-get', 'personal-projection-get', 'disk-merge-check', 'git-conflict-resolve', 'sync-flush'].includes(controlType))) {
       return 'The local Git version of this file is not canonical';
     }
     return '';

@@ -5,6 +5,7 @@ import { WebSocket } from 'ws';
 import * as Y from 'yjs';
 import { CrdtUpdateValidator, CrdtValidationError } from './crdt-validator.mjs';
 import { DocumentHistory } from './document-history.mjs';
+import { evaluateDiskMerge } from './disk-merge.mjs';
 import {
   ProtocolLimitError,
   byteLength,
@@ -41,6 +42,7 @@ import {
   DISPLAY_VERSION,
   MAX_CLIENTS_PER_ROOM,
   MAX_CRDT_UPDATE_BYTES,
+  MAX_MESSAGE_BYTES,
   MAX_PRESENCES_PER_CONNECTION,
   MAX_ROOM_STATE_BYTES,
   PRESENCE_SWEEP_MILLISECONDS,
@@ -643,6 +645,37 @@ export class DocumentRoom {
     if (this.destroyed || socket.readyState !== WebSocket.OPEN) return;
     if (!message || typeof message !== 'object' || Array.isArray(message)) {
       throw new ProtocolLimitError('Control message must be a JSON object');
+    }
+    if (message.type === 'disk-merge-check') {
+      const requestId = controlledString(message.requestId, 'Disk merge request id', 128, { required: true });
+      const expectedSharedHash = controlledString(message.sharedHash, 'Shared document hash', 64, { required: true });
+      if (!/^[0-9a-f]{64}$/u.test(expectedSharedHash)) throw new ProtocolLimitError('Invalid shared document hash');
+      const sharedText = this.document.getText('content').toString();
+      const sharedHash = crypto.createHash('sha256').update(sharedText).digest('hex');
+      if (sharedHash !== expectedSharedHash) {
+        sendWithBackpressure(socket, JSON.stringify({ type: 'disk-merge-result', requestId,
+          sharedHash, stale: true, conflicts: [] }));
+        return;
+      }
+      const baseText = controlledText(message.baseText, 'Disk merge base', MAX_ROOM_STATE_BYTES);
+      const externalText = controlledText(message.externalText, 'External file', MAX_ROOM_STATE_BYTES);
+      const personalText = controlledText(message.personalText, 'Personal file', MAX_ROOM_STATE_BYTES);
+      const resolutions = message.resolutions ?? {};
+      if (!resolutions || typeof resolutions !== 'object' || Array.isArray(resolutions)
+        || Object.keys(resolutions).length > 1000) throw new ProtocolLimitError('Invalid disk merge resolutions');
+      for (const [key, choice] of Object.entries(resolutions)) {
+        controlledString(key, 'Disk merge key', 4096, { required: true });
+        if (!['collaborative', 'external'].includes(choice)) throw new ProtocolLimitError('Invalid disk merge choice');
+      }
+      const result = evaluateDiskMerge({ baseText, externalText, personalText, sharedText,
+        initialUnknown: message.initialUnknown === true, resolutions });
+      const response = JSON.stringify({ type: 'disk-merge-result', requestId,
+        sharedHash, stale: false, ...result });
+      if (byteLength(response) > MAX_MESSAGE_BYTES) {
+        sendWithBackpressure(socket, JSON.stringify({ type: 'disk-merge-result', requestId,
+          sharedHash, stale: false, conflicts: [], error: 'Disk merge result exceeds protocol limit' }));
+      } else sendWithBackpressure(socket, response);
+      return;
     }
     if (message.type === 'git-conflict-resolve') {
       if (!this.gitConflict || !this.pendingGitSnapshot || !this.gitBase) return;

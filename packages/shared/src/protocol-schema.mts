@@ -12,8 +12,7 @@ const idField = text(256);
 const base64Field = text(12 * 1024 * 1024);
 const positionField = integer(0x7fffffff);
 
-const pluginSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Object.freeze({
-  hello: { clientId: idField, version: text(64), protocol: integer(1000), proof: text(128) },
+const clientSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Object.freeze({
   open: { path: pathField, textBase64: base64Field, ticketId: text(64, false), crdt: text(32, false) },
   activate: { path: pathField, positionByte: positionField, anchorByte: positionField },
   deactivate: { path: pathField },
@@ -24,7 +23,6 @@ const pluginSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Objec
   cursor: { path: pathField, positionByte: positionField, anchorByte: positionField },
   undo: { path: pathField },
   redo: { path: pathField },
-  reviewOpen: { path: pathField },
   reservationCreate: {
     path: pathField, startByte: positionField, endByte: positionField,
     assigneeId: text(256, false), assignee: text(256, false), assigneeColor: text(32, false),
@@ -85,15 +83,15 @@ function validateField(message: Record<string, unknown>, name: string, specifica
   }
 }
 
-export function validatePluginMessage(message: Record<string, unknown>): Record<string, unknown> {
+export function validateClientMessage(message: Record<string, unknown>): Record<string, unknown> {
   if (!message || typeof message !== 'object' || Array.isArray(message)) {
-    throw new TypeError('Plugin IPC message must be a JSON object');
+    throw new TypeError('Review client message must be a JSON object');
   }
   if (typeof message.type !== 'string' || !message.type || Buffer.byteLength(message.type, 'utf8') > 64) {
     throw new TypeError("Protocol field 'type' must be a short non-empty string");
   }
-  const originalSchema = pluginSchemas[message.type];
-  if (!originalSchema) throw new TypeError(`Unknown plugin message type: ${message.type}`);
+  const originalSchema = clientSchemas[message.type];
+  if (!originalSchema) throw new TypeError(`Unknown client message type: ${message.type}`);
   const schema = ['startByte', 'endByte', 'positionByte', 'anchorByte'].some((field) => field in originalSchema)
     && message.type !== 'edit' ? { ...originalSchema, reviewAnchors: text(64 * 1024, false) } : originalSchema;
   if (Object.keys(message).length > Object.keys(schema).length + 1) {
@@ -105,7 +103,7 @@ export function validatePluginMessage(message: Record<string, unknown>): Record<
   return message;
 }
 
-export const pluginMessageTypes = Object.freeze(Object.keys(pluginSchemas));
+export const clientMessageTypes = Object.freeze(Object.keys(clientSchemas));
 
 function serverRecord(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -278,6 +276,26 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
       serverString(conflict.externalLine ?? '', 'Git conflict external line', 64 * 1024);
     }
     serverString(message.message ?? '', 'Git status message', 4096);
+    return message;
+  }
+  if (type === 'disk-merge-result') {
+    serverString(message.requestId, 'Disk merge request id', 128);
+    serverString(message.sharedHash, 'Disk merge shared hash', 64);
+    if (typeof message.stale !== 'boolean') throw new TypeError('Disk merge stale flag must be boolean');
+    serverString(message.error ?? '', 'Disk merge error', 4096);
+    const diskConflicts = serverArray(message.conflicts, 'Disk merge conflicts', 1000);
+    for (const value of diskConflicts) {
+      const conflict = serverRecord(value, 'Disk merge conflict');
+      serverString(conflict.key, 'Disk merge conflict key', 4096);
+      serverString(conflict.label, 'Disk merge conflict label', 4096);
+      for (const field of ['baseLine', 'collaborativeLine', 'externalLine']) {
+        serverString(conflict[field] ?? '', 'Disk merge conflict text', 12 * 1024 * 1024);
+      }
+    }
+    if (!message.stale && !diskConflicts.length && !message.error) {
+      serverString(message.sharedText, 'Merged shared text', 12 * 1024 * 1024);
+      serverString(message.personalText, 'Merged personal text', 12 * 1024 * 1024);
+    }
     return message;
   }
   if (type === 'reservations') {

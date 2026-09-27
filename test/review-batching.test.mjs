@@ -53,7 +53,7 @@ test('an unchanged review snapshot skips text encoding after resolving its ancho
   assert.ok(messages.every((message) => parseAgentMessage(message) !== null));
 });
 
-test('Review receives reservations in one snapshot while the legacy plugin keeps its sequence', () => {
+test('Review receives reservations in one snapshot', () => {
   const review = harness('review');
   review.binding.reservations.set('one', {
     id: 'one', assignee: 'User', color: '#123456', startRelative: '', endRelative: '', initialKeys: ['key'],
@@ -65,21 +65,10 @@ test('Review receives reservations in one snapshot while the legacy plugin keeps
   emitReservations(review.binding);
   assert.equal(review.messages.length, 1, 'an unchanged Review reservation snapshot is not resent');
 
-  const plugin = harness('plugin');
-  plugin.binding.reservations = review.binding.reservations;
-  emitReservations(plugin.binding);
-  assert.deepEqual(plugin.messages.map(({ type }) => type), ['reservationReset', 'reservation']);
 });
 
-test('legacy plugin keeps its established review message sequence', () => {
-  const { binding, messages } = harness('plugin');
-  emitReview(binding);
-  assert.deepEqual(messages.map(({ type }) => type), ['commentReset', 'suggestionReset']);
-});
-
-test('Review receives presence and reservation targets as snapshots while the plugin keeps its sequence', () => {
-  for (const kind of ['review', 'plugin']) {
-    const { binding, messages } = harness(kind);
+test('Review receives presence and reservation targets as snapshots', () => {
+    const { binding, messages } = harness('review');
     const document = new Y.Doc();
     const text = document.getText('content');
     text.insert(0, 'l_russian:\nKEY:0 "Значение"');
@@ -99,10 +88,8 @@ test('Review receives presence and reservation targets as snapshots while the pl
     };
     emitPresences(binding);
     emitReservationTargets(binding);
-    assert.deepEqual(messages.map(({ type }) => type), kind === 'review'
-      ? ['presenceSnapshot', 'reservationTargetSnapshot']
-      : ['presenceReset', 'presence', 'reservationTargetReset', 'reservationTarget']);
-    if (kind === 'review') {
+    assert.deepEqual(messages.map(({ type }) => type),
+      ['presenceSnapshot', 'reservationTargetSnapshot']);
       assert.ok(messages.every((message) => parseAgentMessage(message) !== null));
       assert.equal(messages[0].presences[0].user, 'Другой');
       assert.equal(messages[1].targets[0].displayName, 'Другой');
@@ -110,9 +97,7 @@ test('Review receives presence and reservation targets as snapshots while the pl
       assert.equal(messages.length, 2, 'an unchanged target directory must not be sent again');
       emitReservationTargets(binding, binding.clients[0]);
       assert.equal(messages.length, 3, 'an explicit client synchronisation must resend the snapshot');
-    }
     document.destroy();
-  }
 });
 
 test('Review rejects malformed Agent envelopes without throwing or accepting unknown types', () => {

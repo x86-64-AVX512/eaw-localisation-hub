@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import path from 'node:path';
-import { gzip, gunzip } from 'node:zlib';
+import { Readable } from 'node:stream';
+import { createGzip, gzip, gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 
 const gzipAsync = promisify(gzip);
@@ -25,7 +27,7 @@ async function collectFiles(root, relative = '') {
   return files;
 }
 
-export async function createBackupBundle(dataDirectory, version) {
+async function selectedBackupFiles(dataDirectory) {
   const selected = [];
   for (const rootEntry of ALLOWED_ROOTS) {
     const absolute = path.join(dataDirectory, rootEntry);
@@ -37,8 +39,12 @@ export async function createBackupBundle(dataDirectory, version) {
       if (error.code !== 'ENOENT') throw error;
     }
   }
+  return selected.sort();
+}
+
+export async function createBackupBundle(dataDirectory, version) {
   const files = [];
-  for (const relativePath of selected.sort()) {
+  for (const relativePath of await selectedBackupFiles(dataDirectory)) {
     const data = await fs.readFile(path.join(dataDirectory, relativePath));
     files.push({ path: relativePath, dataBase64: data.toString('base64') });
   }
@@ -49,6 +55,30 @@ export async function createBackupBundle(dataDirectory, version) {
     files,
   }), 'utf8');
   return gzipAsync(payload, { level: 9 });
+}
+
+// The HTTP route must not hold the full (base64-expanded) backup in the
+// server's limited container memory before it can send the first byte.
+export async function streamBackupBundle(dataDirectory, version) {
+  const selected = await selectedBackupFiles(dataDirectory);
+  async function* jsonChunks() {
+    yield `{"schema":1,"version":${JSON.stringify(version)},"createdAt":${JSON.stringify(new Date().toISOString())},"files":[`;
+    for (let index = 0; index < selected.length; index += 1) {
+      const relativePath = selected[index];
+      yield `${index ? ',' : ''}{"path":${JSON.stringify(relativePath)},"dataBase64":"`;
+      let remainder = Buffer.alloc(0);
+      for await (const chunk of createReadStream(path.join(dataDirectory, relativePath))) {
+        const bytes = remainder.length ? Buffer.concat([remainder, chunk]) : chunk;
+        const completeLength = bytes.length - (bytes.length % 3);
+        if (completeLength) yield bytes.subarray(0, completeLength).toString('base64');
+        remainder = bytes.subarray(completeLength);
+      }
+      if (remainder.length) yield remainder.toString('base64');
+      yield '"}';
+    }
+    yield ']}';
+  }
+  return Readable.from(jsonChunks()).pipe(createGzip({ level: 6 }));
 }
 
 function safeBackupPath(dataDirectory, relativePath) {

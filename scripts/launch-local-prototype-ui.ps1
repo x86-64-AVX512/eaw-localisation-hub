@@ -23,7 +23,7 @@ if (Test-Path -LiteralPath $paths.ConfigPath) {
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = 'EaW Localisation Hub 0.8.8F4'
+$form.Text = 'EaW Localisation Hub 0.8.8F5'
 $form.Size = [System.Drawing.Size]::new(600, 585)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
@@ -42,7 +42,7 @@ $title.Location = [System.Drawing.Point]::new(24, 20)
 $form.Controls.Add($title)
 
 $description = [System.Windows.Forms.Label]::new()
-$description.Text = "Откроются два изолированных Notepad++ с тестовыми копиями файла.`r`nРабочий репозиторий мода изменён не будет."
+$description.Text = "Откроются два окна Review с тестовыми копиями файла.`r`nРабочий репозиторий мода изменён не будет."
 $description.AutoSize = $true
 $description.Location = [System.Drawing.Point]::new(27, 58)
 $form.Controls.Add($description)
@@ -150,7 +150,7 @@ if (Test-Path -LiteralPath $paths.StatePath) {
             Test-OwnedProcess -Id ([int]$_.Id) -ExpectedExecutable ([string]$_.Executable) -CommandMarker ([string]$_.CommandMarker)
         }
         if ($activeProcesses.Count -gt 0) {
-            $statusLabel.Text = "Лаборатория уже запущена.`r`nМожно перейти в два окна Notepad++."
+            $statusLabel.Text = "Лаборатория уже запущена.`r`nМожно перейти в два окна Review."
             $startButton.Enabled = $false
             $resetButton.Enabled = $false
             $publishButton.Enabled = $true
@@ -182,7 +182,7 @@ $startButton.Add_Click({
             -User $userBox.Text -SecondUser $secondBox.Text -Workspace $workspaceBox.Text `
             -ProtectedAuth:$authBox.Checked
         $mode = if ($authBox.Checked) { 'Авторизация проверена.' } else { 'Авторизация отключена.' }
-        $statusLabel.Text = "Запущено. $mode`r`nВ каждом Notepad++ откройте текущий файл в Review единственной командой плагина."
+        $statusLabel.Text = "Запущено. $mode`r`nОба окна Review готовы к работе."
         $startedSuccessfully = $true
         $resetButton.Enabled = $false
         $publishButton.Enabled = $true

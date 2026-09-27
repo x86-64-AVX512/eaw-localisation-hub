@@ -32,7 +32,7 @@ body { display: flex; flex-direction: column; }
 .syntax-problem .syntax-related { border: 0; padding: 2px 8px; color: #aebcce; background: transparent; font-size: 12px; }
 .file-picker-dialog { width: min(850px, 92vw); height: min(720px, 88vh); padding: 0; }
 .file-picker-dialog .simple-dialog-shell { grid-template-rows: auto auto minmax(0, 1fr); height: 100%; max-height: none; }
-.file-picker-files { display: grid; min-height: 0; gap: 4px; overflow: auto; }
+.file-picker-files { display: grid; grid-auto-rows: max-content; align-content: start; min-height: 0; gap: 4px; overflow: auto; }
 .file-picker-files button { overflow-wrap: anywhere; text-align: left; }
 button, textarea, select, input { font: inherit; }
 button {

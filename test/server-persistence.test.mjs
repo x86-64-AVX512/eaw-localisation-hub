@@ -387,7 +387,7 @@ test('server rejects invalid room identifiers and oversized Yjs updates without 
   }
 });
 
-test('one Agent connection keeps several Review/plugin presences and removes all on disconnect', { timeout: 30000 }, async () => {
+test('one Agent connection keeps several Review presences and removes all on disconnect', { timeout: 30000 }, async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-multi-presence-'));
   const port = await freePort();
   const documentId = 'branch:localisation/russian/presence_l_russian.yml';
@@ -402,16 +402,16 @@ test('one Agent connection keeps several Review/plugin presences and removes all
     producer = await connectDocument(port, documentId);
     observer = await connectDocument(port, documentId);
     const firstSeen = waitForJson(observer.socket, (message) => message.type === 'presence'
-      && message.clientId === 'plugin-client');
+      && message.clientId === 'review-window-one');
     producer.socket.send(JSON.stringify({
-      type: 'presence', clientId: 'plugin-client', user: 'Alice', color: '#ff6677',
+      type: 'presence', clientId: 'review-window-one', user: 'Alice', color: '#ff6677',
       caretRelative: 'AA==', anchorRelative: 'AA==',
     }));
     await firstSeen;
     const secondSeen = waitForJson(observer.socket, (message) => message.type === 'presence'
-      && message.clientId === 'review-client');
+      && message.clientId === 'review-window-two');
     producer.socket.send(JSON.stringify({
-      type: 'presence', clientId: 'review-client', user: 'Alice', color: '#ff6677',
+      type: 'presence', clientId: 'review-window-two', user: 'Alice', color: '#ff6677',
       caretRelative: 'AA==', anchorRelative: 'AA==',
     }));
     await secondSeen;
@@ -419,17 +419,17 @@ test('one Agent connection keeps several Review/plugin presences and removes all
     snapshot = await connectDocument(port, documentId);
     assert.deepEqual(
       snapshot.synced.presences.map(({ clientId }) => clientId).sort(),
-      ['plugin-client', 'review-client'],
+      ['review-window-one', 'review-window-two'],
     );
-    const pluginLeft = waitForJson(observer.socket, (message) => message.type === 'presence-left'
-      && message.clientId === 'plugin-client');
-    producer.socket.send(JSON.stringify({ type: 'presence', clientId: 'plugin-client', offline: true }));
-    await pluginLeft;
+    const firstWindowLeft = waitForJson(observer.socket, (message) => message.type === 'presence-left'
+      && message.clientId === 'review-window-one');
+    producer.socket.send(JSON.stringify({ type: 'presence', clientId: 'review-window-one', offline: true }));
+    await firstWindowLeft;
     afterOffline = await connectDocument(port, documentId);
-    assert.deepEqual(afterOffline.synced.presences.map(({ clientId }) => clientId), ['review-client']);
+    assert.deepEqual(afterOffline.synced.presences.map(({ clientId }) => clientId), ['review-window-two']);
 
     const reviewLeft = waitForJson(observer.socket, (message) => message.type === 'presence-left'
-      && message.clientId === 'review-client');
+      && message.clientId === 'review-window-two');
     producer.socket.close();
     await reviewLeft;
   } finally {

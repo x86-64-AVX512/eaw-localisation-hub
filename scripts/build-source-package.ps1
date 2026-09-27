@@ -4,8 +4,8 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $distRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
-$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F4'))
-$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F4.zip'))
+$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F5'))
+$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F5.zip'))
 $checksumPath = "$archivePath.sha256"
 if (-not $packageRoot.StartsWith($distRoot + '\', [StringComparison]::OrdinalIgnoreCase) `
     -or -not $archivePath.StartsWith($distRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
@@ -18,7 +18,7 @@ if (Test-Path -LiteralPath $checksumPath) { Remove-Item -LiteralPath $checksumPa
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 
 $rootFiles = @(
-    '.dockerignore', '.editorconfig', '.gitattributes', '.gitignore', '.gitmodules',
+    '.dockerignore', '.editorconfig', '.gitattributes', '.gitignore',
     'Dockerfile', 'README.md', 'CHANGELOG.md', 'VERSION', 'LICENSE',
     'SECURITY.md', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md',
     'package.json', 'package-lock.json', 'tsconfig.typecheck.json', 'tsconfig.review.json', 'tsconfig.review-typescript.json', 'tsconfig.boundary.json',
@@ -32,7 +32,7 @@ foreach ($relative in $rootFiles) {
     }
 }
 
-$sourceDirectories = @('.github', 'apps', 'deploy', 'docs', 'installer', 'packages', 'plugin', 'scripts', 'test')
+$sourceDirectories = @('.github', 'apps', 'deploy', 'docs', 'installer', 'packages', 'scripts', 'test')
 $excludedDirectoryNames = @('.git', '.tools', 'backups', 'data', 'dist', 'node_modules', 'review-web', 'rollbacks')
 $excludedFileNames = @('.env', 'auth.json', 'bootstrap-invite.txt')
 foreach ($directoryName in $sourceDirectories) {
@@ -49,50 +49,12 @@ foreach ($directoryName in $sourceDirectories) {
     }
 }
 
-# The plugin needs only the Notepad++ SDK headers and nlohmann's amalgamated header.
-# Do not copy entire dependency repositories (tests, CI files and generated artifacts).
-$nppVendorRoot = Join-Path $projectRoot 'vendor\npp-plugin-template'
-if (Test-Path -LiteralPath $nppVendorRoot -PathType Container) {
-    foreach ($file in Get-ChildItem -LiteralPath $nppVendorRoot -File -Recurse) {
-        $relativeWithinVendor = $file.FullName.Substring($nppVendorRoot.Length).TrimStart('\', '/')
-        if (($relativeWithinVendor -split '[\/]') -contains '.git') { continue }
-        $destination = Join-Path $packageRoot (Join-Path 'vendor\npp-plugin-template' $relativeWithinVendor)
-        New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-        Copy-Item -LiteralPath $file.FullName -Destination $destination
-    }
-}
-$nlohmannFiles = @(
-    'vendor\nlohmann-json\single_include\nlohmann\json.hpp',
-    'vendor\nlohmann-json\LICENSE.MIT'
-)
-foreach ($relative in $nlohmannFiles) {
-    $source = Join-Path $projectRoot $relative
-    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-        throw "Required vendored source is missing: $relative"
-    }
-    $destination = Join-Path $packageRoot $relative
-    New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-    Copy-Item -LiteralPath $source -Destination $destination
-}
-
 $forbidden = Get-ChildItem -LiteralPath $packageRoot -File -Recurse | Where-Object {
     $_.Name -in $excludedFileNames -or $_.Name -like '*.log' -or
     (($_.FullName.Substring($packageRoot.Length).TrimStart('\', '/') -split '[\\/]') |
         Where-Object { $_ -in $excludedDirectoryNames })
 }
 if ($forbidden) { throw "Clean source package contains a forbidden runtime artifact: $($forbidden[0].FullName)" }
-
-$unexpectedNlohmann = Get-ChildItem -LiteralPath (Join-Path $packageRoot 'vendor\nlohmann-json') -File -Recurse |
-    Where-Object {
-        $relative = $_.FullName.Substring($packageRoot.Length).TrimStart('\', '/').Replace('\', '/')
-        $relative -notin @(
-            'vendor/nlohmann-json/LICENSE.MIT',
-            'vendor/nlohmann-json/single_include/nlohmann/json.hpp'
-        )
-    }
-if ($unexpectedNlohmann) {
-    throw "Source package contains an unexpected nlohmann-json artifact: $($unexpectedNlohmann[0].FullName)"
-}
 
 Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal
 $archiveHash = (Get-EawFileSha256 -LiteralPath $archivePath).ToLowerInvariant()

@@ -86,7 +86,7 @@ test('Agent rejects a Review CRDT update for a different document or a Legacy cl
   const binding = { document, text: document.getText('content'), documentId, gitWritable: true, requireState: () => state };
   const message = { documentId: 'another-branch/file', updateBase64: encode(Y.encodeStateAsUpdate(document)) };
   assert.equal(applyReviewUpdate(binding, { kind: 'review', reviewCrdt: true }, absolutePath, message), false);
-  assert.equal(applyReviewUpdate(binding, { kind: 'plugin' }, absolutePath, { ...message, documentId }), false);
+  assert.equal(applyReviewUpdate(binding, { kind: 'unsupported' }, absolutePath, { ...message, documentId }), false);
   document.destroy();
 });
 
@@ -123,7 +123,7 @@ test('a Review content update resumes Git plus my changes materialisation', () =
   const hub = Object.create(AgentHub.prototype);
   hub.workspaceTransitioning = false;
 
-  hub.receivePluginMessage(client, { type: 'reviewUpdate', path: resolvedPath });
+  hub.receiveClientMessage(client, { type: 'reviewUpdate', path: resolvedPath });
 
   assert.deepEqual(calls, [['mode', 'mine', resolvedPath], ['update']]);
 });

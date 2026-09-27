@@ -1,12 +1,21 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
-  checkDiskChange, confirmDiskMaterialisation, finishExternalMerge,
+  checkDiskChange, confirmDiskMaterialisation, emitExternalConflicts, finishExternalMerge,
   reconcileInitialDisk, resolveExternalConflict,
 } from '../apps/agent/src/disk-reconciliation.mjs';
+import { evaluateDiskMerge } from '../apps/server/src/disk-merge.mjs';
+
+function serverMerge(binding, baseText, externalText, personalText, resolutions, initialUnknown) {
+  const sharedText = binding.text.toString();
+  return { stale: false, sharedHash: crypto.createHash('sha256').update(sharedText).digest('hex'),
+    ...evaluateDiskMerge({ baseText, externalText, personalText, sharedText,
+      resolutions: Object.fromEntries(resolutions), initialUnknown }) };
+}
 
 function localClient(path, state) {
   const sent = [];
@@ -107,7 +116,31 @@ test('opening a file never materialises another author shared edits', () => {
   assert.equal(client.sent.some((message) => message.type === 'saveRequested'), false);
 });
 
-test('opening a file repairs a previously materialised foreign shared edit', () => {
+test('reopening a selected duplicate file does not invent a disk conflict', () => {
+  const absolutePath = 'C:\\repo\\localisation\\russian\\bar.yml';
+  const base = 'l_russian:\n repeated:0 "Git one"\n repeated:0 "Git two"\n';
+  const personal = base.replace('"Git one"', '"Mine"');
+  const shared = base.replace('"Git two"', '"Other"');
+  const state = {
+    initialReconciled: false, hasPersistedBase: true,
+    diskBase: base, mirror: personal, pendingExternal: null,
+  };
+  const client = localClient(absolutePath, state);
+  const binding = {
+    ticketId: '', clients: new Set([client]),
+    text: { toString: () => shared },
+    localFileText: () => personal,
+    applyMergedText(text) { assert.equal(text, shared); },
+    persistBaseSnapshot(_state, text) { assert.equal(text, personal); },
+    emitExternalConflicts() { throw new Error('unexpected conflict'); },
+  };
+  state.binding = binding;
+  reconcileInitialDisk(binding, client, absolutePath, state);
+  assert.equal(state.pendingExternal, null);
+  assert.equal(state.diskBase, personal);
+});
+
+test('opening a file repairs a previously materialised foreign shared edit', async () => {
   const absolutePath = 'C:\\repo\\localisation\\russian\\test.yml';
   const personal = 'l_russian:\n mine:0 "Mine"\n other:0 "Git"\n';
   const leaked = personal.replace('other:0 "Git"', 'other:0 "Dogoo"');
@@ -122,11 +155,13 @@ test('opening a file repairs a previously materialised foreign shared edit', () 
     localFileText() { return this.personalText; },
     applyMergedText(text) { this.applied = text; },
     finishExternalMerge(...args) { return finishExternalMerge(this, ...args); },
+    requestDiskMergeCheck(...args) { return Promise.resolve(serverMerge(this, ...args)); },
     emitExternalConflicts() { throw new Error('unexpected conflict'); },
   };
   state.binding = binding;
 
   reconcileInitialDisk(binding, client, absolutePath, state);
+  await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(binding.personalText, personal);
   assert.doesNotMatch(binding.personalText, /Dogoo/u);
@@ -157,6 +192,7 @@ test('external disk edits join the shared document without copying foreign edits
     applyMergedText(text) { this.applied = text; },
     persistBaseSnapshot() {},
     finishExternalMerge(...args) { return finishExternalMerge(this, ...args); },
+    requestDiskMergeCheck(...args) { return Promise.resolve(serverMerge(this, ...args)); },
     emitExternalConflicts() { throw new Error('unexpected conflict'); },
   };
   state.binding = binding;
@@ -168,6 +204,37 @@ test('external disk edits join the shared document without copying foreign edits
   assert.doesNotMatch(binding.personalText, /Dogoo/u);
   assert.equal(state.diskBase, external);
   assert.equal(state.materialisationExpected, external);
+});
+
+test('disk conflict is hidden until the server confirms it', async () => {
+  const absolutePath = 'C:\\repo\\localisation\\russian\\test.yml';
+  const base = 'l_russian:\n repeated:0 "One"\n repeated:0 "Two"\n';
+  const shared = base.replace('"One"', '"Shared"');
+  const external = base.replace('"One"', '"Disk"');
+  const state = { diskBase: base, pendingExternal: null, binding: null,
+    materialisationExpected: null };
+  const client = localClient(absolutePath, state);
+  let answer;
+  let requestStarted;
+  const requested = new Promise((resolve) => { requestStarted = resolve; });
+  const binding = { ticketId: '', closing: false, paused: false, synced: true,
+    gitWritable: true, clients: new Set([client]), text: { toString: () => shared },
+    hub: { gitOperationInProgress: () => false, readGitHeadText: () => base },
+    async readDiskText() { return external; }, localFileText() { return base; },
+    requestDiskMergeCheck() { requestStarted(); return new Promise((resolve) => { answer = resolve; }); },
+    emitExternalConflicts(target, file, targetState) {
+      return emitExternalConflicts(this, target, file, targetState);
+    },
+  };
+  state.binding = binding;
+  const checking = checkDiskChange(binding, client, absolutePath, state);
+  await requested;
+  assert.ok(state.pendingExternal);
+  assert.equal(client.sent.some(({ type }) => type === 'externalConflict'), false);
+  answer(serverMerge(binding, base, external, base, new Map()));
+  await checking;
+  assert.deepEqual(client.sent.filter(({ type }) => type === 'externalConflict')
+    .map(({ key }) => key), ['occ:1:repeated']);
 });
 
 test('a full Git rollback changes only the personal projection', async () => {

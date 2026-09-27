@@ -236,6 +236,17 @@ test('a local Git rollback replaces only the author projection', () => {
   assert.equal(history.text(history.headId()), shared, 'shared history must not be rewritten');
 });
 
+test('restoring canonical BAR-like lines also restores the author projection with unrelated duplicate keys', () => {
+  const git = 'l_russian:\n barrad_silver.42.a:0 "A reversal of roles."\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
+  const removed = git.replace(' barrad_silver.42.a:0 "A reversal of roles."\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n', '\n');
+  const history = new DocumentHistory('unused');
+  history.ensureBaseline(git);
+  history.record(removed, alice);
+  assert.equal(history.personalProjection('alice', git), removed);
+  history.record(git, alice, 'restore', { coalesce: false });
+  assert.equal(history.personalProjection('alice', git), git);
+});
+
 test('same-key author variants remain separate and are reported as conflicts', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-variants-'));
   const target = path.join(directory, 'room.history.json');

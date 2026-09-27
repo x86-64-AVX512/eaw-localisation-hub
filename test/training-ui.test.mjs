@@ -41,7 +41,7 @@ test('automatic training waits for a server-confirmed incomplete account', (t) =
   });
 
   const state = {
-    version: '0.8.8F4', serverVersion: '0.8.8F4',
+    version: '0.8.8F5', serverVersion: '0.8.8F5',
     trainingProgress: {}, trainingProgressConfirmed: false,
   };
   const panel = createHelpPanel({ state, token: 'local', showToast() {} });
@@ -55,13 +55,13 @@ test('automatic training waits for a server-confirmed incomplete account', (t) =
 
   tutorial.close();
   state.trainingProgress = Object.fromEntries(SEGMENT_IDS.map((id) => [
-    id, ['personal-file', 'history-diff', 'agent-plugin'].includes(id) ? 2 : 1,
+    id, id === 'agent-plugin' ? 3 : ['personal-file', 'history-diff'].includes(id) ? 2 : 1,
   ]));
   panel.refresh();
   assert.equal(tutorial.opens, 1, 'server-confirmed completed training stays closed');
 });
 
-test('the disabled Notepad++ integration is mandatory training revision 2', () => {
+test('the standalone Review workflow is mandatory training revision 3', () => {
   const previousDocument = globalThis.document;
   const previousLocalStorage = globalThis.localStorage;
   const elements = new Map();
@@ -78,7 +78,7 @@ test('the disabled Notepad++ integration is mandatory training revision 2', () =
   });
 
   const state = {
-    version: '0.8.8F4', serverVersion: '0.8.8F4', trainingProgressConfirmed: true,
+    version: '0.8.8F5', serverVersion: '0.8.8F5', trainingProgressConfirmed: true,
     trainingProgress: Object.fromEntries(SEGMENT_IDS.map((id) => [
       id, ['personal-file', 'history-diff'].includes(id) ? 2 : 1,
     ])),
@@ -87,8 +87,8 @@ test('the disabled Notepad++ integration is mandatory training revision 2', () =
   panel.refresh();
   assert.equal(elements.get('#tutorial-dialog').opens, 1);
   assert.equal(elements.get('#tutorial-progress').textContent, '12 / 12');
-  assert.match(elements.get('#tutorial-content').textContent, /полностью отключены/u);
-  assert.match(elements.get('#tutorial-content').textContent, /не могут быть включены настройкой/u);
+  assert.match(elements.get('#tutorial-content').textContent, /Плагин Notepad\+\+ удалён/u);
+  assert.match(elements.get('#tutorial-content').textContent, /ярлык EaW Hub Review/u);
 });
 
 test('per-key local-file selection is mandatory training revision 2', () => {
@@ -108,9 +108,9 @@ test('per-key local-file selection is mandatory training revision 2', () => {
   });
 
   const state = {
-    version: '0.8.8F4', serverVersion: '0.8.8F4', trainingProgressConfirmed: true,
+    version: '0.8.8F5', serverVersion: '0.8.8F5', trainingProgressConfirmed: true,
     trainingProgress: Object.fromEntries(SEGMENT_IDS.map((id) => [
-      id, ['history-diff', 'agent-plugin'].includes(id) ? 2 : 1,
+      id, id === 'agent-plugin' ? 3 : id === 'history-diff' ? 2 : 1,
     ])),
   };
   const panel = createHelpPanel({ state, token: 'local', showToast() {} });
@@ -124,7 +124,7 @@ test('per-key local-file selection is mandatory training revision 2', () => {
 test('Agent distinguishes local startup from server-confirmed training progress', () => {
   const messages = [];
   const context = {
-    identity: null, serverVersion: '0.8.8F4',
+    identity: null, serverVersion: '0.8.8F5',
     options: { user: 'Alice', color: '#abcdef', workspace: 'general-dev' },
     clients: new Set(),
   };

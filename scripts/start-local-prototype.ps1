@@ -122,71 +122,55 @@ try {
         $peer = $null
     }
 
-    $pipeA = "eaw-hub-$sessionId-a"
-    $pipeB = "eaw-hub-$sessionId-b"
-    $ipcSecretA = [Guid]::NewGuid().ToString('N')
-    $ipcSecretB = [Guid]::NewGuid().ToString('N')
     $previousToken = $env:EAW_HUB_TOKEN
-    $previousIpcSecret = $env:EAW_HUB_IPC_SECRET
     try {
         if ($ProtectedAuth) { $env:EAW_HUB_TOKEN = $tokenA }
         else { Remove-Item Env:EAW_HUB_TOKEN -ErrorAction SilentlyContinue }
-        $env:EAW_HUB_IPC_SECRET = $ipcSecretA
         $agentA = Start-HiddenNodeProcess -Arguments @(
             'apps/agent/src/main.mjs', '--repo', $paths.WorkspaceA, '--workspace', $Workspace,
-            '--pipe', $pipeA, '--user', $User, '--color', '#ff6677', '--server', $serverUrl,
+            '--user', $User, '--color', '#ff6677', '--server', $serverUrl,
             '--state', $paths.AgentStateA
         ) -StandardOutput $agentAOutput -StandardError $agentAError
         if ($ProtectedAuth) { $env:EAW_HUB_TOKEN = $tokenB }
-        $env:EAW_HUB_IPC_SECRET = $ipcSecretB
         $agentB = Start-HiddenNodeProcess -Arguments @(
             'apps/agent/src/main.mjs', '--repo', $paths.WorkspaceB, '--workspace', $Workspace,
-            '--pipe', $pipeB, '--user', $SecondUser, '--color', '#66aaff', '--server', $serverUrl,
+            '--user', $SecondUser, '--color', '#66aaff', '--server', $serverUrl,
             '--state', $paths.AgentStateB
         ) -StandardOutput $agentBOutput -StandardError $agentBError
     }
     finally {
         if ($null -eq $previousToken) { Remove-Item Env:EAW_HUB_TOKEN -ErrorAction SilentlyContinue }
         else { $env:EAW_HUB_TOKEN = $previousToken }
-        if ($null -eq $previousIpcSecret) { Remove-Item Env:EAW_HUB_IPC_SECRET -ErrorAction SilentlyContinue }
-        else { $env:EAW_HUB_IPC_SECRET = $previousIpcSecret }
         $tokenA = $null
         $tokenB = $null
     }
     $startedProcesses.Add($agentA)
     $startedProcesses.Add($agentB)
-    if (-not (Wait-ForLogText -Path $agentAOutput -Pattern 'pipe:' -Process $agentA)) {
+    if (-not (Wait-ForLogText -Path $agentAOutput -Pattern 'review application: ready' -Process $agentA)) {
         throw "First Agent did not become ready. See $agentAOutput"
     }
-    if (-not (Wait-ForLogText -Path $agentBOutput -Pattern 'pipe:' -Process $agentB)) {
+    if (-not (Wait-ForLogText -Path $agentBOutput -Pattern 'review application: ready' -Process $agentB)) {
         throw "Second Agent did not become ready. See $agentBOutput"
     }
 
     $fileA = $preflightFileA
     $fileB = $preflightFileB
-    $portableA = Join-Path $paths.PortableA 'notepad++.exe'
-    $portableB = Join-Path $paths.PortableB 'notepad++.exe'
-    $previousPipe = $env:EAW_HUB_PIPE
-    $previousIpcSecret = $env:EAW_HUB_IPC_SECRET
-    try {
-        $env:EAW_HUB_PIPE = $pipeA
-        $env:EAW_HUB_IPC_SECRET = $ipcSecretA
-        $notepadA = Start-Process -FilePath $portableA -ArgumentList "-multiInst -nosession $(ConvertTo-ProcessArgument $fileA)" -PassThru
-        $env:EAW_HUB_PIPE = $pipeB
-        $env:EAW_HUB_IPC_SECRET = $ipcSecretB
-        $notepadB = Start-Process -FilePath $portableB -ArgumentList "-multiInst -nosession $(ConvertTo-ProcessArgument $fileB)" -PassThru
+    $sessionA = Get-Content -LiteralPath (Join-Path $paths.AgentStateA 'review-session.json') -Raw -Encoding utf8 | ConvertFrom-Json
+    $sessionB = Get-Content -LiteralPath (Join-Path $paths.AgentStateB 'review-session.json') -Raw -Encoding utf8 | ConvertFrom-Json
+    foreach ($session in @($sessionA, $sessionB)) {
+        if ($session.schema -ne 1 -or $session.origin -notmatch '^http://127\.0\.0\.1:\d+$' -or -not $session.token) {
+            throw 'A local Review session is unavailable.'
+        }
     }
-    finally {
-        if ($null -eq $previousPipe) { Remove-Item Env:EAW_HUB_PIPE -ErrorAction SilentlyContinue }
-        else { $env:EAW_HUB_PIPE = $previousPipe }
-        if ($null -eq $previousIpcSecret) { Remove-Item Env:EAW_HUB_IPC_SECRET -ErrorAction SilentlyContinue }
-        else { $env:EAW_HUB_IPC_SECRET = $previousIpcSecret }
-    }
-    $startedProcesses.Add($notepadA)
-    $startedProcesses.Add($notepadB)
+    $urlA = [string]$sessionA.origin + '/#token=' + [Uri]::EscapeDataString([string]$sessionA.token) + '&path=' + [Uri]::EscapeDataString($fileA)
+    $urlB = [string]$sessionB.origin + '/#token=' + [Uri]::EscapeDataString([string]$sessionB.token) + '&path=' + [Uri]::EscapeDataString($fileB)
+    $reviewA = Start-Process -FilePath $paths.ReviewHost -ArgumentList (ConvertTo-ProcessArgument $urlA) -WorkingDirectory (Split-Path -Parent $paths.ReviewHost) -PassThru
+    $reviewB = Start-Process -FilePath $paths.ReviewHost -ArgumentList (ConvertTo-ProcessArgument $urlB) -WorkingDirectory (Split-Path -Parent $paths.ReviewHost) -PassThru
+    $startedProcesses.Add($reviewA)
+    $startedProcesses.Add($reviewB)
 
     $state = [pscustomobject]@{
-        Version = '0.8.8F4'
+        Version = '0.8.8F5'
         Status = 'running'
         SessionId = $sessionId
         StartedAt = [DateTime]::UtcNow.ToString('o')
@@ -199,8 +183,8 @@ try {
             [pscustomobject]@{ Role = 'server'; Id = $server.Id; Executable = $server.Path; CommandMarker = 'apps/server/src/main.mjs' }
             [pscustomobject]@{ Role = 'agent-a'; Id = $agentA.Id; Executable = $agentA.Path; CommandMarker = 'apps/agent/src/main.mjs' }
             [pscustomobject]@{ Role = 'agent-b'; Id = $agentB.Id; Executable = $agentB.Path; CommandMarker = 'apps/agent/src/main.mjs' }
-            [pscustomobject]@{ Role = 'notepad-a'; Id = $notepadA.Id; Executable = $portableA }
-            [pscustomobject]@{ Role = 'notepad-b'; Id = $notepadB.Id; Executable = $portableB }
+            [pscustomobject]@{ Role = 'review-a'; Id = $reviewA.Id; Executable = $paths.ReviewHost }
+            [pscustomobject]@{ Role = 'review-b'; Id = $reviewB.Id; Executable = $paths.ReviewHost }
         )
     }
     Write-JsonUtf8 -Value $state -Path $paths.StatePath

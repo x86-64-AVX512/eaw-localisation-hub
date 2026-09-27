@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validatePluginMessage } from '../packages/shared/src/protocol-schema.mts';
+import { validateClientMessage } from '../packages/shared/src/protocol-schema.mts';
 import {
   baseToProjectedOffset, batchSuggestionActions, createEditingModeController, projectedToBaseOffset,
   isLineBreakBoundary, singleReplacement, suggestionAction, suggestionProjection,
@@ -217,7 +217,7 @@ test('a completed line-break suggestion has protocol-safe undo and redo', () => 
   assert.equal(harness.messages.at(-1).type, 'suggestionDelete');
   harness.controller.redo();
   assert.equal(harness.messages.at(-1).type, 'suggestionCreate');
-  assert.doesNotThrow(() => validatePluginMessage(harness.messages.at(-1)));
+  assert.doesNotThrow(() => validateClientMessage(harness.messages.at(-1)));
 });
 
 test('a line break at an edited word edge stays in the same whole-word suggestion', () => {
@@ -309,12 +309,12 @@ test('controller keeps continuous insertion visible and updates one server sugge
   assert.deepEqual(Object.keys(harness.messages.at(-1)).sort(), [
     'endByte', 'path', 'replacementBase64', 'startByte', 'suggestionId', 'traceJson', 'type',
   ]);
-  assert.doesNotThrow(() => validatePluginMessage(harness.messages.at(-1)));
+  assert.doesNotThrow(() => validateClientMessage(harness.messages.at(-1)));
   harness.editor.type('YZ');
   assert.equal(harness.editor.getValue(), 'abXYZc');
   assert.equal(harness.messages.at(-1).type, 'suggestionUpdate');
   assert.equal(harness.messages.at(-1).suggestionId, suggestionId);
-  assert.doesNotThrow(() => validatePluginMessage(harness.messages.at(-1)));
+  assert.doesNotThrow(() => validateClientMessage(harness.messages.at(-1)));
   harness.editor.moveTo(0);
   assert.equal(harness.editor.getValue(), 'abc');
 });

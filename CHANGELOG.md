@@ -1,6 +1,15 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F4` form; package metadata uses `0.8.8-beta.4`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F5` form; package metadata uses `0.8.8-beta.5`.
+
+## 0.8.8F5
+
+- Removed the Notepad++ plugin, its native dependencies, named-pipe bridge, and DLL packaging. Review now launches independently; the client package and installer no longer require Notepad++.
+- Review identifies each repeated localisation key by its occurrence number, so shared changes to duplicate declarations can be selected independently for the local Git working file.
+- Client-side selections in duplicate-key files survive projection refreshes from an unchanged F4 server. Mismatched occurrence counts block only the affected key; a changed Git HEAD pauses materialisation instead of overwriting saved selections.
+- Review's file picker keeps search results at a consistent row height even when only a few files match.
+- Manual server backups use the dedicated backup token, refresh expired credentials, and show the underlying failure instead of only a process exit code.
+- The updater's PowerShell source is UTF-8 with BOM, so Russian error/status text remains readable in the Agent window and Windows notifications; packaging checks enforce this encoding.
 
 ## 0.8.8F4
 

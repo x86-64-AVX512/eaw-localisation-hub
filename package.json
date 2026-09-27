@@ -1,14 +1,13 @@
 {
   "name": "eaw-localisation-hub",
   "private": true,
-  "version": "0.8.8-beta.4",
+  "version": "0.8.8-beta.5",
   "description": "EaW collaborative localisation early beta",
   "license": "GPL-2.0-only",
   "author": "EaW Localisation Hub contributors",
   "keywords": [
     "equestria-at-war",
     "localisation",
-    "notepad-plus-plus",
     "collaboration"
   ],
   "type": "module",
@@ -23,9 +22,7 @@
     "typecheck:boundary": "tsc --project tsconfig.boundary.json",
     "typecheck:review-ts": "tsc --project tsconfig.review-typescript.json",
     "test": "node --test --test-concurrency=1 \"test/*.test.mjs\"",
-    "test:plugin": "node scripts/verify-plugin.mjs",
-    "test:live-plugin": "npm run build:plugin && npm run test:plugin",
-    "check": "npm run typecheck && npm run check:publication && npm test && npm run build:client && npm run build:installer && npm run build:deployer && npm run build:source && npm run test:plugin && npm run test:launcher && npm run test:credentials && npm run test:status && npm run test:client && npm run test:deployer && npm run test:source && npm run test:installer",
+    "check": "npm run typecheck && npm run check:publication && npm test && npm run build:client && npm run build:installer && npm run build:deployer && npm run build:source && npm run test:launcher && npm run test:credentials && npm run test:status && npm run test:updater && npm run test:update-flow && npm run test:backup-client && npm run test:client && npm run test:deployer && npm run test:source && npm run test:installer",
     "check:publication": "node scripts/check-publication.mjs",
     "test:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-powershell.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-backup-schedule.ps1",
     "test:client": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-package.ps1",
@@ -33,15 +30,17 @@
     "test:source": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-source-package.ps1",
     "test:credentials": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-credential-store.ps1",
     "test:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-agent-status.ps1",
+    "test:updater": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-updater.ps1",
+    "test:update-flow": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-updater.ps1 -Integration",
+    "test:backup-client": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-backup-client.ps1",
     "test:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installer.ps1 -RequireBuilt",
     "local:prepare": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-local-prototype.ps1",
     "local:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-prototype.ps1",
     "local:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-local-prototype.ps1",
     "local:reset": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/reset-local-prototype.ps1",
     "diagnose:room": "node scripts/inspect-room.mjs",
-    "build:plugin": "node scripts/build-plugin.mjs",
     "build:review": "node scripts/build-review-web.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-review-host.ps1",
-    "build:client": "npm run build:plugin && npm run build:review && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-client-package.ps1",
+    "build:client": "npm run build:review && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-client-package.ps1",
     "build:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "build:deployer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-deployer-package.ps1",
     "build:source": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-source-package.ps1",
@@ -56,8 +55,8 @@
     "yjs": "^13.6.27"
   },
   "eawHub": {
-    "displayVersion": "0.8.8F4",
-    "windowsFileVersion": "0.8.8.4"
+    "displayVersion": "0.8.8F5",
+    "windowsFileVersion": "0.8.8.5"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",

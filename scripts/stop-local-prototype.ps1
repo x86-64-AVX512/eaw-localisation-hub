@@ -1,4 +1,4 @@
-﻿param([switch]$KeepEditors)
+﻿param([switch]$KeepReview)
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'local-prototype-common.ps1')
@@ -10,8 +10,8 @@ if (-not (Test-Path -LiteralPath $paths.StatePath)) {
 
 $state = Get-Content -LiteralPath $paths.StatePath -Raw -Encoding utf8 | ConvertFrom-Json
 $processes = @($state.Processes)
-if (-not $KeepEditors) {
-    foreach ($entry in $processes | Where-Object { $_.Role -like 'notepad-*' }) {
+if (-not $KeepReview) {
+    foreach ($entry in $processes | Where-Object { $_.Role -like 'review-*' }) {
         if (Test-OwnedProcess -Id ([int]$entry.Id) -ExpectedExecutable ([string]$entry.Executable) -CommandMarker ([string]$entry.CommandMarker)) {
             $process = Get-Process -Id ([int]$entry.Id)
             [void]$process.CloseMainWindow()
@@ -19,14 +19,14 @@ if (-not $KeepEditors) {
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(8)
     do {
-        $openEditors = @($processes | Where-Object { $_.Role -like 'notepad-*' } | Where-Object {
+        $openEditors = @($processes | Where-Object { $_.Role -like 'review-*' } | Where-Object {
             Test-OwnedProcess -Id ([int]$_.Id) -ExpectedExecutable ([string]$_.Executable) -CommandMarker ([string]$_.CommandMarker)
         })
         if ($openEditors.Count -eq 0) { break }
         Start-Sleep -Milliseconds 200
     } while ([DateTime]::UtcNow -lt $deadline)
     if ($openEditors.Count -gt 0) {
-        throw 'Notepad++ is waiting for unsaved-file confirmation. Save or discard the changes, then press Stop again.'
+        throw 'Review is still open. Close both windows, then press Stop again.'
     }
 }
 

@@ -80,7 +80,9 @@ export function localisationDiffText(text) {
     if (!content) return suffix;
     if (/^l_(?:russian|english)\s*:\s*$/iu.test(content)) return `l_localisation:${suffix}`;
     const match = /^(\s*)([^#\s][^:]*?)(\s*:\s*\d*)\s*(?:".*")?\s*$/u.exec(parts.content);
-    if (match) return `${match[1]}${match[2].trim()}${match[3]} "…"`;
+    // Version suffixes (:0, :1, …) are not part of the key structure.
+    // The diff view must use the same equivalence as localisationStructure.
+    if (match) return `${match[1]}${match[2].trim()}: "…"`;
     return `${parts.content}${suffix}`;
   }).join('\n');
 }
@@ -106,12 +108,16 @@ async function readAuditPair(repository, requestedPath) {
   return { sourcePath, otherPath, source, other };
 }
 
+// Bump when the audit payload or its structural comparison rules change.
+// The cache survives client upgrades, so file content alone is not sufficient.
+const AUDIT_CACHE_VERSION = 2;
+
 function auditCacheKey({ sourcePath, otherPath, source, other }) {
   const digest = crypto.createHash('sha256')
     .update(sourcePath).update('\0').update(source)
     .update('\0').update(otherPath).update('\0').update(other)
     .digest('hex');
-  return JSON.stringify([sourcePath, otherPath, digest]);
+  return JSON.stringify([AUDIT_CACHE_VERSION, sourcePath, otherPath, digest]);
 }
 
 export async function localisationAuditCacheKey(repository, requestedPath) {

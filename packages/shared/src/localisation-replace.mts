@@ -3,6 +3,7 @@ const LOCALISATION_PREFIX = /^(\s*)([^#\s][^:]*?)(:(?:\d+)?)(\s+")/u;
 export interface LocalisationEntry {
   key: string;
   text: string;
+  line: number;
   start: number;
   end: number;
 }
@@ -97,14 +98,16 @@ export function parseKeyReplacementBatch(source: unknown) {
 export function localisationEntries(text: unknown): LocalisationEntry[] {
   const result: LocalisationEntry[] = [];
   let offset = 0;
+  let lineNumber = 0;
   for (const line of String(text).split(/(?<=\n)/u)) {
+    lineNumber += 1;
     const ending = line.endsWith('\n') ? '\n' : '';
     const content = ending ? line.slice(0, -1).replace(/\r$/u, '') : line;
     const parsed = parseLocalisationSourceLine(content);
     if (parsed) {
       const valueStart = offset + parsed.valueStart;
       result.push({
-        key: parsed.key, text: parsed.text, start: valueStart,
+        key: parsed.key, text: parsed.text, line: lineNumber, start: valueStart,
         end: offset + parsed.valueEnd,
       });
     }
@@ -116,6 +119,13 @@ export function localisationEntries(text: unknown): LocalisationEntry[] {
 export function replaceLocalisationValues(text: unknown, replacements: Iterable<[string, string]>) {
   const wanted = replacements instanceof Map ? replacements : new Map(replacements);
   const matches = localisationEntries(text).filter((entry) => wanted.has(entry.key));
+  const seen = new Set<string>();
+  for (const match of matches) {
+    if (seen.has(match.key)) {
+      throw new Error(`Ключ ${match.key} встречается в файле несколько раз; замена по имени запрещена.`);
+    }
+    seen.add(match.key);
+  }
   let result = String(text);
   for (const match of matches.toReversed()) {
     result = `${result.slice(0, match.start)}${wanted.get(match.key)}${result.slice(match.end)}`;

@@ -3,7 +3,6 @@ import { WebSocket } from 'ws';
 import { applyUtf8ByteEdit, computeSingleReplace, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mts';
 import {
   localisationSelectionChanges,
-  mergeLocalisationThreeWay,
   setLocalisationSelection,
 } from '../../../packages/shared/src/merge.mts';
 
@@ -21,6 +20,7 @@ function variantsPayload(binding) {
   binding.personalSelectionRevision = crypto.randomUUID();
   binding.personalSelectionGit = git;
   binding.personalSelectionShared = shared;
+  binding.personalSelectionLocal = local;
   return {
     shared, mine: binding.personalText,
     mineRevision: crypto.createHash('sha256').update(binding.personalText).digest('hex'),
@@ -28,8 +28,10 @@ function variantsPayload(binding) {
     contributors: binding.personalContributors,
     conflicts: binding.personalConflicts,
     gitConflicts: binding.personalGitConflicts,
-    localSelections: selection.entries,
-    localSelectionBlocked: selection.blockedReason,
+    localSelections: binding.personalSelectionStale ? [] : selection.entries,
+    localSelectionBlocked: binding.personalSelectionStale
+      ? 'Git HEAD изменился после сохранения локальных выборов. Рабочий файл не перезаписывается; проверьте его перед продолжением.'
+      : selection.blockedReason,
     localSelectionRevision: binding.personalSelectionRevision,
   };
 }
@@ -86,6 +88,7 @@ export function resetPersonalRequest(binding) {
   binding.personalRefreshPending = false;
   binding.personalReady = Boolean(binding.ticketId);
   binding.variantRequests.clear();
+  binding.personalSelectionMigrationSent = false;
 }
 
 export function schedulePersonalDocumentRefresh(binding) {
@@ -161,13 +164,37 @@ export function handlePersonalDocument(binding, message) {
       return;
     }
     projected = applyUtf8ByteEdit(
-      binding.personalText, Number(message.patch.positionByte),
+      binding.serverPersonalText ?? binding.personalText, Number(message.patch.positionByte),
       Number(message.patch.deleteBytes), Buffer.from(message.patch.insertBase64 ?? '', 'base64').toString('utf8'),
     );
   } else {
     projected = Buffer.from(message.textBase64 ?? '', 'base64').toString('utf8');
   }
-  binding.personalText = projected;
+  binding.serverPersonalText = projected;
+  let saved = binding.personalSelectionSnapshot;
+  const git = saved ? binding.hub.readGitHeadText(binding.relativePath) : '';
+  if (saved && saved.text.replace(/\r\n/gu, '\n') === git.replace(/\r\n/gu, '\n')) {
+    binding.hub.clearPersonalSelection?.(binding.relativePath);
+    binding.personalSelectionSnapshot = null;
+    saved = null;
+  }
+  binding.personalSelectionStale = Boolean(saved
+    && crypto.createHash('sha256').update(git).digest('hex') !== saved.gitHash);
+  if (saved && projected === saved.text) {
+    binding.hub.clearPersonalSelection?.(binding.relativePath);
+    binding.personalSelectionSnapshot = null;
+    binding.personalSelectionMigrationSent = false;
+    saved = null;
+  }
+  let migrationSentNow = false;
+  if (saved && !binding.personalSelectionStale && !binding.personalSelectionMigrationSent
+    && binding.socket?.readyState === WebSocket.OPEN) {
+    binding.personalSelectionMigrationSent = true;
+    migrationSentNow = true;
+    binding.socket.send(JSON.stringify({ type: 'personal-projection-set', text: saved.text,
+      author: binding.hub.options.user, color: binding.hub.options.color }));
+  }
+  binding.personalText = saved && !binding.personalSelectionStale ? saved.text : projected;
   binding.personalRevision = String(message.revision ?? '');
   binding.personalReady = true;
   binding.personalContributors = message.contributors ?? [];
@@ -190,7 +217,7 @@ export function handlePersonalDocument(binding, message) {
       }
     }
   }
-  if (refreshPending) requestPersonalDocument(binding);
+  if (refreshPending || migrationSentNow) requestPersonalDocument(binding);
 }
 
 export function requestDocumentVariant(binding, client, absolutePath, authorId, variantEpoch = '') {
@@ -204,7 +231,13 @@ export function requestDocumentVariant(binding, client, absolutePath, authorId, 
 }
 
 export function replacePersonalDocument(binding, text) {
+  if (binding.personalSelectionSnapshot) {
+    binding.hub.clearPersonalSelection?.(binding.relativePath);
+    binding.personalSelectionSnapshot = null;
+    binding.personalSelectionStale = false;
+  }
   binding.personalText = String(text ?? '');
+  binding.serverPersonalText = binding.personalText;
   binding.personalReady = true;
   binding.personalGitConflicts = [];
   binding.personalRevision = '';
@@ -225,11 +258,17 @@ export function localFileText(binding) {
   return binding.personalMaterialisationMode === 'git'
     ? binding.hub.readGitHeadText(binding.relativePath)
     : (binding.ticketId ? binding.text.toString()
-      : binding.personalReady && !binding.personalGitConflicts?.length ? binding.personalText : null);
+      : binding.personalReady && !binding.personalSelectionStale
+        && !binding.personalGitConflicts?.length ? binding.personalText : null);
 }
 
 export function setPersonalMaterialisation(binding, mode, absolutePath) {
   if (binding.ticketId || !['git', 'mine'].includes(mode)) return;
+  if (mode === 'git' && binding.personalSelectionStale) {
+    binding.hub.clearPersonalSelection?.(binding.relativePath);
+    binding.personalSelectionSnapshot = null;
+    binding.personalSelectionStale = false;
+  }
   binding.personalMaterialisationMode = mode;
   binding.hub.savePersonalMode(binding.relativePath, mode).catch(() => {});
   emitDocumentVariants(binding);
@@ -248,11 +287,13 @@ export function setPersonalMaterialisation(binding, mode, absolutePath) {
 }
 
 export function setPersonalSelection(binding, absolutePath, changeId, include, revision) {
-  if (binding.ticketId || !binding.synced || !binding.gitWritable || binding.personalGitConflicts?.length) return false;
+  if (binding.ticketId || !binding.synced || !binding.gitWritable || binding.personalGitConflicts?.length
+    || binding.personalSelectionStale) return false;
   const git = binding.hub.readGitHeadText(binding.relativePath);
   const shared = binding.text.toString();
   if (!revision || revision !== binding.personalSelectionRevision
-    || git !== binding.personalSelectionGit || shared !== binding.personalSelectionShared) return false;
+    || git !== binding.personalSelectionGit || shared !== binding.personalSelectionShared
+    || localFileText(binding) !== binding.personalSelectionLocal) return false;
   const current = localFileText(binding);
   if (current === null) return false;
   let next;
@@ -284,21 +325,14 @@ export function edit(binding, client, absolutePath, message) {
   const previousVisible = state.mirror;
   const nextVisible = applyUtf8ByteEdit(previousVisible, positionByte, deleteBytes, insertedText);
   if (!binding.ticketId && client.kind !== 'review') {
-    const merge = mergeLocalisationThreeWay(previousVisible, binding.text.toString(), nextVisible);
     state.mirror = nextVisible;
     binding.personalText = nextVisible;
+    binding.queueExternalMerge(client, absolutePath, state, previousVisible, nextVisible,
+      'Изменения объединены с совместным документом.');
     if (binding.personalMaterialisationMode === 'git') {
       binding.personalMaterialisationMode = 'mine';
       binding.hub.savePersonalMode(binding.relativePath, 'mine').catch(() => {});
     }
-    if (merge.conflicts.length) {
-      state.pendingExternal = { base: previousVisible, external: nextVisible, resolutions: new Map() };
-      binding.emitExternalConflicts(client, absolutePath, state, merge.conflicts);
-      client.send({ type: 'notice', path: absolutePath,
-        message: 'Этот ключ одновременно изменён другим участником. Выберите вариант в Review.' });
-      return false;
-    }
-    binding.applyMergedText(merge.text);
     return true;
   }
   const start = utf8ByteOffsetToUtf16Index(previousVisible, positionByte);

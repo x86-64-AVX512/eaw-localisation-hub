@@ -9,12 +9,10 @@ interface PresenceBinding {
 
 interface PresenceClient {
   clientId: string;
-  kind: string;
 }
 
 type PresenceEntry = Record<string, unknown> & {
   clientId: string;
-  priority: number;
   sequence: number;
 };
 
@@ -33,7 +31,6 @@ export class LocalPresenceMux {
     this.entries.set(client.clientId, {
       ...payload,
       clientId: this.binding.hub.presenceClientId,
-      priority: client.kind === 'review' ? 1 : 0,
       sequence: ++this.sequence,
     });
     this.publish();
@@ -45,8 +42,7 @@ export class LocalPresenceMux {
   }
 
   current(): PresenceEntry | null {
-    return [...this.entries.values()].sort((left, right) =>
-      right.priority - left.priority || right.sequence - left.sequence)[0] ?? null;
+    return [...this.entries.values()].sort((left, right) => right.sequence - left.sequence)[0] ?? null;
   }
 
   publish(): void {

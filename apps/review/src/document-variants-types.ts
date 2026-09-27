@@ -14,6 +14,7 @@ export interface LocalSelection {
   lineNumber: number;
   gitLine: string | null;
   sharedLine: string | null;
+  localLine?: string | null;
 }
 
 export interface PersonalGitConflict {

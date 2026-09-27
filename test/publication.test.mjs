@@ -31,7 +31,7 @@ test('public repository metadata declares GPL-2.0-only and publication safeguard
   for (const pattern of ['output/', '.playwright-cli/', 'deploy/.env', 'deploy/backups/']) assert.match(ignore, new RegExp(pattern.replace('.', '\\.')));
   assert.match(dockerIgnore, /deploy\/\.env/);
   assert.match(license, /GNU GENERAL PUBLIC LICENSE\s+Version 2/);
-  assert.match(workflow, /submodules: recursive/);
+  assert.doesNotMatch(workflow, /submodules: recursive/);
   assert.match(workflow, /scripts\/bootstrap-zig\.ps1/);
   assert.match(workflow, /npm run check:publication/);
   assert.match(audit, /Public infrastructure IP detected/);

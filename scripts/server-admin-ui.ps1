@@ -136,9 +136,9 @@ function Open-AdminSession {
     $script:adminIssuedAt = [DateTime]::UtcNow
     $script:managerUser = $session.user
     $form.Text = if ($TeamManagement) {
-        'EaW Localisation Hub 0.8.8F4 – Управление командой'
+        'EaW Localisation Hub 0.8.8F5 – Управление командой'
     } else {
-        'EaW Localisation Hub 0.8.8F4 – Администратор'
+        'EaW Localisation Hub 0.8.8F5 – Администратор'
     }
 }
 
@@ -167,6 +167,15 @@ function Invoke-HubAdminApi {
 function Set-Status([string]$Text) {
     $status.Text = $Text
     $form.Refresh()
+}
+
+function Refresh-BackupCredential {
+    $issued = Invoke-HubAdminApi -Method Post -Route '/api/admin/backup-token' -Fresh
+    $token = [string]$issued.token
+    if ($token -notmatch '^eaw_backup_') { throw 'Сервер не вернул токен резервного копирования.' }
+    $target = Get-EawHubCredentialTarget -Server $serverBox.Text.Trim() -Kind 'BackupToken'
+    Set-EawHubCredential -Target $target -UserName 'EaW Hub scheduled backup' -Secret $token
+    $target
 }
 
 function Save-BackupPassphrase {
@@ -401,7 +410,7 @@ function Show-InvitationsDialog {
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = if ($TeamManagement) { 'EaW Localisation Hub 0.8.8F4 – Управление командой' } else { 'EaW Localisation Hub 0.8.8F4 – Администратор' }
+$form.Text = if ($TeamManagement) { 'EaW Localisation Hub 0.8.8F5 – Управление командой' } else { 'EaW Localisation Hub 0.8.8F5 – Администратор' }
 $form.Size = [System.Drawing.Size]::new(900, 790)
 $form.MinimumSize = [System.Drawing.Size]::new(900, 790)
 $form.StartPosition = 'CenterScreen'
@@ -724,18 +733,31 @@ $setPassphraseButton.Add_Click({
 $backupButton.Add_Click({
     try {
         Set-Status 'Создание зашифрованной резервной копии…'
-        Ensure-AdminSession
-        $result = & (Join-Path $PSScriptRoot 'backup-server.ps1') `
-            -Server $serverBox.Text.Trim() -AdminToken $script:adminToken
+        Ensure-AdminSession -Fresh
+        $server = $serverBox.Text.Trim()
+        $backupCredentialTarget = Get-EawHubCredentialTarget -Server $server -Kind 'BackupToken'
+        if (-not (Get-EawHubCredential -Target $backupCredentialTarget)) {
+            $backupCredentialTarget = Refresh-BackupCredential
+        }
+        try {
+            $result = & (Join-Path $PSScriptRoot 'backup-server.ps1') `
+                -Server $server -CredentialTarget $backupCredentialTarget
+        } catch {
+            if ($_.Exception.Message -notmatch '\b401\b') { throw }
+            $backupCredentialTarget = Refresh-BackupCredential
+            $result = & (Join-Path $PSScriptRoot 'backup-server.ps1') `
+                -Server $server -CredentialTarget $backupCredentialTarget
+        }
         Set-Status "Резервная копия создана: $($result.Backup)"
-    } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+    } catch {
+        Set-Status "Ошибка создания копии: $($_.Exception.Message)"
+        [void][System.Windows.Forms.MessageBox]::Show(
+            $_.Exception.Message, 'Резервная копия не создана', 'OK', 'Error')
+    }
 })
 $scheduleBackupButton.Add_Click({
     try {
-        $backupToken = Invoke-HubAdminApi -Method Post -Route '/api/admin/backup-token' -Fresh
-        $backupCredentialTarget = Get-EawHubCredentialTarget -Server $serverBox.Text.Trim() -Kind 'BackupToken'
-        Set-EawHubCredential -Target $backupCredentialTarget -UserName 'EaW Hub scheduled backup' `
-            -Secret ([string]$backupToken.token)
+        [void](Refresh-BackupCredential)
         $result = & (Join-Path $PSScriptRoot 'install-backup-task.ps1') -Server $serverBox.Text.Trim()
         Set-Status $result
     } catch { Set-Status "Ошибка: $($_.Exception.Message)" }

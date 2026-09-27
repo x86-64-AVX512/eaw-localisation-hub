@@ -77,10 +77,6 @@ test('sessions have role-sensitive expiry and a per-user cap', async () => {
   await assert.rejects(store.authenticate(adminSession.token), { code: 'expired_session' });
 });
 
-function pipePath(name) {
-  return process.platform === 'win32' ? `\\\\.\\pipe\\${name}` : path.join(os.tmpdir(), `${name}.sock`);
-}
-
 async function freePort() {
   const server = net.createServer();
   server.listen(0, '127.0.0.1');
@@ -205,29 +201,23 @@ async function startAuthenticatedServer(dataDirectory) {
   throw lastError;
 }
 
-async function connectFakePlugin(pipe, filePath, initialText, ipcSecret) {
-  const socket = net.createConnection(pipePath(pipe));
-  await once(socket, 'connect');
+async function connectReviewClient(stateDirectory, filePath, initialText) {
+  const discovery = JSON.parse(await fs.readFile(path.join(stateDirectory, 'review-session.json'), 'utf8'));
+  const socket = new WebSocket(
+    `${discovery.origin.replace('http:', 'ws:')}/review-socket?token=${discovery.token}`,
+    { origin: discovery.origin },
+  );
   const messages = [];
   const waiters = [];
-  let buffer = '';
-  socket.setEncoding('utf8');
-  socket.on('data', (chunk) => {
-    buffer += chunk;
-    while (buffer.includes('\n')) {
-      const newline = buffer.indexOf('\n');
-      const line = buffer.slice(0, newline);
-      buffer = buffer.slice(newline + 1);
-      if (!line.trim()) continue;
-      messages.push(JSON.parse(line));
-      for (const notify of [...waiters]) notify();
-    }
+  socket.on('message', (data) => {
+    messages.push(JSON.parse(data.toString('utf8')));
+    for (const notify of [...waiters]) notify();
   });
   const waitFor = (predicate, timeout = 10000) => {
     const existing = messages.find(predicate);
     if (existing) return Promise.resolve(existing);
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`Timed out waiting for Agent message:\n${JSON.stringify(messages, null, 2)}`)), timeout);
+      const timer = setTimeout(() => reject(new Error(`Timed out waiting for Review message:\n${JSON.stringify(messages, null, 2)}`)), timeout);
       const notify = () => {
         const found = messages.find(predicate);
         if (!found) return;
@@ -238,19 +228,10 @@ async function connectFakePlugin(pipe, filePath, initialText, ipcSecret) {
       waiters.push(notify);
     });
   };
-  const send = (message) => socket.write(`${JSON.stringify(message)}\n`);
-  const challenge = await waitFor((message) => message.type === 'ipcChallenge');
-  send({
-    type: 'hello',
-    clientId: 'authenticated-agent-test',
-    version: '0.6.5F1',
-    protocol: PROTOCOL_VERSION,
-    proof: crypto.createHmac('sha256', ipcSecret)
-      .update(`plugin:${challenge.nonce}`, 'utf8')
-      .digest('hex'),
-  });
-  send({ type: 'open', path: filePath, textBase64: Buffer.from(initialText).toString('base64') });
-  return { socket, messages, waitFor };
+  await once(socket, 'open');
+  socket.send(JSON.stringify({ type: 'open', path: filePath, crdt: 'yjs-v1',
+    textBase64: Buffer.from(initialText).toString('base64') }));
+  return { socket, messages, waitFor, send: (message) => socket.send(JSON.stringify(message)) };
 }
 
 test('password auth supports multiple roles, private reset, identity enforcement, and revocation', { timeout: 60000 }, async () => {
@@ -261,8 +242,7 @@ test('password auth supports multiple roles, private reset, identity enforcement
   let aliceSocket;
   let adminSocket;
   let aliceAgent;
-  let agentPlugin;
-  const ipcSecret = `auth-test-ipc-secret-${crypto.randomBytes(16).toString('hex')}`;
+  let agentReview;
   try {
     ({ server, port } = await startAuthenticatedServer(dataDirectory));
     const bootstrapCode = (await fs.readFile(path.join(dataDirectory, 'bootstrap-invite.txt'), 'utf8')).trim();
@@ -492,14 +472,14 @@ test('password auth supports multiple roles, private reset, identity enforcement
     const agentText = 'l_russian:\n agent_auth_key:0 "Тест"\n';
     await fs.mkdir(path.dirname(agentFile), { recursive: true });
     await fs.writeFile(agentFile, agentText);
-    const agentPipe = `eaw-hub-auth-${process.pid}-${Date.now()}`;
+    const agentState = path.join(temporary, 'agent-state');
     aliceAgent = spawn(process.execPath, [
       'apps/agent/src/main.mjs', '--repo', agentRepo, '--workspace', 'general-dev',
-      '--pipe', agentPipe, '--user', 'Spoofed local name', '--state', path.join(temporary, 'agent-state'),
+      '--user', 'Spoofed local name', '--state', agentState,
       '--server', `ws://127.0.0.1:${port}`,
     ], {
       cwd: projectRoot,
-      env: { ...process.env, EAW_HUB_TOKEN: aliceToken, EAW_HUB_IPC_SECRET: ipcSecret },
+      env: { ...process.env, EAW_HUB_TOKEN: aliceToken },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -508,18 +488,20 @@ test('password auth supports multiple roles, private reset, identity enforcement
     aliceAgent.stderr.setEncoding('utf8');
     aliceAgent.stdout.on('data', (chunk) => { aliceAgent.output += chunk; });
     aliceAgent.stderr.on('data', (chunk) => { aliceAgent.output += chunk; });
-    await waitForOutput(aliceAgent, /pipe:/);
-    agentPlugin = await connectFakePlugin(agentPipe, agentFile, agentText, ipcSecret);
-    const authenticatedHello = await agentPlugin.waitFor(
+    await waitForOutput(aliceAgent, /review application: ready/u);
+    agentReview = await connectReviewClient(agentState, agentFile, agentText);
+    const authenticatedHello = await agentReview.waitFor(
       (message) => message.type === 'agentHello' && message.user === 'Alice',
     );
     assert.equal(authenticatedHello.user, 'Alice');
-    await agentPlugin.waitFor((message) => message.type === 'documentReady');
-    const adminTarget = await agentPlugin.waitFor(
-      (message) => message.type === 'reservationTarget' && message.displayName === 'Admin',
+    await agentReview.waitFor((message) => message.type === 'documentReady');
+    const targetSnapshot = await agentReview.waitFor(
+      (message) => message.type === 'reservationTargetSnapshot'
+        && message.targets?.some((target) => target.displayName === 'Admin'),
     );
+    const adminTarget = targetSnapshot.targets.find((target) => target.displayName === 'Admin');
     assert.equal(adminTarget.id, adminRedeem.value.user.id);
-    agentPlugin.socket.write(`${JSON.stringify({
+    agentReview.send({
       type: 'reservationCreate',
       path: agentFile,
       startByte: 0,
@@ -527,15 +509,19 @@ test('password auth supports multiple roles, private reset, identity enforcement
       assigneeId: adminTarget.id,
       assignee: 'Spoofed target',
       assigneeColor: '#000000',
-    })}\n`);
-    const delegatedFromPlugin = await agentPlugin.waitFor(
-      (message) => message.type === 'reservation' && message.assigneeId === adminTarget.id,
+    });
+    const delegatedSnapshot = await agentReview.waitFor(
+      (message) => message.type === 'reservationSnapshot'
+        && message.reservations?.some((reservation) => reservation.assigneeId === adminTarget.id),
     );
-    assert.equal(delegatedFromPlugin.assignee, 'Admin');
-    assert.equal(delegatedFromPlugin.createdBy, 'Alice');
-    assert.equal(delegatedFromPlugin.color, adminTarget.color);
+    const delegatedFromReview = delegatedSnapshot.reservations.find(
+      (reservation) => reservation.assigneeId === adminTarget.id,
+    );
+    assert.equal(delegatedFromReview.assignee, 'Admin');
+    assert.equal(delegatedFromReview.createdBy, 'Alice');
+    assert.equal(delegatedFromReview.color, adminTarget.color);
 
-    const agentUnauthorised = agentPlugin.waitFor(
+    const agentUnauthorised = agentReview.waitFor(
       (message) => message.type === 'documentStatus' && message.status === 'unauthorized',
     );
     const changedPassword = await api(port, 'POST', '/api/auth/password/change', {
@@ -662,10 +648,9 @@ test('password auth supports multiple roles, private reset, identity enforcement
   } finally {
     aliceSocket?.close();
     adminSocket?.close();
-    agentPlugin?.socket.destroy();
+    agentReview?.socket.terminate();
     await stop(aliceAgent);
     await stop(server);
     await fs.rm(temporary, { recursive: true, force: true });
   }
 });
-import { PROTOCOL_VERSION } from '../packages/shared/src/constants.mts';

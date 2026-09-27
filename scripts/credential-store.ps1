@@ -134,15 +134,3 @@ function Remove-EawHubCredential {
         }
     }
 }
-
-function Get-OrCreate-EawHubIpcSecret {
-    $target = 'EaWLocalisationHub.IpcSecret'
-    $credential = Get-EawHubCredential -Target $target
-    if ($credential -and $credential.Secret.Length -ge 32) { return [string]$credential.Secret }
-    $bytes = [byte[]]::new(32)
-    $random = [Security.Cryptography.RandomNumberGenerator]::Create()
-    try { $random.GetBytes($bytes) } finally { $random.Dispose() }
-    $secret = [Convert]::ToBase64String($bytes)
-    Set-EawHubCredential -Target $target -UserName 'EaW Hub local IPC' -Secret $secret
-    $secret
-}

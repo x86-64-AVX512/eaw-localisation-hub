@@ -1,34 +1,18 @@
 ﻿param(
-    [string]$NotepadInstallDirectory = (Join-Path $env:ProgramFiles 'Notepad++'),
-    [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA 'EaWLocalisationHub\Client-0.8.8F4'),
+    [string]$InstallDirectory = '',
     [switch]$DoNotLaunch,
-    [switch]$Elevated
+    [switch]$SkipShortcuts
 )
 
 $ErrorActionPreference = 'Stop'
-if (-not $Elevated) {
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
-    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        $arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"' +
-            ' -NotepadInstallDirectory "' + $NotepadInstallDirectory + '"' +
-            ' -InstallDirectory "' + $InstallDirectory + '" -Elevated'
-        if ($DoNotLaunch) { $arguments += ' -DoNotLaunch' }
-        $process = Start-Process -FilePath powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
-        if ($process.ExitCode -ne 0) { throw "Elevated installer failed with exit code $($process.ExitCode)." }
-        return
-    }
-}
 $sourceRoot = Split-Path -Parent $PSScriptRoot
-$pluginSource = Join-Path $sourceRoot 'plugin\EawLocalisationHub.dll'
-$nodeSource = Join-Path $sourceRoot 'node.exe'
-if (-not (Test-Path -LiteralPath $pluginSource)) { throw "Client package is incomplete: $pluginSource" }
-if (-not (Test-Path -LiteralPath $nodeSource)) { throw "Bundled Node.js is missing: $nodeSource" }
-$notepadExecutable = Join-Path $NotepadInstallDirectory 'notepad++.exe'
-if (-not (Test-Path -LiteralPath $notepadExecutable)) { throw "Notepad++ x64 was not found: $notepadExecutable" }
-if (Get-Process notepad++ -ErrorAction SilentlyContinue) {
-    throw 'Close all Notepad++ windows before installing or updating the plugin.'
+$version = (Get-Content -LiteralPath (Join-Path $sourceRoot 'VERSION') -Raw -Encoding utf8).Trim()
+if ($version -notmatch '^\d+\.\d+\.\d+F\d+$') { throw "Invalid client version: $version" }
+if (-not $InstallDirectory) {
+    $InstallDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "Programs\EaW Localisation Hub\Client-$version"
 }
+$nodeSource = Join-Path $sourceRoot 'node.exe'
+if (-not (Test-Path -LiteralPath $nodeSource)) { throw "Bundled Node.js is missing: $nodeSource" }
 
 New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
 foreach ($name in @('apps', 'packages', 'scripts', 'node_modules', 'review')) {
@@ -43,37 +27,29 @@ Copy-Item -LiteralPath (Join-Path $sourceRoot 'Launch EaW Hub Admin.cmd') -Desti
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'Launch EaW Hub Team Management.cmd') -Destination $InstallDirectory -Force
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'VERSION') -Destination $InstallDirectory -Force
 
-$pluginTarget = Join-Path $NotepadInstallDirectory 'plugins\EawLocalisationHub'
-New-Item -ItemType Directory -Path $pluginTarget -Force | Out-Null
-$installedDll = Join-Path $pluginTarget 'EawLocalisationHub.dll'
-if (Test-Path -LiteralPath $installedDll) {
-    $backup = "$installedDll.before-0.8.8F4-" + [DateTime]::Now.ToString('yyyyMMdd-HHmmss') + '.bak'
-    Copy-Item -LiteralPath $installedDll -Destination $backup -Force
-}
-Copy-Item -LiteralPath $pluginSource -Destination $installedDll -Force
-
-$shell = New-Object -ComObject WScript.Shell
-$shortcutTargets = @(
+if (-not $SkipShortcuts) {
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcutTargets = @(
     [pscustomobject]@{ Path = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'EaW Localisation Hub Agent.lnk'); Command = 'Launch EaW Hub Agent.cmd' },
     [pscustomobject]@{ Path = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'EaW Localisation Hub Review.lnk'); Command = 'Launch EaW Hub Review.cmd' },
     [pscustomobject]@{ Path = (Join-Path ([Environment]::GetFolderPath('Programs')) 'EaW Localisation Hub Agent.lnk'); Command = 'Launch EaW Hub Agent.cmd' },
     [pscustomobject]@{ Path = (Join-Path ([Environment]::GetFolderPath('Programs')) 'EaW Localisation Hub Review.lnk'); Command = 'Launch EaW Hub Review.cmd' },
     [pscustomobject]@{ Path = (Join-Path ([Environment]::GetFolderPath('Programs')) 'EaW Localisation Hub Admin.lnk'); Command = 'Launch EaW Hub Admin.cmd' },
     [pscustomobject]@{ Path = (Join-Path ([Environment]::GetFolderPath('Programs')) 'EaW Localisation Hub Team Management.lnk'); Command = 'Launch EaW Hub Team Management.cmd' }
-)
-foreach ($shortcutDefinition in $shortcutTargets) {
-    $shortcut = $shell.CreateShortcut($shortcutDefinition.Path)
-    $shortcut.TargetPath = (Join-Path $InstallDirectory $shortcutDefinition.Command)
-    $shortcut.WorkingDirectory = $InstallDirectory
-    $shortcut.IconLocation = $notepadExecutable
-    $shortcut.Save()
+    )
+    foreach ($shortcutDefinition in $shortcutTargets) {
+        $shortcut = $shell.CreateShortcut($shortcutDefinition.Path)
+        $shortcut.TargetPath = (Join-Path $InstallDirectory $shortcutDefinition.Command)
+        $shortcut.WorkingDirectory = $InstallDirectory
+        $shortcut.IconLocation = Join-Path $InstallDirectory 'review\EaWReview.exe'
+        $shortcut.Save()
+    }
 }
 
 $record = [pscustomobject]@{
-    Version = '0.8.8F4'
+    Version = $version
     InstalledAt = [DateTime]::UtcNow.ToString('o')
     InstallDirectory = $InstallDirectory
-    NotepadInstallDirectory = $NotepadInstallDirectory
 }
 [System.IO.File]::WriteAllText(
     (Join-Path $InstallDirectory 'installation.json'),

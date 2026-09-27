@@ -30,7 +30,7 @@ test('mandatory training waits for server progress and Review records successful
   assert.match(agentHub, /trainingProgressConfirmed: this\.identity\?\.trainingProgressConfirmed === true/u);
   assert.match(reviewApp, /trainingProgressConfirmed: message\.trainingProgressConfirmed === true/u);
   assert.match(helpPanel, /state\.trainingProgressConfirmed === true/u);
-  assert.match(reviewServer, /materialisationInvalidated && !this\.closed/u);
+  assert.match(reviewServer, /!this\.closed && \(materialisationInvalidated \|\| \(latest !== null && latest !== materialised\)\)/u);
   assert.match(reviewServer, /materialisationSucceeded && !materialisationInvalidated[\s\S]*confirmDiskMaterialisation/u);
 });
 

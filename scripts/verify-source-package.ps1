@@ -11,9 +11,7 @@ $checksumPath = "$archivePath.sha256"
 foreach ($relative in @(
     'LICENSE', 'README.md', 'CHANGELOG.md', 'SECURITY.md', 'CONTRIBUTING.md',
     'THIRD_PARTY_NOTICES.md', 'package.json', 'package-lock.json',
-    '.github\workflows\ci.yml', 'docs\RELEASING.md',
-    'vendor\nlohmann-json\LICENSE.MIT',
-    'vendor\nlohmann-json\single_include\nlohmann\json.hpp'
+    '.github\workflows\ci.yml', 'docs\RELEASING.md'
 )) {
     if (-not (Test-Path -LiteralPath (Join-Path $packageRoot $relative) -PathType Leaf)) {
         throw "Source package is missing $relative"

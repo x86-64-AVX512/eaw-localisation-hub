@@ -4,9 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
-  auditLocalisation, localisationAuditCacheKey, localisationDiffText,
+  auditLocalisation, localisationAuditCacheKey, localisationDiffText, prepareLocalisationAudit,
   localisationInlineComments, localisationStructure,
 } from '../apps/agent/src/localisation-audit.mjs';
+import { DiffCache } from '../apps/agent/src/diff-cache.mjs';
 
 test('structural lines compare comments and preserve every physical line', () => {
   assert.deepEqual(localisationStructure([
@@ -32,7 +33,7 @@ test('structural diff displays localisation-shaped lines together with comments'
     '',
   ].join('\n')), [
     'l_localisation:',
-    ' key_name:0 "…"',
+    ' key_name: "…"',
     '# отдельный комментарий',
     '',
   ].join('\n'));
@@ -48,6 +49,17 @@ test('localisation audit parses versioned and versionless entries identically', 
     'КЛЮЧ event.without_version.t',
     'КЛЮЧ event.with_version.t',
   ]);
+});
+
+test('structural diff ignores key version suffixes but keeps key and line differences', () => {
+  const russian = 'l_russian:\n same: "Перевод"\n changed:0 "Текст"\n';
+  const english = 'l_english:\n same:0 "Translation"\n changed:1 "Text"\n';
+  assert.deepEqual(localisationStructure(russian), localisationStructure(english));
+  assert.equal(localisationDiffText(russian), localisationDiffText(english));
+  assert.notEqual(localisationDiffText(russian),
+    localisationDiffText(english.replace(' changed:1', ' other:1')));
+  assert.notDeepEqual(localisationStructure(russian),
+    localisationStructure(english.replace(' same:0', ' other:0')));
 });
 
 test('structural comparison reports standalone comments but ignores inline comment differences', () => {
@@ -92,7 +104,7 @@ test('localisation audit reports missing and duplicate keys across language pair
     assert.equal(result.englishKeyCount, 2);
     assert.equal(result.structureMatches, false);
     assert.doesNotMatch(result.russianDiffText, /КЛЮЧ|ПУСТАЯ СТРОКА/u);
-    assert.match(result.russianDiffText, /only_ru:0 "…"/u);
+    assert.match(result.russianDiffText, /only_ru: "…"/u);
     assert.equal(result.russianStructureText.split('\n').length, result.russianLineCount);
     assert.equal(result.englishStructureText.split('\n').length, result.englishLineCount);
   } finally { await fs.rm(repository, { recursive: true, force: true }); }
@@ -133,6 +145,29 @@ test('localisation audit cache identity changes when either paired file changes'
     assert.equal(await localisationAuditCacheKey(repository, russian), initial);
     await fs.writeFile(english, 'l_english:\n key:0 "Changed"\n');
     assert.notEqual(await localisationAuditCacheKey(repository, russian), initial);
+  } finally { await fs.rm(repository, { recursive: true, force: true }); }
+});
+
+test('localisation audit ignores results cached before version suffixes were normalized', async () => {
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-audit-cache-version-'));
+  const russian = path.join(repository, 'localisation', 'russian', 'sample_l_russian.yml');
+  const english = path.join(repository, 'localisation', 'english', 'sample_l_english.yml');
+  try {
+    await fs.mkdir(path.dirname(russian), { recursive: true });
+    await fs.mkdir(path.dirname(english), { recursive: true });
+    await fs.writeFile(russian, 'l_russian:\n key: "Перевод"\n');
+    await fs.writeFile(english, 'l_english:\n key:0 "Translation"\n');
+    const prepared = await prepareLocalisationAudit(repository, russian);
+    const [version, sourcePath, otherPath, digest] = JSON.parse(prepared.cacheKey);
+    assert.equal(version, 2);
+    const cache = new DiffCache(path.join(repository, 'cache'));
+    await cache.set('localisation-audit', JSON.stringify([sourcePath, otherPath, digest]), {
+      englishDiffText: ' key:0 "…"',
+    });
+    assert.equal(await cache.get('localisation-audit', prepared.cacheKey), undefined);
+    const current = prepared.create();
+    assert.equal(current.russianDiffText, current.englishDiffText);
+    assert.match(current.englishDiffText, / key: "…"/u);
   } finally { await fs.rm(repository, { recursive: true, force: true }); }
 });
 

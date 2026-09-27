@@ -66,9 +66,13 @@ async function request(options, method, route, body = null, binary = false) {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
-    let detail;
-    try { detail = (await response.json()).error; } catch { detail = await response.text(); }
-    throw new Error(`${response.status} ${response.statusText}: ${detail}`);
+    const responseText = await response.text();
+    let detail = responseText.trim();
+    try {
+      const parsed = JSON.parse(responseText);
+      detail = String(parsed?.error ?? parsed?.message ?? detail).trim();
+    } catch { /* Proxies can return plain text or HTML instead of JSON. */ }
+    throw new Error(`${response.status} ${response.statusText}: ${detail.slice(0, 500) || 'No error details'}`);
   }
   return binary ? Buffer.from(await response.arrayBuffer()) : response.json();
 }

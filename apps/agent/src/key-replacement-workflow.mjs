@@ -65,11 +65,11 @@ export class KeyReplacementWorkflow {
       const relativePath = path.relative(this.hub.options.repo, absolutePath).replaceAll('\\', '/');
       const matches = localisationEntries(text).filter((entry) => wanted.has(entry.key));
       if (!matches.length) continue;
-      for (const match of matches) found.get(match.key).push({ file: relativePath, oldText: match.text });
-      const changed = replaceLocalisationValues(text, wanted);
+      for (const match of matches) found.get(match.key).push({
+        file: relativePath, line: match.line, oldText: match.text,
+      });
       fileValues.push({
-        path: relativePath, hash: digest(text), text,
-        nextText: changed.text,
+        path: relativePath, hash: digest(text), text, matches,
       });
     }
     const missingKeys = [...found].filter(([, matches]) => matches.length === 0).map(([key]) => key);
@@ -78,7 +78,9 @@ export class KeyReplacementWorkflow {
     const changes = [...found].flatMap(([key, matches]) => matches.length === 1 ? [{
       key, file: matches[0].file, oldText: matches[0].oldText, newText: wanted.get(key),
     }] : []);
-    const files = fileValues.filter((file) => file.text !== file.nextText)
+    const safeWanted = new Map(changes.map(({ key, newText }) => [key, newText]));
+    const files = fileValues.filter((file) => file.matches.some(({ key }) => safeWanted.has(key))
+      && file.text !== replaceLocalisationValues(file.text, safeWanted).text)
       .map(({ path: filePath, hash }) => ({ path: filePath, hash }));
     return {
       entries: parsed.entries, errors: [], duplicateKeys: [], missingKeys,

@@ -10,10 +10,8 @@ $definition = Get-Content -LiteralPath $definitionPath -Raw -Encoding utf8
 $requiredPatterns = @(
     'PrivilegesRequired=admin',
     'ArchitecturesAllowed=x64compatible',
-    'CloseApplicationsFilter=notepad++.exe',
-    'DestDir: "{code:GetNotepadPluginDirectory}"',
+    'CloseApplicationsFilter=EaWReview.exe',
     "OutputBaseFilename=EaW-Localisation-Hub-Setup-{#AppVersion}",
-    'GetBinaryTypeW@kernel32.dll',
     'IsWebView2Installed',
     "WebView2ClientId = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'",
     'EaWLocalisationHubAgent'
@@ -21,8 +19,8 @@ $requiredPatterns = @(
 foreach ($pattern in $requiredPatterns) {
     if (-not $definition.Contains($pattern)) { throw "Installer definition is missing: $pattern" }
 }
-if ($definition -match '(?im)^Name:\s*"[^\"]*plugin') {
-    throw 'The mandatory Notepad++ plugin must not be exposed as an optional task.'
+if ($definition -match '(?i)notepad\+\+|EawLocalisationHub\.dll') {
+    throw 'Installer must not depend on the removed Notepad++ plugin.'
 }
 
 $output = Join-Path $projectRoot "dist\EaW-Localisation-Hub-Setup-$displayVersion.exe"

@@ -14,6 +14,24 @@ $instancePath = Join-Path $stateDirectory 'agent-instance.json'
 $logDirectory = Join-Path $stateDirectory 'logs'
 $script:agentProcess = $null
 $script:allowExit = $false
+$script:lastUpdateStatusStamp = ''
+$script:uiStartedAtUtc = [DateTime]::UtcNow
+$script:lastUpdateCheckAt = [DateTime]::MinValue
+
+function Start-ClientUpdateCheck {
+    if (([DateTime]::UtcNow - $script:lastUpdateCheckAt).TotalMinutes -lt 5) { return }
+    $updater = Join-Path $PSScriptRoot 'update-client.ps1'
+    if (-not (Test-Path -LiteralPath $updater -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $projectRoot 'node.exe') -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $projectRoot 'review\EaWReview.exe') -PathType Leaf)) { return }
+    $script:lastUpdateCheckAt = [DateTime]::UtcNow
+    $ownerStartedAtTicks = [System.Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().Ticks
+    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ' +
+        (Quote-AgentArgument $updater) + ' -ProjectRoot ' + (Quote-AgentArgument $projectRoot) +
+        " -OwnerProcessId $PID -OwnerStartedAtTicks $ownerStartedAtTicks"
+    Start-Process -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
+        -ArgumentList $arguments -WorkingDirectory $projectRoot -WindowStyle Hidden | Out-Null
+}
 
 function Find-RegisteredAgentProcess {
     if (-not (Test-Path -LiteralPath $instancePath -PathType Leaf)) { return $null }
@@ -529,10 +547,12 @@ function Update-AgentStateView {
             -Installed $clientStatusMetadata.Version -Recommended ([string]$health.version)
         if ([int]$health.protocol -ne $clientStatusMetadata.Protocol) {
             Set-StateText $versionState "Протокол несовместим: клиент $($clientStatusMetadata.Protocol), сервер $($health.protocol)" ([System.Drawing.Color]::Firebrick)
+            try { Start-ClientUpdateCheck } catch { $status.Text = "Ошибка проверки обновления: $($_.Exception.Message)" }
         } elseif ($null -eq $versionComparison) {
             Set-StateText $versionState "Версии: клиент $($clientStatusMetadata.Version), сервер $($health.version)" ([System.Drawing.Color]::DarkOrange)
         } elseif ($versionComparison -lt 0) {
             Set-StateText $versionState "Доступно обновление: $($clientStatusMetadata.Version) → $($health.version)" ([System.Drawing.Color]::DarkOrange)
+            try { Start-ClientUpdateCheck } catch { $status.Text = "Ошибка проверки обновления: $($_.Exception.Message)" }
         } elseif ($versionComparison -gt 0) {
             Set-StateText $versionState "Клиент $($clientStatusMetadata.Version); сервер требует обновления ($($health.version))" ([System.Drawing.Color]::SteelBlue)
         } else {
@@ -606,10 +626,8 @@ function Start-AgentProcess {
     )
     $argumentLine = ($arguments | ForEach-Object { Quote-AgentArgument ([string]$_) }) -join ' '
     $previousToken = $env:EAW_HUB_TOKEN
-    $previousIpcSecret = $env:EAW_HUB_IPC_SECRET
     try {
         $env:EAW_HUB_TOKEN = $credential.Secret
-        $env:EAW_HUB_IPC_SECRET = Get-OrCreate-EawHubIpcSecret
         $script:agentProcess = Start-Process -FilePath (Get-NodeExecutable) `
             -ArgumentList $argumentLine `
             -WorkingDirectory $projectRoot `
@@ -630,8 +648,6 @@ function Start-AgentProcess {
     finally {
         if ($null -eq $previousToken) { Remove-Item Env:EAW_HUB_TOKEN -ErrorAction SilentlyContinue }
         else { $env:EAW_HUB_TOKEN = $previousToken }
-        if ($null -eq $previousIpcSecret) { Remove-Item Env:EAW_HUB_IPC_SECRET -ErrorAction SilentlyContinue }
-        else { $env:EAW_HUB_IPC_SECRET = $previousIpcSecret }
     }
     $status.Text = "Desktop Agent запущен (PID $($script:agentProcess.Id)). Токен получен из Windows Credential Manager."
     Update-AgentStateView
@@ -816,6 +832,26 @@ $form.Add_FormClosing({
 $timer = [System.Windows.Forms.Timer]::new()
 $timer.Interval = 1000
 $timer.Add_Tick({
+    $updateStatusPath = Join-Path $stateDirectory 'update-status.json'
+    if (Test-Path -LiteralPath $updateStatusPath -PathType Leaf) {
+        try {
+            $updateStatus = Get-Content -LiteralPath $updateStatusPath -Raw -Encoding utf8 | ConvertFrom-Json
+            if ($updateStatus.UpdatedAt -ne $script:lastUpdateStatusStamp) {
+                $script:lastUpdateStatusStamp = [string]$updateStatus.UpdatedAt
+                $updateAtUtc = [DateTime]::Parse(
+                    [string]$updateStatus.UpdatedAt,
+                    [Globalization.CultureInfo]::InvariantCulture,
+                    [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+                if ($updateAtUtc -ge $script:uiStartedAtUtc -and
+                    $updateStatus.Stage -in @('downloading', 'installing', 'switching', 'error')) {
+                    $status.Text = [string]$updateStatus.Message
+                    if ($updateStatus.Stage -eq 'error') {
+                        $tray.ShowBalloonTip(5000, 'EaW Hub – ошибка обновления', [string]$updateStatus.Message, 'Error')
+                    }
+                }
+            }
+        } catch {}
+    }
     if ($script:agentProcess -and $script:agentProcess.HasExited) {
         $exitCode = $script:agentProcess.ExitCode
         $script:agentProcess = $null
@@ -830,6 +866,12 @@ $stateTimer.Add_Tick({ Update-AgentStateView })
 $stateTimer.Start()
 Update-AgentStateView
 
+$updateTimer = [System.Windows.Forms.Timer]::new()
+$updateTimer.Interval = 15 * 60 * 1000
+$updateTimer.Add_Tick({ try { Start-ClientUpdateCheck } catch { $status.Text = "Ошибка проверки обновления: $($_.Exception.Message)" } })
+$updateTimer.Start()
+$form.Add_Shown({ try { Start-ClientUpdateCheck } catch { $status.Text = "Ошибка проверки обновления: $($_.Exception.Message)" } })
+
 if ($StartMinimized) {
     $form.Add_Shown({
         $form.Hide()
@@ -839,4 +881,5 @@ if ($StartMinimized) {
 [void]$form.ShowDialog()
 $timer.Stop()
 $stateTimer.Stop()
+$updateTimer.Stop()
 $tray.Dispose()

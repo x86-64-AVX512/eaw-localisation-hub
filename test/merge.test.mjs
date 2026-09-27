@@ -2,8 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   captureLocalisationVariant,
+  localisationChangedKeys,
+  localisationVariantConflicts,
   localisationSelectionChanges,
   mergeLocalisationThreeWay,
+  projectLocalisationVariant,
+  projectLocalisationOwnership,
   setLocalisationSelection,
 } from '../packages/shared/src/merge.mts';
 
@@ -21,8 +25,8 @@ test('single-line variant capture preserves duplicate-key and structure semantic
   const duplicated = `${base} key_one:0 "Последний"\r\n`;
   assert.deepEqual(
     [...captureLocalisationVariant(duplicated, duplicated.replace('"Первый"', '"Новый"'))],
-    [],
-    'editing an overridden duplicate must retain the existing last-key behaviour',
+    [['occ:1:key_one', ' key_one:0 "Новый"']],
+    'the first duplicate must remain independently attributable',
   );
   const withComment = base.replace(' key_two', '# note\r\n key_two');
   assert.equal(captureLocalisationVariant(base, withComment).has('__file_structure__'), true);
@@ -110,6 +114,39 @@ test('duplicate keys require choosing one complete side', () => {
   });
   assert.deepEqual(accepted.conflicts, []);
   assert.equal(accepted.text, external);
+});
+
+test('unchanged duplicate occurrence counts merge and conflict independently', () => {
+  const original = 'l_russian:\n repeated:0 "One"\n repeated:0 "Two"\n unique:0 "Old"\n';
+  const first = original.replace('"One"', '"Shared"');
+  const second = original.replace('"Two"', '"Git"');
+  const independent = mergeLocalisationThreeWay(original, first, second);
+  assert.deepEqual(independent.conflicts, []);
+  assert.equal(independent.text, first.replace('"Two"', '"Git"'));
+
+  const competing = mergeLocalisationThreeWay(original, first, original.replace('"One"', '"Git"'));
+  assert.deepEqual(competing.conflicts.map(({ key }) => key), ['occ:1:repeated']);
+  assert.equal(mergeLocalisationThreeWay(original, first, original.replace('"One"', '"Git"'), {
+    'occ:1:repeated': 'external',
+  }).text, original.replace('"One"', '"Git"'));
+});
+
+test('personal variants and ownership keep duplicate occurrences distinct', () => {
+  const git = 'l_russian:\n repeated:0 "One"\n repeated:0 "Two"\n';
+  const first = git.replace('"One"', '"Author one"');
+  const second = git.replace('"Two"', '"Author two"');
+  const firstVariant = captureLocalisationVariant(git, first);
+  const secondVariant = captureLocalisationVariant(git, second);
+  assert.deepEqual([...firstVariant], [['occ:1:repeated', ' repeated:0 "Author one"']]);
+  assert.deepEqual([...secondVariant], [['occ:2:repeated', ' repeated:0 "Author two"']]);
+  assert.equal(projectLocalisationVariant(git, firstVariant), first);
+  assert.equal(projectLocalisationVariant(git, secondVariant), second);
+  assert.deepEqual(localisationVariantConflicts(git, [
+    ['first', firstVariant], ['second', secondVariant],
+  ]), []);
+  assert.deepEqual([...localisationChangedKeys(git, first)], ['occ:1:repeated']);
+  assert.equal(projectLocalisationOwnership(git, first,
+    new Map([['occ:1:repeated', 'first']]), 'first'), first);
 });
 
 test('moving a blank or comment relative to keys survives an independent Git value edit', () => {
@@ -200,4 +237,80 @@ test('file structure remains separately selectable without replacing local key v
 test('ambiguous duplicate-key files reject selection without producing a replacement', () => {
   const duplicate = `${base} key_one:0 "Duplicate"\r\n`;
   assert.throws(() => setLocalisationSelection(base, duplicate, base, 'key:key_one', true), /repeated/u);
+});
+
+test('duplicate occurrences have independent IDs and preserve the unselected declaration', () => {
+  const git = 'l_russian:\n duplicate:0 "First"\n unique:0 "Git"\n duplicate:0 "Second"\n';
+  const shared = 'l_russian:\n duplicate:0 "Shared first"\n unique:0 "Shared"\n duplicate:0 "Shared second"\n';
+  const changes = localisationSelectionChanges(git, shared, git);
+  assert.deepEqual(changes.entries.map(({ id }) => id), [
+    'occ:1:duplicate', 'key:unique', 'occ:2:duplicate',
+  ]);
+  const first = setLocalisationSelection(git, shared, git, 'occ:1:duplicate', true);
+  assert.match(first, /duplicate:0 "Shared first"[\s\S]*duplicate:0 "Second"/u);
+  const second = setLocalisationSelection(git, shared, first, 'occ:2:duplicate', true);
+  assert.equal(localisationSelectionChanges(git, shared, second).entries
+    .find(({ id }) => id === 'occ:2:duplicate')?.state, 'included');
+  assert.equal(setLocalisationSelection(git, shared, second, 'occ:1:duplicate', false)
+    .includes('duplicate:0 "First"'), true);
+  const unique = setLocalisationSelection(git, shared, git, 'key:unique', true);
+  assert.match(unique, /duplicate:0 "First"[\s\S]*duplicate:0 "Second"/u);
+});
+
+test('only duplicate keys with unequal occurrence counts are blocked', () => {
+  const git = 'l_russian:\n repeated:0 "One"\n repeated:0 "Two"\n unique:0 "Git"\n';
+  const shared = 'l_russian:\n repeated:0 "Only"\n unique:0 "Shared"\n';
+  const changes = localisationSelectionChanges(git, shared, git);
+  assert.deepEqual(changes.entries.map(({ id }) => id), ['key:unique']);
+  assert.match(changes.blockedReason, /repeated/u);
+  assert.throws(() => setLocalisationSelection(git, shared, git, 'occ:1:repeated', true), /cannot be matched/u);
+});
+
+test('local-only deleted BAR lines remain selectable after the shared text returns to Git', () => {
+  const git = 'l_russian:\n barrad_silver.42.a:0 "A reversal of roles."\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n barrad_silver.43.a:0 "Next"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
+  const removed = git.replace(' barrad_silver.42.a:0 "A reversal of roles."\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n', '\n');
+  const selection = localisationSelectionChanges(git, git, removed);
+  assert.deepEqual(selection.entries.map(({ id }) => id), [
+    '__file_structure__', 'key:barrad_silver.42.a', 'key:barrad_silver.43.t', 'key:barrad_silver.43.d',
+  ]);
+  assert.ok(selection.entries.every(({ state }) => state === 'custom'));
+  let restored = removed;
+  for (const key of ['barrad_silver.42.a', 'barrad_silver.43.t', 'barrad_silver.43.d']) {
+    restored = setLocalisationSelection(git, git, restored, `key:${key}`, true);
+  }
+  restored = setLocalisationSelection(git, git, restored, '__file_structure__', true);
+  assert.equal(restored, git);
+});
+
+test('excluding a deletion removes its blank-line placeholder without losing existing spacing', () => {
+  const git = 'l_russian:\n before:0 "Before"\n\n target:0 "Target"\n after:0 "After"\n';
+  const shared = git.replace(' target:0 "Target"\n', '\n');
+  assert.equal(setLocalisationSelection(git, shared, shared, 'key:target', false), git);
+  const variant = captureLocalisationVariant(git, shared);
+  variant.delete('target');
+  assert.equal(projectLocalisationVariant(git, variant), git);
+});
+
+test('BAR-style deletion placeholder is removed even when another key is duplicated elsewhere', () => {
+  const git = 'l_russian:\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n barrad_silver.43.a:0 "Next"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
+  const shared = git.replace(' barrad_silver.43.d:0 "Description"\n', '\n');
+  assert.equal(setLocalisationSelection(git, shared, shared, 'key:barrad_silver.43.d', false), git);
+  const variant = captureLocalisationVariant(git, shared);
+  variant.delete('barrad_silver.43.d');
+  assert.equal(projectLocalisationVariant(git, variant), git);
+});
+
+test('restoring a deleted key preserves unrelated comments and blank lines', () => {
+  const git = 'l_russian:\n before:0 "Before"\n# comment\n target:0 "Target"\n\n after:0 "After"\n';
+  const shared = git.replace(' target:0 "Target"\n', '\n');
+  assert.equal(setLocalisationSelection(git, shared, shared, 'key:target', false), git);
+});
+
+test('a local-only change to one duplicate occurrence can be reset independently', () => {
+  const git = 'l_russian:\n repeated:0 "First"\n repeated:0 "Second"\n';
+  const local = git.replace('repeated:0 "Second"', 'repeated:0 "Personal"');
+  const changes = localisationSelectionChanges(git, git, local);
+  assert.deepEqual(changes.entries.map(({ id }) => id), ['occ:2:repeated']);
+  assert.equal(changes.entries[0].state, 'custom');
+  assert.equal(setLocalisationSelection(git, git, local, 'occ:2:repeated', true), git);
 });

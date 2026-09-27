@@ -4,7 +4,6 @@ import process from 'node:process';
 
 export interface AgentInstanceOptions {
   state: string;
-  pipe: string;
   server: string;
   repo: string;
 }
@@ -13,7 +12,6 @@ export interface AgentInstanceRecord {
   schema: 1;
   pid: number;
   startedAt: string;
-  pipe: string;
   server: string;
   repository: string;
   version: string;
@@ -41,7 +39,6 @@ export async function registerAgentInstance(options: AgentInstanceOptions,
     schema: 1,
     pid: process.pid,
     startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
-    pipe: options.pipe,
     server: options.server,
     repository: options.repo,
     version: details.version ?? '',

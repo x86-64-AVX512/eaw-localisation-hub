@@ -227,6 +227,7 @@ test('one shared localisation key can be included without changing its neighbour
   binding.personalSelectionRevision = 'selection-1';
   binding.personalSelectionGit = git;
   binding.personalSelectionShared = shared;
+  binding.personalSelectionLocal = git;
   const client = {
     kind: 'review', closed: false, send() {},
     documents: new Map(),
@@ -247,5 +248,99 @@ test('one shared localisation key can be included without changing its neighbour
   assert.deepEqual(savedModes, ['mine']);
   assert.deepEqual(scheduled, [absolutePath]);
   assert.deepEqual(synced, [absolutePath]);
+  resetPersonalRequest(binding);
+});
+
+test('a checkbox can restore a local-only deletion after the shared version returns to Git', () => {
+  const git = 'l_russian:\n barrad_silver.43.t:0 "Panacea"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
+  const local = git.replace(' barrad_silver.43.t:0 "Panacea"\n', '\n');
+  const binding = bindingFixture();
+  binding.gitWritable = true;
+  binding.personalMaterialisationMode = 'mine';
+  binding.personalText = local;
+  binding.text = { toString: () => git };
+  binding.hub.readGitHeadText = () => git;
+  binding.hub.savePersonalMode = () => Promise.resolve();
+  binding.relativePath = 'localisation/russian/country_BAR_l_russian.yml';
+  binding.personalSelectionRevision = 'selection';
+  binding.personalSelectionGit = git;
+  binding.personalSelectionShared = git;
+  binding.personalSelectionLocal = local;
+  assert.equal(setPersonalSelection(binding, 'C:\\country_BAR_l_russian.yml',
+    'key:barrad_silver.43.t', true, 'selection'), true);
+  assert.equal(binding.personalText.includes('barrad_silver.43.t:0 "Panacea"'), true);
+  assert.equal(binding.sent[0].type, 'personal-projection-set');
+  assert.equal(binding.sent[0].text, binding.personalText);
+  resetPersonalRequest(binding);
+});
+
+test('excluding a BAR deletion does not send its leftover blank line to the server', () => {
+  const git = 'l_russian:\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n barrad_silver.43.a:0 "Next"\n';
+  const shared = git.replace(' barrad_silver.43.d:0 "Description"\n', '\n');
+  const local = git.replace(' barrad_silver.43.d:0 "Description"\n', '\n barrad_silver.43.d:0 "Description"\n');
+  const binding = bindingFixture();
+  binding.gitWritable = true;
+  binding.personalMaterialisationMode = 'mine';
+  binding.personalText = local;
+  binding.text = { toString: () => shared };
+  binding.hub.readGitHeadText = () => git;
+  binding.hub.savePersonalMode = () => Promise.resolve();
+  binding.relativePath = 'localisation/russian/country_BAR_l_russian.yml';
+  binding.personalSelectionRevision = 'selection';
+  binding.personalSelectionGit = git;
+  binding.personalSelectionShared = shared;
+  binding.personalSelectionLocal = local;
+  assert.equal(setPersonalSelection(binding, 'C:\\country_BAR_l_russian.yml',
+    'key:barrad_silver.43.d', false, 'selection'), true);
+  assert.equal(binding.sent[0].text, git);
+  resetPersonalRequest(binding);
+});
+
+test('duplicate occurrence selection is sent to the server and survives projection refreshes', () => {
+  const git = 'l_russian:\n repeated:0 "Git one"\n repeated:0 "Git two"\n';
+  const shared = 'l_russian:\n repeated:0 "Shared one"\n repeated:0 "Git two"\n';
+  const binding = bindingFixture();
+  binding.gitWritable = true;
+  binding.relativePath = 'localisation/russian/file.yml';
+  binding.personalMaterialisationMode = 'mine';
+  binding.personalText = git;
+  binding.text = { toString: () => shared };
+  binding.hub.readGitHeadText = () => git;
+  binding.hub.savePersonalMode = () => Promise.resolve();
+  binding.personalSelectionRevision = 'selection';
+  binding.personalSelectionGit = git;
+  binding.personalSelectionShared = shared;
+  binding.personalSelectionLocal = git;
+  assert.equal(setPersonalSelection(binding, 'C:\\file.yml', 'occ:1:repeated', true, 'selection'), true);
+  const selected = 'l_russian:\n repeated:0 "Shared one"\n repeated:0 "Git two"\n';
+  assert.equal(binding.sent[0].type, 'personal-projection-set');
+  assert.equal(binding.sent[0].text, selected);
+  assert.equal(binding.personalSelectionSnapshot ?? null, null);
+  handlePersonalDocument(binding, {
+    requestId: binding.personalRequestId,
+    textBase64: Buffer.from(selected).toString('base64'), revision: 'server-revision',
+  });
+  assert.equal(localFileText(binding), selected);
+  assert.equal(binding.serverPersonalText, selected);
+  resetPersonalRequest(binding);
+});
+
+test('committing a selected duplicate file retires its local overlay', () => {
+  const git = 'l_russian:\n repeated:0 "New"\n repeated:0 "Second"\n';
+  const binding = bindingFixture();
+  let cleared = false;
+  binding.relativePath = 'localisation/russian/file.yml';
+  binding.personalSelectionSnapshot = { gitHash: 'previous-git', text: git.replaceAll('\n', '\r\n') };
+  binding.hub.readGitHeadText = () => git;
+  binding.hub.clearPersonalSelection = () => { cleared = true; };
+  requestPersonalDocument(binding);
+  handlePersonalDocument(binding, {
+    requestId: binding.personalRequestId,
+    textBase64: Buffer.from(git).toString('base64'), revision: 'committed',
+  });
+  assert.equal(cleared, true);
+  assert.equal(binding.personalSelectionSnapshot, null);
+  assert.equal(binding.personalSelectionStale, false);
+  assert.equal(localFileText(binding), git);
   resetPersonalRequest(binding);
 });

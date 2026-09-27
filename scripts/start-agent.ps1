@@ -7,13 +7,11 @@
     [string]$Workspace,
     [string]$StateDirectory,
     [string]$TokenFile,
-    [string]$Color = '#6aa9ff',
-    [string]$Pipe = ''
+    [string]$Color = '#6aa9ff'
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-. (Join-Path $PSScriptRoot 'credential-store.ps1')
 $arguments = @(
     '.\apps\agent\src\main.mjs',
     '--repo', $Repo,
@@ -21,7 +19,6 @@ $arguments = @(
     '--server', $Server,
     '--color', $Color
 )
-if ($Pipe) { $arguments += @('--pipe', $Pipe) }
 if ($Workspace) {
     $arguments += @('--workspace', $Workspace)
 }
@@ -33,14 +30,10 @@ if ($TokenFile) {
 }
 
 Push-Location $projectRoot
-$previousIpcSecret = $env:EAW_HUB_IPC_SECRET
 try {
-    $env:EAW_HUB_IPC_SECRET = Get-OrCreate-EawHubIpcSecret
     & node @arguments
     exit $LASTEXITCODE
 }
 finally {
-    if ($null -eq $previousIpcSecret) { Remove-Item Env:EAW_HUB_IPC_SECRET -ErrorAction SilentlyContinue }
-    else { $env:EAW_HUB_IPC_SECRET = $previousIpcSecret }
     Pop-Location
 }

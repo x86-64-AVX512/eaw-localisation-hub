@@ -1,5 +1,6 @@
+import { pipeline } from 'node:stream/promises';
 import { bearerToken } from './auth.mjs';
-import { createBackupBundle } from './backup.mjs';
+import { streamBackupBundle } from './backup.mjs';
 import { anonymisePersistedHistory } from './document-history.mjs';
 import { anonymisePersistedReservationUser } from './room-metadata.mjs';
 import { DISPLAY_VERSION } from '../../../packages/shared/src/constants.mts';
@@ -159,15 +160,14 @@ export async function handleAdminHttp(context) {
   if (request.method === 'GET' && managementPath === '/backup') {
     await authenticatedBackup(request);
     await flushRooms();
-    const backup = await createBackupBundle(dataDirectory, DISPLAY_VERSION);
+    const backup = await streamBackupBundle(dataDirectory, DISPLAY_VERSION);
     const stamp = new Date().toISOString().replaceAll(':', '-');
     response.writeHead(200, {
       'content-type': 'application/gzip',
       'content-disposition': `attachment; filename="eaw-hub-${stamp}.eawhub.gz"`,
-      'content-length': backup.length,
       'cache-control': 'no-store',
     });
-    response.end(backup);
+    await pipeline(backup, response);
     return true;
   }
   sendJson(response, 404, { error: 'Not found', code: 'not_found' });

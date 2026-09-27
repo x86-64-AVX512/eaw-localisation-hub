@@ -17,7 +17,7 @@ body:
     id: component
     attributes:
       label: Component
-      options: [Review, Desktop Agent, Legacy Notepad++ plugin, Server, Deployer, Installer]
+      options: [Review, Desktop Agent, Server, Deployer, Installer]
     validations:
       required: true
   - type: textarea

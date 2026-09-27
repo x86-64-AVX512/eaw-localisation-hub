@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pluginMessageTypes,
-  validatePluginMessage,
+  clientMessageTypes,
+  validateClientMessage,
   validateServerMessage,
 } from '../packages/shared/src/protocol-schema.mts';
 
-test('plugin protocol schema accepts typed edit messages', () => {
+test('Review client protocol schema accepts typed edit messages', () => {
   const message = {
     type: 'edit',
     path: 'C:\\repo\\localisation\\russian\\file.yml',
@@ -14,11 +14,11 @@ test('plugin protocol schema accepts typed edit messages', () => {
     deleteBytes: 4,
     insertBase64: '0J/RgNC40LLQtdGC',
   };
-  assert.equal(validatePluginMessage(message), message);
+  assert.equal(validateClientMessage(message), message);
 });
 
 test('Review reservation commands accept their bounded optional comment', () => {
-  assert.doesNotThrow(() => validatePluginMessage({
+  assert.doesNotThrow(() => validateClientMessage({
     type: 'reservationCreate', path: 'C:\\repo\\localisation\\russian\\file.yml',
     startByte: 1, endByte: 20, assigneeId: 'user-1', assignee: 'Translator',
     assigneeColor: '#66aaff', comment: 'Проверить терминологию',
@@ -26,31 +26,33 @@ test('Review reservation commands accept their bounded optional comment', () => 
 });
 
 test('local-file selection accepts one bounded change id and a binary decision', () => {
-  assert.doesNotThrow(() => validatePluginMessage({
+  assert.doesNotThrow(() => validateClientMessage({
     type: 'personalFileSelectionSet', path: 'C:\\repo\\localisation\\russian\\file.yml',
     changeId: 'key:example_key', include: 1, revision: 'revision-1',
   }));
-  assert.throws(() => validatePluginMessage({
+  assert.throws(() => validateClientMessage({
     type: 'personalFileSelectionSet', path: 'x.yml', changeId: 'key:x', include: true, revision: 'revision-1',
   }), /include/);
-  assert.throws(() => validatePluginMessage({
+  assert.throws(() => validateClientMessage({
     type: 'personalFileSelectionSet', path: 'x.yml', changeId: 'key:x', include: 2, revision: 'revision-1',
   }), /include/);
 });
 
-test('plugin protocol schema rejects field confusion and unknown commands', () => {
-  assert.throws(() => validatePluginMessage({
+test('Review client protocol schema rejects field confusion and unknown commands', () => {
+  assert.throws(() => validateClientMessage({
     type: 'edit', path: 'x.yml', positionByte: '12', deleteBytes: 0, insertBase64: '',
   }), /positionByte/);
-  assert.throws(() => validatePluginMessage({ type: 'edit', path: 'x.yml' }), /positionByte/);
-  assert.throws(() => validatePluginMessage({ type: 'runCommand', command: 'whoami' }), /Unknown plugin message type/);
-  assert.throws(() => validatePluginMessage({ type: 'close', path: 'x.yml', surprise: true }), /Unknown protocol field/);
+  assert.throws(() => validateClientMessage({ type: 'edit', path: 'x.yml' }), /positionByte/);
+  assert.throws(() => validateClientMessage({ type: 'runCommand', command: 'whoami' }), /Unknown client message type/);
+  assert.throws(() => validateClientMessage({ type: 'close', path: 'x.yml', surprise: true }), /Unknown protocol field/);
+  assert.throws(() => validateClientMessage({ type: 'hello', clientId: 'old-plugin' }), /Unknown client message type/);
+  assert.throws(() => validateClientMessage({ type: 'reviewOpen', path: 'x.yml' }), /Unknown client message type/);
 });
 
-test('every dispatched plugin command has an explicit schema', () => {
-  assert.deepEqual(pluginMessageTypes, [
-    'hello', 'open', 'activate', 'deactivate', 'close', 'edit', 'snapshot', 'reviewUpdate', 'cursor', 'undo', 'redo',
-    'reviewOpen', 'reservationCreate', 'reservationDeleteAt', 'reservationDelete', 'commentCreate', 'commentReply',
+test('every dispatched Review command has an explicit schema', () => {
+  assert.deepEqual(clientMessageTypes, [
+    'open', 'activate', 'deactivate', 'close', 'edit', 'snapshot', 'reviewUpdate', 'cursor', 'undo', 'redo',
+    'reservationCreate', 'reservationDeleteAt', 'reservationDelete', 'commentCreate', 'commentReply',
     'commentStatus', 'commentDelete', 'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
     'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'avatarSet', 'avatarDelete',
     'recoveryIssue', 'recoveryConfirm', 'recoveryDiscard', 'externalConflictResolve',

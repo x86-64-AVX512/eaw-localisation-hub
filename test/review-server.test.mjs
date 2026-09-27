@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { WebSocket } from 'ws';
-import { startReviewServer } from '../apps/agent/src/review-server.mjs';
+import { queueMaterialisation, startReviewServer } from '../apps/agent/src/review-server.mjs';
 import { persistentReviewEndpoint } from '../apps/agent/src/review-endpoint.mts';
 import { DiffCache } from '../apps/agent/src/diff-cache.mjs';
 
@@ -30,6 +30,25 @@ async function waitUntil(predicate, label, timeoutMilliseconds = 10_000) {
   }
   throw new Error(`Timed out waiting for ${label}`);
 }
+
+test('materialisation waits for an older write before saving a newer personal projection', async () => {
+  const binding = { materialisationWrite: Promise.resolve() };
+  const order = [];
+  let releaseFirst; let signalFirst;
+  const firstStarted = new Promise((resolve) => { signalFirst = resolve; });
+  const firstDone = new Promise((resolve) => { releaseFirst = resolve; });
+  const first = queueMaterialisation(binding, async () => {
+    order.push('old-start'); signalFirst();
+    await firstDone;
+    order.push('old-finish');
+  });
+  await firstStarted;
+  const second = queueMaterialisation(binding, () => { order.push('new-finish'); });
+  assert.deepEqual(order, ['old-start']);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(order, ['old-start', 'old-finish', 'new-finish']);
+});
 
 test('review endpoint keeps its loopback port and capability across Agent restarts', async () => {
   const state = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-review-endpoint-'));
@@ -79,7 +98,7 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       client.send({ type: 'agentHello', user: 'Reviewer', workspace: 'test', color: '#abcdef' });
       return true;
     },
-    receivePluginMessage(client, message) {
+    receiveClientMessage(client, message) {
       received.push(message);
       if (message.type === 'open') {
         client.documents.set(path.resolve(message.path), {

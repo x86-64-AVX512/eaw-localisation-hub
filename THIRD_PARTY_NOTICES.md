@@ -4,8 +4,6 @@ EaW Localisation Hub is licensed under GPL-2.0-only. It uses or redistributes th
 
 | Component | Purpose | License | Source |
 | --- | --- | --- | --- |
-| Notepad++ Plugin Template / SDK headers | Native Legacy plugin integration | GPL-2.0 | `vendor/npp-plugin-template` |
-| nlohmann/json | Native JSON handling | MIT | `vendor/nlohmann-json` |
 | Node.js | Bundled JavaScript runtime | MIT and bundled third-party notices | <https://nodejs.org/> |
 | Monaco Editor | Review editor | MIT | <https://github.com/microsoft/monaco-editor> |
 | nspell | Local Hunspell-compatible spelling engine | MIT | <https://github.com/wooorm/nspell> |
@@ -19,4 +17,4 @@ EaW Localisation Hub is licensed under GPL-2.0-only. It uses or redistributes th
 
 The distributable packages retain dependency license files. The bundled Node.js runtime is accompanied by the complete `LICENSE` file from the exact Node.js distribution used for the build. `package-lock.json` records exact JavaScript dependency versions.
 
-Microsoft WebView2 Runtime, Notepad++ itself, GitHub Desktop, Git for Windows, Docker and Inno Setup are external prerequisites or build tools and are not relicensed by this project.
+Microsoft WebView2 Runtime, GitHub Desktop, Git for Windows, Docker and Inno Setup are external prerequisites or build tools and are not relicensed by this project.

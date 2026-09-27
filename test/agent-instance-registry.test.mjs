@@ -13,7 +13,6 @@ test('Agent instance registry is discoverable and removed only by its owner', as
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-agent-instance-'));
   const options = {
     state: temporary,
-    pipe: 'eaw-test-pipe',
     server: 'wss://hub.example.test:10443',
     repo: 'C:\\repo',
   };
@@ -22,7 +21,7 @@ test('Agent instance registry is discoverable and removed only by its owner', as
     const target = instanceRegistryPath(temporary);
     const record = JSON.parse(await fs.readFile(target, 'utf8'));
     assert.equal(record.pid, process.pid);
-    assert.equal(record.pipe, options.pipe);
+    assert.equal(record.pipe, undefined);
     assert.equal(record.server, options.server);
     assert.equal(record.repository, options.repo);
     assert.equal(record.version, '0.8.5F1');

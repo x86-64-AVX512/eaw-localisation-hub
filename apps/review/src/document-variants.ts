@@ -67,9 +67,15 @@ export function createDocumentVariants({
   function renderSelections(renderDialog = dialog.open): void {
     const entries = state.documentVariants?.localSelections ?? [];
     const blocked = state.documentVariants?.localSelectionBlocked ?? '';
-    const disabled = Boolean(blocked || state.documentVariants?.gitConflicts.length);
+    const disabled = Boolean(state.documentVariants?.gitConflicts.length);
     if (renderDialog) {
       selectionsElement.replaceChildren();
+      if (blocked && entries.length) {
+        const warning = document.createElement('div');
+        warning.className = 'personal-selection-empty';
+        warning.textContent = blocked;
+        selectionsElement.append(warning);
+      }
       if (!entries.length) {
         const empty = document.createElement('div');
         empty.className = 'personal-selection-empty';
@@ -87,15 +93,20 @@ export function createDocumentVariants({
         checkbox.addEventListener('change', () => setSelection(entry, checkbox.checked));
         const label = document.createElement('span');
         label.className = 'personal-selection-label';
-        label.textContent = entry.kind === 'structure' ? entry.label : `${entry.label} · строка ${entry.lineNumber}`;
+        label.textContent = entry.kind === 'structure' ? entry.label
+          : `${entry.label} · строка ${entry.lineNumber}${entry.kind === 'local-only' ? ' · только в личной версии' : ''}`;
         const diff = document.createElement('span');
         diff.className = 'personal-selection-diff';
         const before = document.createElement('del');
-        before.textContent = displayLine(entry.gitLine, 'в Git строки нет');
+        before.textContent = entry.kind === 'local-only'
+          ? displayLine(entry.localLine ?? null, 'в личной версии строки нет')
+          : displayLine(entry.gitLine, 'в Git строки нет');
         const after = document.createElement('ins');
         after.textContent = entry.kind === 'structure'
           ? 'Изменена структура, отдельные комментарии или порядок строк'
-          : displayLine(entry.sharedLine, 'удалено в совместной версии');
+          : entry.kind === 'local-only'
+            ? displayLine(entry.gitLine, 'в Git строки нет')
+            : displayLine(entry.sharedLine, 'удалено в совместной версии');
         diff.append(before, after);
         row.append(checkbox, label, diff);
         selectionsElement.append(row);
