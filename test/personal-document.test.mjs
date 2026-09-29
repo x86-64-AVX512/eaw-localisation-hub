@@ -193,6 +193,28 @@ test('a personal projection patch advances the last server revision without a fu
   resetPersonalRequest(binding);
 });
 
+test('CRLF server byte patches keep their raw base while materialisation exposes only LF', () => {
+  const binding = bindingFixture();
+  const wire = 'l_russian:\r\n key:0 "old"\r\n';
+  requestPersonalDocument(binding);
+  handlePersonalDocument(binding, { requestId: binding.personalRequestId,
+    textBase64: Buffer.from(wire).toString('base64'), revision: 'crlf-one' });
+  assert.equal(localFileText(binding), wire.replaceAll('\r\n', '\n'));
+  assert.equal(binding.serverPersonalText, wire, 'normalisation must not shift wire byte positions');
+  requestPersonalDocument(binding);
+  handlePersonalDocument(binding, { requestId: binding.personalRequestId,
+    baseRevision: 'crlf-one', revision: 'crlf-two', patch: {
+      positionByte: Buffer.byteLength('l_russian:\r\n key:0 "'), deleteBytes: 3,
+      insertBase64: Buffer.from('новый').toString('base64'),
+    } });
+  assert.equal(binding.serverPersonalText, wire.replace('old', 'новый'));
+  assert.equal(localFileText(binding), wire.replace('old', 'новый').replaceAll('\r\n', '\n'));
+  binding.personalMaterialisationMode = 'git';
+  binding.hub.readGitHeadText = () => wire;
+  assert.equal(localFileText(binding), wire.replaceAll('\r\n', '\n'));
+  resetPersonalRequest(binding);
+});
+
 test('personal Git conflicts block mine materialisation but allow an explicit Git-only mode', () => {
   const binding = bindingFixture();
   binding.personalGitConflicts = [{ key: 'key' }];

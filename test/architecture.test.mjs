@@ -82,6 +82,7 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/review/src/presence-cursors.ts',
     'apps/review/src/presence-controller.ts',
     'apps/review/src/review-cards.ts',
+    'apps/review/src/comment-actions.ts',
     'apps/review/src/review-card-layout.ts',
     'apps/review/src/review-navigation.ts',
     'apps/review/src/review-card-elements.ts',
@@ -125,6 +126,7 @@ test('local prototype exercises the production canonical Git path', () => {
 test('Review owns the complete collaboration UI without a native editor plugin', () => {
   const reviewSources = [
     'apps/review/src/app.ts',
+    'apps/review/src/comment-actions.ts',
     'apps/review/src/collaboration-panel.ts',
     'apps/review/src/editing-mode.ts',
     'apps/review/src/review-cards.ts',

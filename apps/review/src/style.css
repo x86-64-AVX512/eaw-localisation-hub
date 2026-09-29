@@ -610,10 +610,12 @@ dialog.fullscreen .history-shell, dialog.fullscreen .git-conflict-shell, dialog.
 .comparison ins { color: var(--author-color, #6aa9ff); text-decoration: none; font-weight: 650; }
 .thread { display: flex; max-height: 150px; flex-direction: column; gap: 8px; overflow: auto; margin-top: 8px; }
 .thread-message { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 7px; }
-.message-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; }
+.message-meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 7px; }
 .message-meta strong { color: #dfe5ee; font-size: 12px; }
 .message-meta time { color: #7f8a9b; font-size: 10px; white-space: nowrap; }
-.message-body { margin-top: 2px; color: #c6ceda; font-size: 12px; line-height: 1.4; white-space: pre-wrap; }
+.message-body { margin-top: 2px; color: #c6ceda; font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; user-select: text; -webkit-user-select: text; }
+.message-body:focus-visible { outline: 1px solid #6aa9ff; outline-offset: 2px; }
+.message-copy { padding: 2px 5px; font-size: 10px; margin-left: auto; }
 .card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .card-actions button { padding: 4px 8px; font-size: 12px; }
 .empty-review { position: absolute; top: 50%; right: 20px; left: 20px; color: #697486; text-align: center; }

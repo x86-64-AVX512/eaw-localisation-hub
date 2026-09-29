@@ -132,7 +132,15 @@ function secureHeaders(response, contentType) {
 
 export function queueMaterialisation(binding, operation) {
   const previous = Promise.resolve(binding.materialisationWrite).catch(() => {});
-  const current = previous.then(operation);
+  const current = previous.then(async () => {
+    binding.materialisationActive = true;
+    binding.materialisationEpoch = (binding.materialisationEpoch ?? 0) + 1;
+    try { return await operation(); }
+    finally {
+      binding.materialisationActive = false;
+      binding.materialisationEpoch += 1;
+    }
+  });
   binding.materialisationWrite = current;
   return current;
 }

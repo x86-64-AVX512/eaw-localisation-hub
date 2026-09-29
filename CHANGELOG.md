@@ -1,6 +1,17 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F5` form; package metadata uses `0.8.8-beta.5`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F6` form; package metadata uses `0.8.8-beta.6`.
+
+## 0.8.8F6
+
+- Fixed CRLF/LF mismatches in personal materialisation, initial/reloaded disk bases and deletion-placeholder restoration: own Windows saves no longer loop back as external merges, and checkbox toggles plus Ctrl+Z preserve the original Git spacing.
+- Fixed disk materialisation after conflict resolution: the merge base advances only after the checked file is successfully written, and a new external edit cannot consume a stale server result.
+- Bound canonical Git and disk conflict choices to snapshot IDs; outdated choices and partial resolutions cannot affect newer text.
+- Preserved whole-file duplicate-count conflicts across Git updates and restarts; choosing Git or the personal side now applies that complete side.
+- Normalised personal variants through unique/duplicate transitions and repaired legacy mixed occurrence IDs without creating phantom declarations.
+- Rechecked offline disk changes after reconnect, removed deletion placeholders at file boundaries, and fixed a merge loop when inserting before the first key.
+- Reduced large-file disk checks to UTF-8 byte patches with bounded gzip insertions and explicit size-limit errors instead of endless retries.
+- Protocol 21 requires matching client and server updates.
 
 ## 0.8.8F5
 

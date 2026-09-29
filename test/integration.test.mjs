@@ -6,11 +6,12 @@ import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import * as Y from 'yjs';
 import { createReviewDocument } from '../apps/review/src/review-document.ts';
+import { normaliseLineEndings, withoutUtf8Bom } from '../packages/shared/src/text.mts';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 
@@ -28,6 +29,7 @@ function spawnNode(argumentsList, environment = {}) {
     cwd: projectRoot, env: { ...process.env, ...environment },
     stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
   });
+
   child.output = '';
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
@@ -171,6 +173,91 @@ test('real Review–Agent–server transport preserves in-flight typing and writ
     } finally {
       alice?.close(); bob?.close();
       await stopProcess(aliceAgent); await stopProcess(bobAgent); await stopProcess(server);
+      await fs.rm(temporary, { recursive: true, force: true });
+    }
+  });
+
+test('real BAR deletion, checkbox and watcher round trip keeps disk equal to the selected personal version',
+  { timeout: 60000 }, async () => {
+    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-bar-materialisation-integration-'));
+    const repo = path.join(temporary, 'repo');
+    const state = path.join(temporary, 'state');
+    const relative = 'localisation/russian/country_BAR_l_russian.yml';
+    const file = path.join(repo, relative);
+    const original = process.env.EAW_BAR_INTEGRATION_REPO
+      ? normaliseLineEndings(withoutUtf8Bom(execFileSync('git', ['show', `HEAD:${relative}`], {
+        cwd: process.env.EAW_BAR_INTEGRATION_REPO, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, windowsHide: true,
+      })))
+      : 'l_russian:\n  BAR_possesed_soldiers:0 "Possessed Soldiers"\n  BAR_viira_hierarchy:0 "Structured Hierarchy"\n\n  last_member_standing_tooltip:0 "Лишь самый сильный член Пентархии выжил."\n\n  sp_bar_magical_reactor:0 "One"\n  sp_bar_magical_reactor:0 "Two"\n';
+    const deleted = original.replace('  BAR_viira_hierarchy:0 "Structured Hierarchy"', '');
+    const sharedDeleted = deleted.replaceAll('\n', '\r\n');
+    const port = await freePort();
+    let server, agent, review, secondReview;
+    const readDisk = async () => normaliseLineEndings(withoutUtf8Bom(await fs.readFile(file, 'utf8')));
+    try {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, original);
+      const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true, stdio: 'pipe' });
+      git('init', '-b', 'barrad'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.invalid');
+      git('config', 'core.autocrlf', 'false'); git('add', '.'); git('commit', '-m', 'test-baseline');
+      await fs.writeFile(file, `\uFEFF${original.replaceAll('\n', '\r\n')}`);
+      server = spawnNode(['apps/server/src/main.mjs', '--port', String(port), '--data', path.join(temporary, 'data'), '--auth', 'disabled']);
+      await waitForHealth(port);
+      agent = spawnNode(['apps/agent/src/main.mjs', '--repo', repo, '--workspace', 'barrad', '--user', 'Alice', '--state', state,
+        '--server', `ws://127.0.0.1:${port}`]);
+      await waitUntil(async () => { try { await fs.access(path.join(state, 'review-session.json')); return true; } catch { return false; } }, 'Review endpoint');
+      // The native host reads the physical Windows file, not an LF fixture.
+      const openedText = original.replaceAll('\n', '\r\n');
+      review = await connectReview(state, file, openedText);
+      secondReview = await connectReview(state, file, openedText);
+      await waitUntil(() => review.messages.some((m) => m.type === 'documentVariants'), 'initial variants');
+      review.document.commit(sharedDeleted);
+      await waitUntil(async () => !(await readDisk()).includes('BAR_viira_hierarchy:'), 'deleted key on disk');
+      for (const include of [false, true, false, true]) {
+        await waitUntil(() => review.messages.filter((m) => m.type === 'documentVariants').at(-1)
+          ?.localSelections?.some((e) => e.id === 'key:BAR_viira_hierarchy'), 'current selection revision');
+        const variants = review.messages.filter((m) => m.type === 'documentVariants').at(-1);
+        review.socket.send(JSON.stringify({ type: 'personalFileSelectionSet', path: file, changeId: 'key:BAR_viira_hierarchy',
+          include: include ? 1 : 0, revision: variants.localSelectionRevision }));
+        await waitUntil(async () => include ? !(await readDisk()).includes('BAR_viira_hierarchy:') : await readDisk() === original,
+          `checkbox ${include}`, 7000);
+        // Let both directory notifications and at least two periodic polls run.
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+        const latest = review.messages.filter((m) => m.type === 'documentVariants').at(-1);
+        assert.equal(latest.localSelections.find((e) => e.id === 'key:BAR_viira_hierarchy')?.state, include ? 'included' : 'excluded');
+        assert.equal(await readDisk(), include ? original.replace('  BAR_viira_hierarchy:0 "Structured Hierarchy"\n', '') : original);
+        assert.equal(review.document.text(), sharedDeleted, 'materialising a checkbox must not mutate the shared document');
+      }
+      assert.equal(review.messages.some((m) => m.type === 'notice' && /Изменения с диска объединены/u.test(m.message)), false,
+        'our writes must not loop back as external changes');
+      for (let cycle = 0; cycle < 5; cycle += 1) {
+        for (const include of [false, true]) {
+          const variants = review.messages.filter((m) => m.type === 'documentVariants').at(-1);
+          review.socket.send(JSON.stringify({ type: 'personalFileSelectionSet', path: file, changeId: 'key:BAR_viira_hierarchy',
+            include: include ? 1 : 0, revision: variants.localSelectionRevision }));
+          await waitUntil(() => review.messages.filter((m) => m.type === 'documentVariants').at(-1)
+            ?.localSelections?.find((e) => e.id === 'key:BAR_viira_hierarchy')?.state === (include ? 'included' : 'excluded'),
+            `rapid checkbox ${include}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+        assert.equal(await readDisk(), original.replace('  BAR_viira_hierarchy:0 "Structured Hierarchy"\n', ''));
+        assert.equal(review.document.text(), sharedDeleted);
+      }
+      // The same wire command is used by Ctrl+Z in editing mode.
+      review.socket.send(JSON.stringify({ type: 'undo', path: file }));
+      await waitUntil(() => review.document.text() === openedText, 'Ctrl+Z restores the shared line');
+      await waitUntil(async () => await readDisk() === original, 'Ctrl+Z restores the local line and spacing');
+      await new Promise((resolve) => setTimeout(resolve, 2200));
+      assert.equal(await readDisk(), original);
+      assert.equal(review.messages.some((m) => m.type === 'notice' && /Изменения с диска объединены|Git-откат применён/u.test(m.message)), false,
+        'CRLF own writes and Ctrl+Z must not become external disk changes');
+    } catch (error) {
+      error.message += `; recent messages: ${JSON.stringify(review?.messages.slice(-15).map((m) => ({ type: m.type, message: m.message,
+        selections: m.localSelections, blocked: m.localSelectionBlocked })))}`;
+      error.message += `; Agent: ${agent?.output.slice(-1500)}; Server: ${server?.output.slice(-1500)}`;
+      throw error;
+    } finally {
+      review?.close(); secondReview?.close(); await stopProcess(agent); await stopProcess(server);
       await fs.rm(temporary, { recursive: true, force: true });
     }
   });

@@ -10,6 +10,7 @@ import * as documentCursor from './document-cursor.mjs';
 import * as view from './document-view.mjs';
 import * as gitState from './git-document-state.mjs';
 import * as delivery from './document-delivery.mts';
+import { normaliseLineEndings } from '../../../packages/shared/src/text.mts';
 import * as personalDocument from './personal-document.mjs';
 import { broadcastReviewUpdate, applyReviewUpdate } from './review-document.mjs';
 import { handleMergedBranchClose, handleUnavailableTicketClose } from './document-lifecycle.mts';
@@ -156,6 +157,7 @@ export class DocumentBinding {
     }
     if (message.type === 'git-status') {
       gitState.applyGitStatus(this, message);
+      if (this.gitWritable) disk.retryPendingDiskMerges(this);
       return;
     }
     if (message.type === 'reservations') {
@@ -243,9 +245,9 @@ export class DocumentBinding {
       initialised: false,
       initialReconciled: false,
       origin: { clientId: client.clientId },
-      diskBase: storedBase?.text ?? initialText,
+      diskBase: normaliseLineEndings(storedBase?.text ?? initialText),
       hasPersistedBase: storedBase != null,
-      basePersistText: storedBase?.text ?? null,
+      basePersistText: storedBase ? normaliseLineEndings(storedBase.text) : null,
       basePersistPromise: Promise.resolve(),
       diskWatcher: null, diskSignature: '', diskPollTimer: null,
       diskDebounce: null,
@@ -358,9 +360,10 @@ export class DocumentBinding {
     return disk.queueExternalMerge(this, client, absolutePath, state, base, external, notice);
   }
 
-  requestDiskMergeCheck(baseText, externalText, personalText, resolutions = new Map(), initialUnknown = false) {
+  requestDiskMergeCheck(baseText, externalText, personalText, resolutions = new Map(), initialUnknown = false,
+    resolutionRevision = '') {
     return diskRequests.requestDiskMergeCheck(this, baseText, externalText, personalText,
-      resolutions, initialUnknown);
+      resolutions, initialUnknown, resolutionRevision);
   }
 
   persistBaseSnapshot(state, text) {

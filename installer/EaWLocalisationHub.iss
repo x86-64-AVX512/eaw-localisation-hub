@@ -1,11 +1,11 @@
 #ifndef AppVersion
-  #define AppVersion "0.8.8F5"
+  #define AppVersion "0.8.8F6"
 #endif
 #ifndef PayloadDir
   #define PayloadDir "..\dist\EaW-Hub-Client-" + AppVersion
 #endif
 #ifndef WindowsFileVersion
-  #define WindowsFileVersion "0.8.8.5"
+  #define WindowsFileVersion "0.8.8.6"
 #endif
 
 #define AppGuid "{{B84E4DE8-27A1-4DC2-ACF7-AB7779F76FC8}"

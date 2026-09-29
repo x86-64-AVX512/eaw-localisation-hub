@@ -76,7 +76,7 @@ test('resolved disk conflict is removed from every local view of the file', () =
 
   for (const state of [firstState, secondState]) {
     assert.equal(state.pendingExternal, null);
-    assert.equal(state.diskBase, 'personal');
+    assert.equal(state.diskBase, 'old');
     assert.equal(state.materialisationExpected, 'personal');
   }
   for (const client of [first, second]) {
@@ -151,6 +151,7 @@ test('opening a file repairs a previously materialised foreign shared edit', asy
   const client = localClient(absolutePath, state);
   const binding = {
     ticketId: '', clients: new Set([client]), personalText: personal, personalReady: true,
+    synced: true, gitWritable: true,
     text: { toString: () => leaked },
     localFileText() { return this.personalText; },
     applyMergedText(text) { this.applied = text; },
@@ -166,7 +167,7 @@ test('opening a file repairs a previously materialised foreign shared edit', asy
   assert.equal(binding.personalText, personal);
   assert.doesNotMatch(binding.personalText, /Dogoo/u);
   assert.equal(binding.applied, leaked);
-  assert.equal(state.diskBase, personal);
+  assert.equal(state.diskBase, leaked);
   assert.equal(state.materialisationExpected, personal);
   assert.equal(client.sent.some((message) => message.type === 'saveRequested'), true);
 });

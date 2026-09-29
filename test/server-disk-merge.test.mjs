@@ -5,6 +5,7 @@ import { WebSocket } from 'ws';
 import { DocumentRoom } from '../apps/server/src/document-room.mjs';
 import { DocumentHistory } from '../apps/server/src/document-history.mjs';
 import { evaluateDiskMerge } from '../apps/server/src/disk-merge.mjs';
+import { encodeMergeText } from '../packages/shared/src/merge-wire.mts';
 
 const base = 'l_russian:\n repeated:0 "One"\n repeated:0 "Two"\n';
 
@@ -42,6 +43,8 @@ test('room only returns a conflict after checking the current shared revision', 
   assert.equal(sent[0].stale, true);
   assert.deepEqual(sent[0].conflicts, []);
   request.sharedHash = crypto.createHash('sha256').update(sharedText).digest('hex');
+  request.textPatches = Object.fromEntries(['baseText', 'personalText', 'externalText']
+    .map((field) => [field, encodeMergeText(sharedText, request[field])]));
   DocumentRoom.prototype.applyJson.call(room, socket, request);
   assert.equal(sent[1].stale, false);
   assert.deepEqual(sent[1].conflicts.map(({ key }) => key), ['occ:1:repeated']);

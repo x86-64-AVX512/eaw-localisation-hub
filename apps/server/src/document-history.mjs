@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { byteLength } from './protocol-limits.mts';
 import {
   captureLocalisationVariant,
+  accumulateLocalisationVariant,
   localisationVariantConflicts,
   localisationChangedKeys,
   projectLocalisationVariant,
@@ -132,6 +133,12 @@ export class DocumentHistory {
       }
       if (!this.ownership.size) this.rebuildOwnership();
       if (!this.authorVariants.size) this.rebuildAuthorVariants();
+      if (this.gitBaseText !== null) {
+        for (const [id, variant] of this.authorVariants) {
+          this.authorVariants.set(id, captureLocalisationVariant(this.gitBaseText,
+            projectLocalisationVariant(this.gitBaseText, variant)));
+        }
+      }
       this.prune();
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
@@ -166,13 +173,18 @@ export class DocumentHistory {
       return true;
     }
     if (identity.authorId && reason !== 'baseline') {
-      const variant = this.authorVariants.get(identity.authorId) ?? new Map();
-      for (const [key, line] of captureLocalisationVariant(previousText, text)) {
+      const changes = captureLocalisationVariant(previousText, text);
+      const variant = accumulateLocalisationVariant(this.gitBaseText ?? previousText,
+        this.authorVariants.get(identity.authorId) ?? new Map(), previousText, text, changes);
+      for (const [key] of changes) {
         this.ownership.set(key, identity.authorId);
-        variant.set(key, line);
         this.rebaseConflicts.get(identity.authorId)?.delete(key);
       }
       this.authorVariants.set(identity.authorId, variant);
+      const ambiguous = this.rebaseConflicts.get(identity.authorId)?.get('__duplicate_keys__');
+      if (ambiguous) this.rebaseConflicts.get(identity.authorId).set('__duplicate_keys__', {
+        ...ambiguous, mineGzipBase64: packedText(projectLocalisationVariant(this.gitBaseText ?? previousText, variant)),
+      });
       this.ownerNames.set(identity.authorId, identity.author);
     }
     if (coalesce && reason === 'edit' && previous?.reason === 'edit'
@@ -303,9 +315,28 @@ export class DocumentHistory {
     for (const [authorId, variant] of this.authorVariants) {
       const previousGit = this.gitBaseText ?? nextGitText;
       const personal = projectLocalisationVariant(previousGit, variant);
-      const merged = mergeLocalisationThreeWay(previousGit, personal, nextGitText);
-      const rebased = captureLocalisationVariant(nextGitText, merged.text);
       const pending = this.rebaseConflicts.get(authorId) ?? new Map();
+      const ambiguous = pending.get('__duplicate_keys__');
+      if (ambiguous) {
+        const mine = ambiguous.mineGzipBase64 ? unpackText({ textGzipBase64: ambiguous.mineGzipBase64 }) : personal;
+        this.authorVariants.set(authorId, captureLocalisationVariant(nextGitText, mine));
+        if (mine === nextGitText) pending.clear();
+        else pending.set('__duplicate_keys__', { ...ambiguous, mineGzipBase64: packedText(mine) });
+        this.rebaseConflicts.set(authorId, pending);
+        continue;
+      }
+      const merged = mergeLocalisationThreeWay(previousGit, personal, nextGitText);
+      const wholeFile = merged.conflicts.find(({ key }) => key === '__duplicate_keys__');
+      if (wholeFile) {
+        // Ordinal matching is unproven. Retain the complete original personal
+        // side until an explicit choice, rather than storing a guessed merge.
+        this.authorVariants.set(authorId, captureLocalisationVariant(nextGitText, personal));
+        this.rebaseConflicts.set(authorId, new Map([['__duplicate_keys__', {
+          ...wholeFile, mineGzipBase64: packedText(personal),
+        }]]));
+        continue;
+      }
+      const rebased = captureLocalisationVariant(nextGitText, merged.text);
       for (const key of pending.keys()) if (!rebased.has(key)) pending.delete(key);
       for (const conflict of merged.conflicts) pending.set(conflict.key, conflict);
       if (this.gitBaseText === null) {
@@ -325,10 +356,11 @@ export class DocumentHistory {
   }
 
   personalGitConflicts(userId) {
-    return [...(this.rebaseConflicts.get(String(userId))?.values() ?? [])].map((conflict) => ({
-      ...conflict,
-      id: crypto.createHash('sha256').update(JSON.stringify([this.gitBaseText, conflict])).digest('hex'),
-    }));
+    return [...(this.rebaseConflicts.get(String(userId))?.values() ?? [])].map((stored) => {
+      const { mineGzipBase64: _snapshot, ...conflict } = stored;
+      return { ...conflict,
+        id: crypto.createHash('sha256').update(JSON.stringify([this.gitBaseText, stored])).digest('hex') };
+    });
   }
 
   resolvePersonalGitConflict(userId, key, choice, conflictId) {
@@ -336,6 +368,15 @@ export class DocumentHistory {
     const pending = this.rebaseConflicts.get(identity);
     if (!pending?.has(key) || !['mine', 'git'].includes(choice)) return false;
     if (this.personalGitConflicts(identity).find((item) => item.key === key)?.id !== conflictId) return false;
+    if (key === '__duplicate_keys__') {
+      const stored = pending.get(key);
+      const git = this.gitBaseText ?? '';
+      const mine = stored.mineGzipBase64 ? unpackText({ textGzipBase64: stored.mineGzipBase64 })
+        : projectLocalisationVariant(git, this.authorVariants.get(identity));
+      this.authorVariants.set(identity, choice === 'git' ? new Map() : captureLocalisationVariant(git, mine));
+      pending.clear();
+      return true;
+    }
     if (choice === 'git') this.authorVariants.get(identity)?.delete(key);
     pending.delete(key);
     return true;
@@ -358,8 +399,8 @@ export class DocumentHistory {
     for (const entry of this.entries.slice(1)) {
       const current = entry._text ?? unpackText(entry);
       if (entry.authorId) {
-        const variant = this.authorVariants.get(entry.authorId) ?? new Map();
-        for (const [key, line] of captureLocalisationVariant(previous, current)) variant.set(key, line);
+        const variant = accumulateLocalisationVariant(this.gitBaseText ?? this.entries[0]?._text ?? previous,
+          this.authorVariants.get(entry.authorId) ?? new Map(), previous, current);
         this.authorVariants.set(entry.authorId, variant);
         this.ownerNames.set(entry.authorId, entry.author);
       }

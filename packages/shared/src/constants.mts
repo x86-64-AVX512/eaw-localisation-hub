@@ -1,6 +1,6 @@
-export const DISPLAY_VERSION = '0.8.8F5';
-export const SEMVER_VERSION = '0.8.8-beta.5';
-export const PROTOCOL_VERSION = 20;
+export const DISPLAY_VERSION = '0.8.8F6';
+export const SEMVER_VERSION = '0.8.8-beta.6';
+export const PROTOCOL_VERSION = 21;
 
 // Transport and CRDT budgets are intentionally separate. A full localisation
 // seed is larger than an ordinary edit, while the in-memory Yjs state must stay

@@ -181,7 +181,7 @@ function renderWithChoices(templateText: string, choices: ReadonlyMap<string, st
   let last: LinkedRecord | null = null;
   const firstByKey = new Map<string, LinkedRecord>();
   const insertBefore = (record: LineRecord, next: LinkedRecord | null, added = true): LinkedRecord => {
-    const node: LinkedRecord = { ...record, previous: next?.previous ?? last, next };
+    const node: LinkedRecord = { ...record, previous: next ? next.previous : last, next };
     if (node.previous) node.previous.next = node;
     else first = node;
     if (next) next.previous = node;
@@ -232,8 +232,9 @@ function renderWithChoices(templateText: string, choices: ReadonlyMap<string, st
 
 // An editor deletion can replace a keyed line with a blank line. If a later
 // selection restores the key, that placeholder must not become an extra line
-// in the local Git file. Only remove it when the surrounding structure is
-// otherwise identical to Git; genuine blank lines and comments stay intact.
+// in the local Git file. Restore the key's position relative to genuine blank
+// lines as well, including when an earlier projection removed the placeholder.
+// Only a proven single extra blank is removed; comments stay intact.
 function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
   projectedText: string, key: string): string {
   const git = analyse(gitText);
@@ -258,55 +259,68 @@ function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
       && !projected.duplicates.has(candidate) && anchorIndex(candidate, template.records) >= 0
       && anchorIndex(candidate, projected.records) >= 0) { after = candidate; break; }
   }
-  if (!before || !after) return projectedText;
   const gap = (records: LineRecord[]) => {
-    const start = anchorIndex(before, records);
-    const end = anchorIndex(after, records);
-    return start >= 0 && end > start ? records.slice(start + 1, end) : [];
+    const start = before ? anchorIndex(before, records) : -1;
+    const end = after ? anchorIndex(after, records) : records.length;
+    return end > start ? records.slice(start + 1, end) : [];
   };
   const gitNonKeys = gap(git.records).filter((record) => !record.key);
   const templateNonKeys = gap(template.records).filter((record) => !record.key);
   const projectedNonKeys = gap(projected.records).filter((record) => !record.key);
-  if (templateNonKeys.length !== gitNonKeys.length + 1
-    || projectedNonKeys.length !== templateNonKeys.length) return projectedText;
   const raw = (record: LineRecord) => record.content + record.eol;
-  if (!projectedNonKeys.every((record, index) => raw(record) === raw(templateNonKeys[index]))) return projectedText;
-  const extraIndex = templateNonKeys.findIndex((record, index) =>
-    !record.content.trim() && templateNonKeys.filter((_, other) => other !== index)
-      .every((other, position) => raw(other) === raw(gitNonKeys[position])));
-  if (extraIndex < 0) return projectedText;
-  const projectedStart = anchorIndex(before, projected.records) + 1;
+  const sameRecord = (left: LineRecord, right: LineRecord) =>
+    left.content === right.content && Boolean(left.eol) === Boolean(right.eol);
+  const spacingMatchesGit = projectedNonKeys.length === gitNonKeys.length
+    && projectedNonKeys.every((record, index) => sameRecord(record, gitNonKeys[index]));
+  let extraIndex = -1;
+  if (!spacingMatchesGit) {
+    if (templateNonKeys.length !== gitNonKeys.length + 1
+      || projectedNonKeys.length !== templateNonKeys.length
+      || !projectedNonKeys.every((record, index) => sameRecord(record, templateNonKeys[index]))) return projectedText;
+    extraIndex = templateNonKeys.findIndex((record, index) =>
+      !record.content.trim() && templateNonKeys.filter((_, other) => other !== index)
+        .every((other, position) => sameRecord(other, gitNonKeys[position])));
+    if (extraIndex < 0) return projectedText;
+  }
+  const projectedStart = before ? anchorIndex(before, projected.records) + 1 : 0;
   let seen = 0;
-  for (let index = projectedStart; index < projected.records.length; index += 1) {
+  for (let index = projectedStart; extraIndex >= 0 && index < projected.records.length; index += 1) {
     if (projected.records[index].key) continue;
     if (seen++ !== extraIndex) continue;
     projected.records.splice(index, 1);
-    const restoredIndex = projected.records.findIndex((record) => record.key === key);
-    if (restoredIndex < 0) return projectedText;
-    const [restored] = projected.records.splice(restoredIndex, 1);
-    const gitGap = gap(git.records);
-    const gitKeyIndex = gitGap.findIndex((record) => record.key === key);
-    const projectedBefore = anchorIndex(before, projected.records);
-    const projectedEnd = anchorIndex(after, projected.records);
-    const nonKeyPositions = projected.records.map((record, position) =>
-      position > projectedBefore && position < projectedEnd && !record.key ? position : -1)
-      .filter((position) => position >= 0);
-    let insertionIndex = projectedBefore;
-    let nonKeyOrdinal = 0;
-    for (const record of gitGap.slice(0, gitKeyIndex)) {
-      if (record.key) {
-        const found = projected.records.findIndex((candidate, position) =>
-          position > projectedBefore && position < projectedEnd && candidate.key === record.key);
-        if (found >= 0) insertionIndex = Math.max(insertionIndex, found);
-      } else {
-        const found = nonKeyPositions[nonKeyOrdinal++];
-        if (found !== undefined) insertionIndex = Math.max(insertionIndex, found);
-      }
-    }
-    projected.records.splice(insertionIndex + 1, 0, restored);
-    return projected.records.map(raw).join('');
+    break;
   }
-  return projectedText;
+  // Once a deletion has been projected, its placeholder may already be gone.
+  // The restored key still belongs before/after Git's existing blank lines,
+  // rather than wherever the next keyed anchor happened to insert it.
+  const restoredIndex = projected.records.findIndex((record) => record.key === key);
+  if (restoredIndex < 0) return projectedText;
+  const [restored] = projected.records.splice(restoredIndex, 1);
+  const gitGap = gap(git.records);
+  const gitKeyIndex = gitGap.findIndex((record) => record.key === key);
+  const projectedBefore = before ? anchorIndex(before, projected.records) : -1;
+  const projectedEnd = after ? anchorIndex(after, projected.records) : projected.records.length;
+  const nonKeyPositions = projected.records.map((record, position) =>
+    position > projectedBefore && position < projectedEnd && !record.key ? position : -1)
+    .filter((position) => position >= 0);
+  let insertionIndex = projectedBefore;
+  let nonKeyOrdinal = 0;
+  const keyOrdinals = new Map<string, number>();
+  for (const record of gitGap.slice(0, gitKeyIndex)) {
+    if (record.key) {
+      const ordinal = keyOrdinals.get(record.key) ?? 0;
+      keyOrdinals.set(record.key, ordinal + 1);
+      const found = projected.records.map((candidate, position) =>
+        position > projectedBefore && position < projectedEnd && candidate.key === record.key ? position : -1)
+        .filter((position) => position >= 0)[ordinal];
+      if (found !== undefined) insertionIndex = Math.max(insertionIndex, found);
+    } else {
+      const found = nonKeyPositions[nonKeyOrdinal++];
+      if (found !== undefined) insertionIndex = Math.max(insertionIndex, found);
+    }
+  }
+  projected.records.splice(insertionIndex + 1, 0, restored);
+  return projected.records.map(raw).join('');
 }
 
 export function mergeLocalisationThreeWay(baseText: string, collaborativeText: string, externalText: string,
@@ -442,6 +456,50 @@ export function captureLocalisationVariant(previousText: string, currentText: st
   return changed;
 }
 
+function sourceKey(key: string): string {
+  return /^occ:[1-9]\d*:(.+)$/u.exec(key)?.[1] ?? key;
+}
+
+// A delta uses the occurrence shape of the two edited snapshots; an accumulated
+// variant must instead use the shape of Git and the resulting file. Migrate the
+// whole affected group when its count changes, while retaining unrelated edits.
+export function accumulateLocalisationVariant(gitText: string, variant: ReadonlyMap<string, string | null>,
+  previousText: string, currentText: string, changes = captureLocalisationVariant(previousText, currentText)): LocalisationVariant {
+  const next = new Map(variant);
+  const touched = new Set([...changes.keys()].filter((key) => key !== '__file_structure__').map(sourceKey));
+  const occurrenceChange = [...changes.keys(), ...variant.keys()].some((key) => key.startsWith('occ:'));
+  const git = analyse(gitText);
+  if (!changes.has('__file_structure__') && !occurrenceChange
+    && ![...touched].some((key) => git.duplicates.has(key))) {
+    for (const [key, line] of changes) next.set(key, line);
+    return next;
+  }
+  const current = analyse(currentText);
+  const duplicateKeys = allDuplicateKeys(git, current);
+  for (const key of touched) {
+    if (duplicateKeys.has(key)) {
+      if (next.has(key)) {
+        if (!next.has(`occ:1:${key}`)) next.set(`occ:1:${key}`, next.get(key)!);
+        next.delete(key);
+      }
+    } else {
+      if (!next.has(key) && next.has(`occ:1:${key}`)) next.set(key, next.get(`occ:1:${key}`)!);
+      for (const stored of next.keys()) if (stored !== key && sourceKey(stored) === key) next.delete(stored);
+    }
+    for (const [changed, line] of changes) {
+      if (sourceKey(changed) !== key) continue;
+      // A removed second occurrence must not overwrite the surviving first one
+      // when the group becomes unique again. Apply only this actor's delta,
+      // never the whole current group (which can contain another author's edit).
+      if (!duplicateKeys.has(key) && /^occ:(?:[2-9]|[1-9]\d+):/u.test(changed)) continue;
+      const id = duplicateKeys.has(key) ? (changed === key ? `occ:1:${key}` : changed) : key;
+      next.set(id, line);
+    }
+  }
+  if (changes.has('__file_structure__')) next.set('__file_structure__', changes.get('__file_structure__')!);
+  return next;
+}
+
 export function projectLocalisationVariant(gitText: string, variant: ReadonlyMap<string, string | null> | null): string {
   const gitRaw = analyse(gitText);
   const structure = variant?.get('__file_structure__');
@@ -455,7 +513,12 @@ export function projectLocalisationVariant(gitText: string, variant: ReadonlyMap
   const git = occurrenceAware(gitRaw, duplicateKeys);
   const choices = new Map<string, string | null>(git.lines);
   for (const [key, line] of variant ?? []) {
-    if (key !== '__file_structure__') choices.set(key, line);
+    if (key === '__file_structure__') continue;
+    // Schema-5 maps can contain both a bare key and occurrence IDs. Prefer the
+    // explicit occurrence and never append the obsolete bare declaration.
+    if (duplicateKeys.has(key)) {
+      if (!variant?.has(`occ:1:${key}`)) choices.set(`occ:1:${key}`, line);
+    } else choices.set(key, line);
   }
   const variantText = typeof structure === 'string' ? occurrenceAware(templateRaw, duplicateKeys) : null;
   const order = [
@@ -487,8 +550,10 @@ export function localisationVariantConflicts(gitText: string,
   const git = occurrenceAware(gitRaw, duplicateKeys);
   const byKey = new Map<string, Array<{ authorId: string; author: string; line: string | null }>>();
   for (const [authorId, variant] of variantEntries) {
-    for (const [key, line] of variant) {
-      if (key === '__file_structure__') continue;
+    for (const [stored, line] of variant) {
+      if (stored === '__file_structure__') continue;
+      const key = duplicateKeys.has(stored) ? `occ:1:${stored}` : stored;
+      if (key !== stored && variant.has(key)) continue;
       if (sameLine(line, git.lines.get(key) ?? null)) continue;
       if (!byKey.has(key)) byKey.set(key, []);
       byKey.get(key)!.push({ authorId, author: ownerNames.get(authorId) ?? 'Unknown', line });

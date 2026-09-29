@@ -5,7 +5,8 @@ import type { ReviewExternalConflict } from './review-state.ts';
 export function createGitConflictDiff({ monaco, state, send }: {
   monaco: typeof Monaco;
   state: { path: string };
-  send: (message: { type: 'externalConflictResolve'; path: string; key: string; choice: 'collaborative' | 'external' }) => void;
+  send: (message: { type: 'externalConflictResolve'; path: string; key: string; source: string;
+    conflictId: string; choice: 'collaborative' | 'external' }) => void;
 }) {
   const dialog = requiredElement<HTMLDialogElement>('#git-conflict-dialog');
   const heading = requiredElement<HTMLElement>('#git-conflict-heading');
@@ -47,7 +48,8 @@ export function createGitConflictDiff({ monaco, state, send }: {
 
   function resolve(choice: 'collaborative' | 'external'): void {
     if (!selected) return;
-    send({ type: 'externalConflictResolve', path: state.path, key: selected.key, choice });
+    send({ type: 'externalConflictResolve', path: state.path, key: selected.key,
+      source: selected.source || 'disk', conflictId: selected.conflictId, choice });
     dialog.close();
   }
   requiredElement<HTMLButtonElement>('#git-conflict-keep').addEventListener('click', () => resolve('collaborative'));

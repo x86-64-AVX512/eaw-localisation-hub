@@ -1,5 +1,6 @@
 import { avatarElement } from './avatar-view.ts';
 import { decodeBase64 } from './review-utilities.ts';
+import { copyTextToClipboard } from './copy-text.ts';
 
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
   day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -70,7 +71,8 @@ export function cardHeader(item: ReviewCardItem): HTMLDivElement {
   return head;
 }
 
-function messageElement(message: ReviewCardMessage, fallback: ReviewCardItem): HTMLDivElement {
+function messageElement(message: ReviewCardMessage, fallback: ReviewCardItem,
+  showToast: (text: string, error?: boolean) => void): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'thread-message';
   row.append(avatarElement(message.author, message.color, message.avatarBase64, 'avatar-small'));
@@ -85,23 +87,35 @@ function messageElement(message: ReviewCardMessage, fallback: ReviewCardItem): H
   meta.append(author, date);
   const body = document.createElement('div');
   body.className = 'message-body';
+  body.tabIndex = 0;
   body.textContent = decodeBase64(message.bodyBase64 ?? fallback.summaryBase64 ?? '');
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'message-copy';
+  copy.textContent = 'Копировать';
+  copy.title = 'Скопировать текст сообщения';
+  copy.setAttribute('aria-label', 'Скопировать текст сообщения');
+  copy.addEventListener('click', async () => {
+    try { await copyTextToClipboard(body.textContent ?? ''); showToast('Текст сообщения скопирован.'); }
+    catch (error) { showToast(error instanceof Error ? error.message : String(error), true); }
+  });
+  meta.append(copy);
   content.append(meta, body);
   row.append(content);
   return row;
 }
 
 export function renderMessages(card: HTMLElement, item: ReviewCardItem,
-  messages: ReviewCardMessage[] | undefined): void {
+  messages: ReviewCardMessage[] | undefined, showToast: (text: string, error?: boolean) => void = () => {}): void {
   const thread = document.createElement('div');
   thread.className = 'thread';
   if (messages?.length) {
-    for (const message of messages) thread.append(messageElement(message, item));
+    for (const message of messages) thread.append(messageElement(message, item, showToast));
   } else if (item.kind === 'comment') {
     thread.append(messageElement({
       author: item.author, color: item.color, avatarBase64: item.avatarBase64,
       createdAt: item.createdAt, bodyBase64: item.summaryBase64,
-    }, item));
+    }, item, showToast));
   }
   if (thread.childElementCount) card.append(thread);
 }

@@ -91,6 +91,7 @@ function emitCanonicalConflicts(binding, message) {
       for (const conflict of message.conflicts ?? []) client.send({
         type: 'externalConflict', path: absolutePath,
         source: 'canonical',
+        conflictId: conflict.conflictId,
         key: conflict.key, label: conflict.label, detail: conflict.detail,
         baseLine: conflict.baseLine ?? '',
         collaborativeLine: conflict.collaborativeLine ?? '',
@@ -116,6 +117,7 @@ export function resolveCanonicalConflict(binding, message) {
   if (message.source && message.source !== 'canonical') return false;
   binding.socket?.send(JSON.stringify({
     type: 'git-conflict-resolve', key: String(message.key ?? ''), choice: String(message.choice ?? ''),
+    conflictId: String(message.conflictId ?? ''),
   }));
   return true;
 }

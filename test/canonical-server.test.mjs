@@ -181,6 +181,7 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     );
     conflicted.socket.send(JSON.stringify({
       type: 'git-conflict-resolve', key: 'canonical', choice: 'external',
+      conflictId: conflicted.synced.git.conflicts[0].conflictId,
     }));
     await waitForRecordedMessage(
       conflicted.messages,

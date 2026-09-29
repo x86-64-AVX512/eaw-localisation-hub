@@ -6,6 +6,14 @@ import * as Y from 'yjs';
 import { CrdtUpdateValidator, CrdtValidationError } from './crdt-validator.mjs';
 import { DocumentHistory } from './document-history.mjs';
 import { evaluateDiskMerge } from './disk-merge.mjs';
+import { mergeConflictId, mergeStateRevision } from '../../../packages/shared/src/merge-state.mts';
+import { encodeMergeText, decodeMergeText } from '../../../packages/shared/src/merge-wire.mts';
+
+function truncateConflictText(value) {
+  const bytes = Buffer.from(String(value ?? ''), 'utf8');
+  return bytes.length <= 60 * 1024 ? bytes.toString('utf8')
+    : `${bytes.subarray(0, 60 * 1024).toString('utf8')}\n… diff truncated …`;
+}
 import {
   ProtocolLimitError,
   byteLength,
@@ -300,12 +308,18 @@ export class DocumentRoom {
     };
   }
 
-  serialiseGitConflicts(conflicts = this.gitConflicts) {
+  canonicalConflictRevision(snapshot = this.pendingGitSnapshot) {
+    return mergeStateRevision(this.gitBase?.text ?? '', this.document.getText('content').toString(), snapshot?.text ?? '');
+  }
+
+  serialiseGitConflicts(conflicts = this.gitConflicts, snapshot = this.pendingGitSnapshot) {
+    const revision = this.canonicalConflictRevision(snapshot);
     return conflicts.slice(0, 1000).map((item) => ({
       key: item.key, label: item.label,
-      baseLine: String(item.baseLine ?? '').slice(0, 60 * 1024),
-      collaborativeLine: String(item.collaborativeLine ?? '').slice(0, 60 * 1024),
-      externalLine: String(item.externalLine ?? '').slice(0, 60 * 1024),
+      conflictId: mergeConflictId(revision, item.key),
+      baseLine: truncateConflictText(item.baseLine),
+      collaborativeLine: truncateConflictText(item.collaborativeLine),
+      externalLine: truncateConflictText(item.externalLine),
       detail: item.key === '__file_structure__'
         ? 'Комментарии или структура файла изменены с обеих сторон.'
         : item.key === '__duplicate_keys__'
@@ -321,12 +335,13 @@ export class DocumentRoom {
       localBlob: client.localBlob ?? '', remoteBlob: snapshot.blob,
       changedFiles: (snapshot.changedFiles ?? []).slice(0, 500),
       reason: 'merge-conflict', checkedAt: snapshot.checkedAt,
-      conflicts: this.serialiseGitConflicts(),
+      conflicts: this.serialiseGitConflicts(this.gitConflicts, snapshot),
       message: 'Canonical Git update conflicts with live edits',
     };
   }
 
   broadcastGitConflict(snapshot, conflicts) {
+    this.gitConflictRevision = this.canonicalConflictRevision(snapshot);
     this.gitConflicts = conflicts;
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {
@@ -386,7 +401,8 @@ export class DocumentRoom {
       }
       return;
     }
-    const continuingConflict = this.pendingGitSnapshot?.blob === snapshot.blob;
+    const continuingConflict = this.pendingGitSnapshot?.blob === snapshot.blob
+      && this.gitConflictRevision === this.canonicalConflictRevision(snapshot);
     const merged = mergeLocalisationThreeWay(
       this.gitBase.text, current, snapshot.text,
       continuingConflict ? this.gitConflictResolutions : {},
@@ -657,9 +673,9 @@ export class DocumentRoom {
           sharedHash, stale: true, conflicts: [] }));
         return;
       }
-      const baseText = controlledText(message.baseText, 'Disk merge base', MAX_ROOM_STATE_BYTES);
-      const externalText = controlledText(message.externalText, 'External file', MAX_ROOM_STATE_BYTES);
-      const personalText = controlledText(message.personalText, 'Personal file', MAX_ROOM_STATE_BYTES);
+      const baseText = decodeMergeText(sharedText, message.textPatches?.baseText);
+      const externalText = decodeMergeText(sharedText, message.textPatches?.externalText);
+      const personalText = decodeMergeText(sharedText, message.textPatches?.personalText);
       const resolutions = message.resolutions ?? {};
       if (!resolutions || typeof resolutions !== 'object' || Array.isArray(resolutions)
         || Object.keys(resolutions).length > 1000) throw new ProtocolLimitError('Invalid disk merge resolutions');
@@ -667,13 +683,25 @@ export class DocumentRoom {
         controlledString(key, 'Disk merge key', 4096, { required: true });
         if (!['collaborative', 'external'].includes(choice)) throw new ProtocolLimitError('Invalid disk merge choice');
       }
+      const revision = mergeStateRevision(baseText, sharedText, personalText, externalText);
       const result = evaluateDiskMerge({ baseText, externalText, personalText, sharedText,
-        initialUnknown: message.initialUnknown === true, resolutions });
+        initialUnknown: message.initialUnknown === true,
+        resolutions: message.resolutionRevision === revision ? resolutions : {} });
+      // Conflict IDs use the complete snapshots, never these bounded UI previews.
+      result.conflicts = result.conflicts.map((conflict) => ({ ...conflict,
+        baseLine: truncateConflictText(conflict.baseLine),
+        collaborativeLine: truncateConflictText(conflict.collaborativeLine),
+        externalLine: truncateConflictText(conflict.externalLine) }));
+      const wireResult = { mergeRevision: result.mergeRevision, conflicts: result.conflicts,
+        ...(!result.conflicts.length ? { textPatches: {
+          sharedText: encodeMergeText(sharedText, result.sharedText),
+          personalText: encodeMergeText(sharedText, result.personalText) } } : {}) };
       const response = JSON.stringify({ type: 'disk-merge-result', requestId,
-        sharedHash, stale: false, ...result });
+        sharedHash, stale: false, ...wireResult });
       if (byteLength(response) > MAX_MESSAGE_BYTES) {
         sendWithBackpressure(socket, JSON.stringify({ type: 'disk-merge-result', requestId,
-          sharedHash, stale: false, conflicts: [], error: 'Disk merge result exceeds protocol limit' }));
+          sharedHash, stale: false, conflicts: [], code: 'EAW_MERGE_LIMIT',
+          error: 'Результат проверки превышает лимит протокола; уменьшите объём одновременных изменений.' }));
       } else sendWithBackpressure(socket, response);
       return;
     }
@@ -683,6 +711,15 @@ export class DocumentRoom {
       const choice = controlledString(message.choice, 'Git conflict choice', 32, { required: true });
       if (!['collaborative', 'external'].includes(choice)) {
         throw new ProtocolLimitError('Git conflict choice is invalid');
+      }
+      const revision = DocumentRoom.prototype.canonicalConflictRevision.call(this);
+      if (this.gitConflictRevision !== revision) this.gitConflictResolutions = {};
+      if (!this.gitConflicts?.some((conflict) => conflict.key === key)
+        || message.conflictId !== mergeConflictId(revision, key)) {
+        const current = mergeLocalisationThreeWay(this.gitBase.text,
+          this.document.getText('content').toString(), this.pendingGitSnapshot.text, this.gitConflictResolutions);
+        this.broadcastGitConflict(this.pendingGitSnapshot, current.conflicts);
+        return;
       }
       this.gitConflictResolutions[key] = choice;
       const merged = mergeLocalisationThreeWay(

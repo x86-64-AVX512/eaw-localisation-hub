@@ -208,7 +208,7 @@ export function createCollaborationPanel({
     const conflict = state.externalConflicts.get(state.selectedConflict);
     if (conflict) send({
       type: 'externalConflictResolve', path: state.path,
-      key: conflict.key, source: conflict.source || 'disk', choice,
+      key: conflict.key, source: conflict.source || 'disk', conflictId: conflict.conflictId, choice,
     });
   }
   keepCollaborative.addEventListener('click', () => resolveConflict('collaborative'));

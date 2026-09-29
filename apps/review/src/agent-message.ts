@@ -57,7 +57,7 @@ const requiredFields: Readonly<Record<AgentMessage['type'], Shape>> = {
   reservation: { id: 'string', startByte: 'number', endByte: 'number', keyCount: 'number', status: 'string', assignee: 'string', assigneeId: 'string', color: 'string' },
   reservationSnapshot: {}, reservationTargetReset: {},
   reservationTarget: { id: 'string', displayName: 'string', color: 'string' },
-  reservationTargetSnapshot: {}, externalConflictReset: {}, externalConflict: { key: 'string', label: 'string' },
+  reservationTargetSnapshot: {}, externalConflictReset: {}, externalConflict: { key: 'string', label: 'string', conflictId: 'string' },
   commentReset: {}, commentThread: { id: 'string', status: 'string', startByte: 'number', endByte: 'number', summaryBase64: 'string' },
   commentMessage: { id: 'string' }, suggestionReset: {},
   suggestion: { id: 'string', status: 'string', startByte: 'number', endByte: 'number', originalBase64: 'string', replacementBase64: 'string' },

@@ -21,7 +21,7 @@ export function reviewCardFingerprint(item: { id: string; startByte: number; end
 }
 
 export function createReviewCards({
-  state, editor, rangeFromBytes, send, askText, onEditSuggestion = (_item) => false,
+  state, editor, rangeFromBytes, send, askText, showToast = () => {}, onEditSuggestion = (_item) => false,
   onAcceptSuggestion = (_item) => {}, onRevertSuggestion = (_item) => {},
 }: ReviewCardsOptions) {
   const cards = requiredElement<HTMLElement>('#cards');
@@ -72,7 +72,7 @@ export function createReviewCards({
       }
       card.append(comparison);
     }
-    renderMessages(card, item, messages);
+    renderMessages(card, item, messages, showToast);
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     actions.append(cardButton('Ответить', (value) => reply(item.kind, value), item));
@@ -105,7 +105,9 @@ export function createReviewCards({
     }, item, 'danger'));
     card.append(actions);
     card.addEventListener('click', (event) => {
-      if (event.target instanceof Element && event.target.closest('button')) return;
+      if (event.target instanceof Element && event.target.closest('button, .thread, .comparison')) return;
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed && selection.anchorNode && card.contains(selection.anchorNode)) return;
       const range = rangeFromBytes(item.startByte, item.endByte);
       editor.revealRangeInCenter(range);
       editor.setSelection(range);

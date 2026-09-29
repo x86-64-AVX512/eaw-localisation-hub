@@ -78,7 +78,7 @@ test('server protocol schema validates nested collaborative state', () => {
   assert.equal(validateServerMessage({
     type: 'git-status', status: 'conflict', branch: 'general-dev', remoteHead: 'b'.repeat(40),
     remoteBlob: 'c'.repeat(40), changedFiles: ['localisation/russian/x.yml'], reason: 'file-blob-differs',
-    conflicts: [{ key: 'x', label: 'x', detail: 'Один ключ изменён с обеих сторон.',
+    conflicts: [{ key: 'x', label: 'x', conflictId: 'snapshot-x', detail: 'Один ключ изменён с обеих сторон.',
       baseLine: 'x:0 "старое"', collaborativeLine: 'x:0 "совместное"', externalLine: 'x:0 "Git"' }],
   }).status, 'conflict');
   assert.throws(() => validateServerMessage({ type: 'shell', command: 'whoami' }), /Unknown server message/);

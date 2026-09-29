@@ -36,6 +36,7 @@ export interface ReviewCardsOptions {
   rangeFromBytes: (startByte: number, endByte: number) => Monaco.Range;
   send: (message: { type: string; path: string; id: string; bodyBase64?: string; status?: string }) => void;
   askText: (title: string, placeholder: string) => Promise<string | null | undefined>;
+  showToast?: (text: string, error?: boolean) => void;
   onEditSuggestion?: (item: ReviewSuggestion & { kind: 'suggestion' }) => unknown;
   onAcceptSuggestion?: (item: ReviewSuggestion & { kind: 'suggestion' }) => void;
   onRevertSuggestion?: (item: ReviewSuggestion & { kind: 'suggestion' }) => void;

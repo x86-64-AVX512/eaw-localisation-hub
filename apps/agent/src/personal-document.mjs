@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
-import { applyUtf8ByteEdit, computeSingleReplace, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mts';
+import { applyUtf8ByteEdit, computeSingleReplace, normaliseLineEndings, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mts';
 import {
   localisationSelectionChanges,
   setLocalisationSelection,
@@ -255,11 +255,14 @@ export function replacePersonalDocument(binding, text) {
 }
 
 export function localFileText(binding) {
-  return binding.personalMaterialisationMode === 'git'
+  const text = binding.personalMaterialisationMode === 'git'
     ? binding.hub.readGitHeadText(binding.relativePath)
     : (binding.ticketId ? binding.text.toString()
       : binding.personalReady && !binding.personalSelectionStale
         && !binding.personalGitConflicts?.length ? binding.personalText : null);
+  // Wire snapshots and their byte patches retain the server's exact encoding.
+  // Disk comparisons instead use LF, just like readDiskText and secure writes.
+  return text === null ? null : normaliseLineEndings(text);
 }
 
 export function setPersonalMaterialisation(binding, mode, absolutePath) {

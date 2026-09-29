@@ -25,6 +25,7 @@ test('Agent exposes a canonical conflict received in the initial room sync', asy
       status: 'conflict',
       conflicts: [{
         key: 'same_key', label: 'same_key', detail: 'Both sides changed it',
+        conflictId: 'confirmed-snapshot',
         baseLine: 'same_key: "Base"',
         collaborativeLine: 'same_key: "Shared"',
         externalLine: 'same_key: "Git"',
@@ -38,6 +39,7 @@ test('Agent exposes a canonical conflict received in the initial room sync', asy
     {
       type: 'externalConflict', path: 'C:\\test.yml', source: 'canonical',
       key: 'same_key', label: 'same_key', detail: 'Both sides changed it',
+      conflictId: 'confirmed-snapshot',
       baseLine: 'same_key: "Base"', collaborativeLine: 'same_key: "Shared"', externalLine: 'same_key: "Git"',
     },
   ]);

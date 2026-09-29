@@ -53,7 +53,7 @@ const clientSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Objec
   recoveryConfirm: { recoveryCode: text(256) },
   recoveryDiscard: {},
   externalConflictResolve: {
-    path: pathField, key: text(4096), choice: text(32), source: text(32, false),
+    path: pathField, key: text(4096), choice: text(32), source: text(32, false), conflictId: idField,
   },
   historyRequest: { path: pathField, id: idField },
   historyRestore: { path: pathField, id: idField, headId: idField },
@@ -268,6 +268,7 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
     }
     for (const value of serverArray(message.conflicts ?? [], 'Git conflicts', 1000)) {
       const conflict = serverRecord(value, 'Git conflict');
+      serverString(conflict.conflictId, 'Git conflict id', 256);
       serverString(conflict.key, 'Git conflict key', 512);
       serverString(conflict.label, 'Git conflict label', 1024);
       serverString(conflict.detail, 'Git conflict detail', 4096);
@@ -286,16 +287,24 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
     const diskConflicts = serverArray(message.conflicts, 'Disk merge conflicts', 1000);
     for (const value of diskConflicts) {
       const conflict = serverRecord(value, 'Disk merge conflict');
+      serverString(conflict.conflictId, 'Disk merge conflict id', 256);
       serverString(conflict.key, 'Disk merge conflict key', 4096);
       serverString(conflict.label, 'Disk merge conflict label', 4096);
       for (const field of ['baseLine', 'collaborativeLine', 'externalLine']) {
-        serverString(conflict[field] ?? '', 'Disk merge conflict text', 12 * 1024 * 1024);
+        serverString(conflict[field] ?? '', 'Disk merge conflict text', 64 * 1024);
       }
     }
     if (!message.stale && !diskConflicts.length && !message.error) {
-      serverString(message.sharedText, 'Merged shared text', 12 * 1024 * 1024);
-      serverString(message.personalText, 'Merged personal text', 12 * 1024 * 1024);
+      const patches = serverRecord(message.textPatches, 'Disk merge patches');
+      for (const field of ['sharedText', 'personalText']) {
+        const patch = serverRecord(patches[field], 'Disk merge patch');
+        serverInteger(patch.positionByte, 'Disk patch position', 0x7fffffff);
+        serverInteger(patch.deleteBytes, 'Disk patch deletion', 0x7fffffff);
+        serverString(patch.insertBase64, 'Disk patch insertion', 16 * 1024 * 1024);
+        if (!['utf8', 'gzip'].includes(String(patch.encoding))) throw new TypeError('Invalid disk patch encoding');
+      }
     }
+    if (!message.stale && !message.error) serverString(message.mergeRevision, 'Disk merge revision', 64);
     return message;
   }
   if (type === 'reservations') {

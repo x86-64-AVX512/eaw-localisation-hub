@@ -30,6 +30,7 @@ export interface ReviewReservation {
 
 export interface ReviewExternalConflict {
   key: string;
+  conflictId: string;
   label: string;
   detail?: string;
   source?: string;
@@ -56,7 +57,7 @@ export type CollaborationCommand =
       assigneeId: string; assignee: string; assigneeColor: string; comment: string }
   | { type: 'reservationDeleteAt'; path: string; positionByte: number }
   | { type: 'reservationDelete'; path: string; id: string }
-  | { type: 'externalConflictResolve'; path: string; key: string; source: string;
+  | { type: 'externalConflictResolve'; path: string; key: string; source: string; conflictId: string;
       choice: 'collaborative' | 'external' };
 
 export interface CollaborationPanelOptions {

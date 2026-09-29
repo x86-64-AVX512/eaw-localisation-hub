@@ -18,6 +18,7 @@ import { createLocalisationAuditPanel } from './localisation-audit-panel.ts'; im
 import { createNotificationCenter } from './notification-center.ts';
 import { requiredButton, requiredElement } from './dom-elements.ts';
 import { createAppState } from './app-state.ts';
+import { createCommentActions } from './comment-actions.ts';
 import { parseAgentMessage } from './agent-message.ts';
 import type { BootstrapPayload } from './app-state.ts';
 import { createAppbarLayout } from './appbar-layout.ts'; import { createEditorSettings } from './editor-settings.ts'; import { createSpellcheck } from './spellcheck.ts'; import { createWorkspaceTabs } from './workspace-tabs.ts';
@@ -50,12 +51,12 @@ const editor = monaco.editor.create(requiredElement('#editor'), {
 createEditorSettings({ monaco, editor, showToast });
 const spellcheck = createSpellcheck({ monaco, editor, token, showToast }); const syntaxDiagnostics = createSyntaxDiagnostics({ monaco, editor, token, showToast, getFilePath: () => state.relativePath });
 function send(message: { type: string; [field: string]: unknown }): void {
-  agentConnection?.send(state.reviewDocument?.anchor(message) ?? message);
+  agentConnection?.send(message.reviewAnchors ? message : state.reviewDocument?.anchor(message) ?? message);
 }
 const { rangeFromBytes, selectionBytes, jumpToBytes } = createEditorCoordinates({ monaco, state, editor });
 let editingMode!: ReturnType<typeof createEditingModeController>;
 const reviewCards = createReviewCards({
-  state, editor, rangeFromBytes, send, askText,
+  state, editor, rangeFromBytes, send, askText, showToast,
   onEditSuggestion: (item) => editingMode?.editSuggestion(item),
   onAcceptSuggestion: (item) => editingMode?.acceptSuggestion(item),
   onRevertSuggestion: (item) => editingMode?.revertSuggestion(item),
@@ -229,13 +230,9 @@ const reviewNavigation = createReviewNavigation({
 editor.onDidScrollChange(reviewCards.syncScroll);
 requiredElement('#review-lane').addEventListener('scroll', reviewCards.layout);
 window.addEventListener('resize', reviewCards.layout);
-requiredButton('#comment-create').addEventListener('click', async () => {
-  const body = await askText('Новый комментарий', 'Комментарий к выделению или позиции курсора');
-  if (body?.trim()) {
-    const range = selectionBytes();
-    send({ type: 'commentCreate', path: state.path, startByte: range.start, endByte: range.end,
-      bodyBase64: encodeBase64(body.trim()) });
-  }
+const commentActions = createCommentActions({ monaco, editor, state,
+  button: requiredButton('#comment-create'), selectionBytes, askText, send, showToast,
+  anchor: (message) => state.reviewDocument?.anchor(message) ?? message,
 });
 async function start() {
   if (!token || !requestedPath) throw new Error('Review-приложение запущено без локальной сессии или файла.');
@@ -295,5 +292,5 @@ window.addEventListener('beforeunload', () => {
   state.reviewDocument?.dispose(); presenceController.dispose();
   historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();
   scrollSync.dispose(); reviewRefresh.dispose(); collaborationRefresh.dispose(); spellcheck.dispose(); syntaxDiagnostics.dispose();
-  reviewNavigation.dispose(); appbarLayout.dispose(); agentConnection?.dispose(); gitConflictDiff.dispose();
+  reviewNavigation.dispose(); commentActions.dispose(); appbarLayout.dispose(); agentConnection?.dispose(); gitConflictDiff.dispose();
 });
