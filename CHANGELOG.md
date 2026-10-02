@@ -2,7 +2,7 @@
 
 All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F7` form; package metadata uses `0.8.8-beta.7`.
 
-## 0.8.8F7 (Unreleased)
+## 0.8.8F7
 
 - Start Review document sync without waiting for the ticket catalog; reuse validated canonical snapshots and load branch change summaries in the background without relaxing access or Git conflict checks.
 - Send only missing Agent-to-server Yjs state on connect while preserving offline deletion recovery and durable flush acknowledgements. Negotiate compact local variants to avoid duplicate shared and unchanged personal text; keep legacy clients supported.
