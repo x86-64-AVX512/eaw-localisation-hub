@@ -1,4 +1,5 @@
 import { requiredElement } from './dom-elements.ts';
+import { reviewFontFamily } from './editor-font.ts';
 
 const STORAGE_KEY = 'eaw-hub-editor-settings-v1';
 interface EditorSettings {
@@ -119,7 +120,7 @@ export function createEditorSettings({ monaco, editor, showToast }: EditorSettin
     document.documentElement.dataset.theme = settings.theme;
     monaco.editor.setTheme(`eaw-${settings.theme}`);
     editor.updateOptions({
-      fontFamily: `${settings.fontFamily}, Consolas, monospace`,
+      fontFamily: reviewFontFamily(settings.fontFamily),
       fontSize: settings.fontSize, lineHeight: settings.lineHeight,
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));

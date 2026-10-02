@@ -1,4 +1,5 @@
 import * as monaco from 'monaco-editor'; import './style.css';
+import { loadReviewDashFont, reviewFontFamily } from './editor-font.ts';
 import { createAvatarProfile } from './avatar-profile.ts'; import { createCollaborationPanel } from './collaboration-panel.ts';
 import { createDecorationRenderer } from './editor-decorations.ts'; import { applyDocumentStatus } from './document-status.ts';
 import { createEditingModeController } from './editing-mode.ts'; import { createEditorCoordinates } from './editor-coordinates.ts';
@@ -18,7 +19,7 @@ import { createLocalisationAuditPanel } from './localisation-audit-panel.ts'; im
 import { createNotificationCenter } from './notification-center.ts';
 import { requiredButton, requiredElement } from './dom-elements.ts';
 import { createAppState } from './app-state.ts';
-import { createCommentActions } from './comment-actions.ts';
+import { createCommentActions } from './comment-actions.ts'; import { createRepositorySyncPanel } from './repository-sync-panel.ts';
 import { parseAgentMessage } from './agent-message.ts';
 import type { BootstrapPayload } from './app-state.ts';
 import { createAppbarLayout } from './appbar-layout.ts'; import { createEditorSettings } from './editor-settings.ts'; import { createSpellcheck } from './spellcheck.ts'; import { createWorkspaceTabs } from './workspace-tabs.ts';
@@ -42,10 +43,11 @@ monaco.languages.setMonarchTokensProvider('eaw-yaml', { tokenizer: { root: [
   [/^\s*l_[a-z_]+:/, 'keyword'], [/^\s*[^#\s][^:]*?(?=:(?:\d+)?\s)/, 'type.identifier'],
   [/:\d+/, 'number'], [/"(?:[^"\\]|\\.)*"/, 'string'], [/#.*$/, 'comment'],
 ] } });
+await loadReviewDashFont();
 const editor = monaco.editor.create(requiredElement('#editor'), {
   value: '', language: 'eaw-yaml', theme: 'vs-dark', automaticLayout: true, readOnly: true,
-  fontFamily: 'Consolas, monospace', fontSize: 15, lineHeight: 23, minimap: { enabled: false },
-  wordWrap: 'on', glyphMargin: true, padding: { top: 12, bottom: 40 }, scrollBeyondLastLine: false,
+  fontFamily: reviewFontFamily(), fontSize: 15, lineHeight: 23, minimap: { enabled: false },
+  wordWrap: 'on', wrappingStrategy: 'advanced', glyphMargin: true, padding: { top: 12, bottom: 40 }, scrollBeyondLastLine: false,
   renderWhitespace: 'selection', roundedSelection: false, unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
 }); let agentConnection: ReturnType<typeof createAgentConnection> | undefined;
 createEditorSettings({ monaco, editor, showToast });
@@ -98,7 +100,7 @@ const ticketPanel = createTicketPanel({
 const deletedBranchesPanel = createDeletedBranchesPanel({ monaco, token, showToast });
 const keyReplacementPanel = createKeyReplacementPanel({ state, token, showToast }); const localisationAuditPanel = createLocalisationAuditPanel({ monaco, state, token, showToast });
 const helpPanel = createHelpPanel({ state, token, showToast }); const notificationCenter = createNotificationCenter({ token, showToast });
-const scrollSync = createScrollSync({ editor, initialPair: requestedPair });
+const repositorySyncPanel = createRepositorySyncPanel({ token, showToast }); const scrollSync = createScrollSync({ editor, initialPair: requestedPair });
 createEnglishOriginal({ state, editor, token, showToast, onOpened: (pair) => scrollSync.setPair(pair) });
 const historyPanel = createHistoryPanel({ monaco, state, editor, send, showToast }); const gitHistoryPanel = createGitHistoryPanel({ monaco, state, token, showToast });
 const documentVariants = createDocumentVariants({
@@ -266,13 +268,13 @@ async function start() {
     return;
   }
   collaborationPanel.refresh();
-  await ticketPanel.initialise();
+  void ticketPanel.initialise();
   agentConnection = createAgentConnection({
     token,
     onMessage: handleMessage,
     onOpen: () => {
       send({
-        type: 'open', path: state.path, textBase64: encodeBase64(editor.getValue()), crdt: 'yjs-v1',
+        type: 'open', path: state.path, textBase64: encodeBase64(editor.getValue()), crdt: 'yjs-v1', variants: 'compact-v1',
         ...(state.ticket ? { ticketId: state.ticket.id } : {}),
       });
     },
@@ -288,7 +290,7 @@ window.addEventListener('beforeunload', () => {
   workspaceTabs.remember(editor);
   void closeActiveDocument({ flush: false });
   ticketPanel.dispose(); deletedBranchesPanel.dispose(); keyReplacementPanel.dispose(); localisationAuditPanel.dispose(); helpPanel.dispose();
-  notificationCenter.dispose(); editingMode.flushSuggestion(); editingMode.dispose();
+  notificationCenter.dispose(); repositorySyncPanel.dispose(); editingMode.flushSuggestion(); editingMode.dispose();
   state.reviewDocument?.dispose(); presenceController.dispose();
   historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();
   scrollSync.dispose(); reviewRefresh.dispose(); collaborationRefresh.dispose(); spellcheck.dispose(); syntaxDiagnostics.dispose();

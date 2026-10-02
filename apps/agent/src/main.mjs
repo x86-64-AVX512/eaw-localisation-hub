@@ -7,6 +7,7 @@ import { AgentHub } from './agent-hub.mjs';
 import { runGitSync } from './git-executable.mts';
 import { startReviewServer } from './review-server.mjs';
 import { registerAgentInstance, unregisterAgentInstance } from './instance-registry.mts';
+import { RepositorySync } from './repository-sync.mjs';
 
 function parseArguments(argv) {
   const environmentToken = process.env.EAW_HUB_TOKEN?.trim() ?? '';
@@ -81,12 +82,15 @@ const hub = new AgentHub(options);
 const reviewServer = await startReviewServer(hub, options);
 options.reviewOpen = (absolutePath, openOptions) => reviewServer.open(absolutePath, openOptions);
 const instanceRegistration = await registerAgentInstance(options, { version: DISPLAY_VERSION });
+const repositorySync = new RepositorySync(hub).start();
+hub.repositorySync = repositorySync;
 
 console.log(`[agent] EaW Localisation Hub ${DISPLAY_VERSION}`);
 console.log('[agent] review application: ready');
 
 async function shutdown(signal) {
   console.log(`[agent] ${signal}: shutting down`);
+  await repositorySync.close();
   await reviewServer.close();
   await hub.close();
   await unregisterAgentInstance(instanceRegistration);

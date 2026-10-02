@@ -46,6 +46,7 @@
       <button id="english-original" title="Показать английскую строку для ключа под курсором">Английский оригинал</button>
       <button id="history-open" disabled>История</button>
       <button id="git-history-open" disabled>Git diff</button>
+      <button id="repository-update" title="Безопасно обновить текущую Git-ветку из upstream (только fast-forward)">Обновить репозиторий</button>
       <button id="localisation-audit-open" title="Сравнить ключи, физические строки и их порядок в русском и английском файлах">Сверка</button>
       <button id="help-open" title="Настройки уведомлений и повторное обучение">Настройки</button>
       <button id="notifications-open" title="Локальные уведомления">Уведомления <span id="notifications-count">0</span></button>
@@ -113,6 +114,15 @@
     <svg id="connectors" aria-hidden="true"></svg>
   </main>
   <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="repository-sync-dialog" class="repository-sync-dialog" aria-labelledby="repository-sync-title">
+    <form method="dialog">
+      <div class="history-toolbar"><h2 id="repository-sync-title">Обновление репозитория</h2><button>Закрыть</button></div>
+      <progress id="repository-sync-progress" aria-label="Git проверяет или обновляет ветку" hidden></progress>
+      <p id="repository-sync-message" role="status" aria-live="polite"></p>
+      <p class="dialog-hint">Обновляется текущая Git-ветка всего репозитория, не только открытый файл. Закрытие этого окна не отменяет операцию. Настройки автоматической проверки и уведомлений находятся в Agent → «Настройки Git…».</p>
+    </form>
+  </dialog>
+
   <dialog id="syntax-problems-dialog" class="syntax-problems-dialog">
     <div class="simple-dialog-shell">
       <div class="history-toolbar"><h2>Проблемы локализации</h2><button id="syntax-problems-close">Закрыть</button></div>

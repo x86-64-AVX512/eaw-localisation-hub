@@ -25,6 +25,7 @@ import { getLocalisationKeyIndex } from './localisation-key-index.mjs';
 import { currentGitFileBlobAsync } from './git-ticket-context.mts';
 import { confirmDiskMaterialisation } from './disk-reconciliation.mjs';
 import { DiffCache } from './diff-cache.mjs';
+import { handleRepositorySyncApi } from './repository-sync-api.mjs';
 
 const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -169,7 +170,10 @@ class ReviewClient {
     }
     try {
       const message = validateClientMessage(JSON.parse(data.toString('utf8')));
-      if (message.type === 'open') this.reviewCrdt = message.crdt === 'yjs-v1';
+      if (message.type === 'open') {
+        this.reviewCrdt = message.crdt === 'yjs-v1';
+        this.compactVariants = message.variants === 'compact-v1';
+      }
       this.hub.receiveClientMessage(this, message);
       if (typeof message.path === 'string' && typeof message.type === 'string'
         && ['edit', 'snapshot', 'reviewUpdate', 'undo', 'redo', 'suggestionAccept', 'suggestionRevert', 'historyRestore', 'externalConflictResolve'].includes(message.type)) {
@@ -210,7 +214,7 @@ class ReviewClient {
   async materialiseNow(absolutePath, state) {
     if (this.closed || this.documents.get(path.resolve(absolutePath)) !== state
       || !state.initialised || state.binding.gitWritable === false || state.pendingExternal
-      || state.binding.ticketId || this.hub.workspaceBlocked) return;
+      || state.binding.ticketId || this.hub.workspaceBlocked || this.hub.gitOperationInProgress?.()) return;
     const materialisationMode = state.binding.personalMaterialisationMode;
     const expectedGitBlob = state.binding.gitState?.localBlob;
     const materialised = typeof state.binding.localFileText === 'function'
@@ -305,6 +309,11 @@ export async function startReviewServer(hub, options) {
       requestUrl = new URL(request.url ?? '/', `http://127.0.0.1:${port}`);
     } catch {
       response.writeHead(400).end();
+      return;
+    }
+    if (requestUrl.pathname === '/api/repository-sync') {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      await handleRepositorySyncApi(request, response, { hub, readJsonBody, secureHeaders });
       return;
     }
     if (requestUrl.pathname === '/api/diff-cache') {

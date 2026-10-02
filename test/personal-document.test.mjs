@@ -7,6 +7,7 @@ import {
   localFileText, replacePersonalDocument, setPersonalSelection, requestDocumentVariant,
 } from '../apps/agent/src/personal-document.mjs';
 import { retainedAuthorPreviews, variantTexts } from '../apps/review/src/document-variants.ts';
+import { parseAgentMessage } from '../apps/review/src/agent-message.ts';
 
 function bindingFixture() {
   const sent = [];
@@ -172,6 +173,80 @@ test('continuous edits do not indefinitely prevent the initial personal projecti
   });
   assert.equal(binding.personalText, 'latest', 'a quiet refresh catches up to the latest projection');
   resetPersonalRequest(binding);
+});
+
+test('compact variants reuse explicit Git text and still reconstruct personal edits and checkbox rollback', () => {
+  const binding = bindingFixture();
+  binding.relativePath = 'localisation/russian/file.yml';
+  binding.hub.gitCommit = 'one';
+  let git = 'l_russian:\n same:0 "Первый"\n same:0 "Второй🦄"\n';
+  binding.hub.readGitHeadText = () => git;
+  binding.text = { toString: () => git };
+  binding.personalText = git;
+  const messages = [], state = { binding, initialised: true, reviewSynced: true };
+  binding.clients.add({ kind: 'review', reviewCrdt: true, compactVariants: true,
+    documents: new Map([['C:/repo/file.yml', state]]), send: (message) => messages.push(message) });
+  emitDocumentVariants(binding);
+  const first = messages.at(-1);
+  assert.equal(first.sharedBase64, undefined);
+  assert.equal(first.mineBase64, undefined);
+  assert.equal(first.mineFromGit, true);
+  assert.ok(parseAgentMessage(first));
+  let result = variantTexts(null, first, git);
+  assert.equal(result.git, git); assert.equal(result.mine, git); assert.equal(result.shared, git);
+  binding.personalText = git.replace('Второй🦄', 'Изменено🦄');
+  emitDocumentVariants(binding);
+  const second = messages.at(-1);
+  assert.equal(second.mineFromGit, undefined);
+  assert.ok(second.minePatch);
+  result = variantTexts(result, second, git);
+  assert.equal(result.mine, binding.personalText); assert.equal(result.minePatchMissed, false);
+  binding.personalText = git; // Exclude a selected change again.
+  emitDocumentVariants(binding);
+  assert.equal(messages.at(-1).mineFromGit, true);
+  assert.equal(messages.at(-1).gitBase64, undefined);
+  result = variantTexts(result, messages.at(-1), git);
+  assert.equal(result.mine, git);
+  const oldMine = git;
+  git = git.replace('Первый', 'Git update'); binding.hub.gitCommit = 'two';
+  emitDocumentVariants(binding);
+  result = variantTexts(result, messages.at(-1), git);
+  assert.equal(result.git, git); assert.equal(result.mine, oldMine, 'Git changes must not overwrite an unchanged personal text');
+  binding.personalText = git;
+  emitDocumentVariants(binding);
+  result = variantTexts(result, messages.at(-1), git + 'optimistic local typing');
+  assert.equal(result.mine, git, 'mine is anchored to Git, never optimistic Review text');
+  assert.equal(result.shared, git + 'optimistic local typing');
+});
+
+test('compact variants preserve empty Git and require an already-synced CRDT peer', () => {
+  const binding = bindingFixture();
+  binding.relativePath = 'localisation/russian/empty.yml';
+  binding.hub.readGitHeadText = () => '';
+  binding.personalText = '';
+  const messages = [], state = { binding, initialised: true, reviewSynced: true };
+  const client = { kind: 'review', reviewCrdt: true, compactVariants: true,
+    documents: new Map([['C:/repo/empty.yml', state]]), send: (message) => messages.push(message) };
+  binding.clients.add(client);
+  emitDocumentVariants(binding);
+  assert.equal(messages.at(-1).gitBase64, '');
+  assert.equal(variantTexts(null, messages.at(-1), '').mine, '');
+  for (const changes of [{ reviewSynced: false }, { reviewCrdt: false }, { compactVariants: false }]) {
+    Object.assign(client, { reviewCrdt: true, compactVariants: true }, changes);
+    Object.assign(state, { reviewSynced: true, variantSharedSent: false, variantGitText: undefined, variantMineText: undefined }, changes);
+    emitDocumentVariants(binding);
+    assert.equal(messages.at(-1).sharedBase64 !== undefined, true);
+    assert.equal(messages.at(-1).mineBase64, '');
+    assert.equal(messages.at(-1).mineFromGit, undefined);
+  }
+});
+
+test('Review rejects ambiguous or mistyped compact variant envelopes', () => {
+  assert.equal(variantTexts(null, { mineFromGit: true }).minePatchMissed, true);
+  assert.equal(parseAgentMessage({ type: 'documentVariants', mineFromGit: 'yes' }), null);
+  assert.equal(parseAgentMessage({ type: 'documentVariants', mineFromGit: true, mineBase64: '' }), null);
+  assert.equal(parseAgentMessage({ type: 'documentVariants', mineFromGit: true,
+    minePatch: { positionByte: 0, deleteBytes: 0, insertBase64: '' } }), null);
 });
 
 test('a personal projection patch advances the last server revision without a full document', () => {

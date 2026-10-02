@@ -226,7 +226,7 @@ export class RoomRegistry {
     }
   }
 
-  async get(documentId) {
+  async get(documentId, canonicalSnapshot = null) {
     const existing = this.rooms.get(documentId);
     if (existing) {
       const room = await existing;
@@ -241,7 +241,7 @@ export class RoomRegistry {
     if (!this.persisted.has(hash) && this.persisted.size >= MAX_PERSISTED_ROOMS) {
       throw new ProtocolLimitError('Server has reached its persisted document limit', 1013);
     }
-    const loading = this.loadRoom(this.dataDirectory, documentId, this.authStore, this);
+    const loading = this.loadRoom(this.dataDirectory, documentId, this.authStore, this, canonicalSnapshot);
     this.rooms.set(documentId, loading);
     try {
       const room = await loading;

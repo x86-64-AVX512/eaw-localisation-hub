@@ -17,6 +17,13 @@ test('Review client protocol schema accepts typed edit messages', () => {
   assert.equal(validateClientMessage(message), message);
 });
 
+test('Review can opt into compact variants while old open envelopes remain valid', () => {
+  const legacy = { type: 'open', path: 'C:/repo/file.yml', textBase64: '', crdt: 'yjs-v1' };
+  assert.equal(validateClientMessage(legacy), legacy);
+  assert.doesNotThrow(() => validateClientMessage({ ...legacy, variants: 'compact-v1' }));
+  assert.throws(() => validateClientMessage({ ...legacy, variants: true }), /variants/);
+});
+
 test('Review reservation commands accept their bounded optional comment', () => {
   assert.doesNotThrow(() => validateClientMessage({
     type: 'reservationCreate', path: 'C:\\repo\\localisation\\russian\\file.yml',

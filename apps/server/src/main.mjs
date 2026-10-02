@@ -8,6 +8,7 @@ import { AuthError, AuthStore, bearerToken } from './auth.mjs';
 import { AdminSessionStore } from './admin-session.mjs';
 import { handleAdminHttp } from './admin-http.mjs';
 import { DocumentRoom, closeDocumentRoomValidator } from './document-room.mjs';
+import { sendStartupChangedFiles } from './document-startup.mjs';
 import { attachDocumentSocket } from './document-socket.mts';
 import {
   ProtocolLimitError, createInboundBudget, validDocumentId,
@@ -92,8 +93,8 @@ const canonicalSource = new GitBranchCache(options.data, canonicalRepository,
 const roomRegistry = new RoomRegistry(
   options.data,
   authStore,
-  (dataDirectory, documentId, store, registry) => DocumentRoom.load(
-    dataDirectory, documentId, store, registry, canonicalSource,
+  (dataDirectory, documentId, store, registry, snapshot) => DocumentRoom.load(
+    dataDirectory, documentId, store, registry, canonicalSource, snapshot,
   ),
   atomicWrite,
   canonicalSource,
@@ -112,8 +113,8 @@ roomRegistry.branchMergeService = new BranchMergeService(canonicalSource, roomRe
 const deletedBranchArchive = new DeletedBranchArchive(canonicalSource, roomRegistry, ticketStore);
 watchTicketCatalog(ticketStore, rooms);
 
-async function getRoom(documentId) {
-  return roomRegistry.get(documentId);
+async function getRoom(documentId, canonicalSnapshot = null) {
+  return roomRegistry.get(documentId, canonicalSnapshot);
 }
 
 async function broadcastDirectories() {
@@ -398,10 +399,8 @@ websocketServer.on('connection', async (socket, request) => {
     const canonicalSnapshot = canonicalSource.enabled
       ? await canonicalSource.snapshot(documentId, { force: true })
       : null;
-    socket.changedFiles = canonicalSource.enabled
-      ? await canonicalSource.changedFilesSince(documentId, socket.localHead).catch(() => [])
-      : [];
-    const room = await getRoom(documentId);
+    socket.changedFiles = [];
+    const room = await getRoom(documentId, canonicalSnapshot);
     if (canonicalSnapshot) await room.applyCanonicalSnapshot(canonicalSnapshot);
     socket.room = room;
     socket.inboundBudget = createInboundBudget();
@@ -412,6 +411,7 @@ websocketServer.on('connection', async (socket, request) => {
     });
     socket.on('close', () => room.removeClient(socket));
     socket.on('error', () => console.error('[server] websocket error'));
+    void sendStartupChangedFiles(canonicalSource, documentId, socket, room, canonicalSnapshot);
   } catch (error) {
     if (!(error instanceof AuthError)) console.error('[server] connection failed');
     const closeCode = error instanceof ProtocolLimitError

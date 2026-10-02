@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 . (Join-Path $PSScriptRoot 'credential-store.ps1')
+. (Join-Path $PSScriptRoot 'repository-sync-ui.ps1')
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'agent-status.ps1')
@@ -17,20 +18,31 @@ $script:allowExit = $false
 $script:lastUpdateStatusStamp = ''
 $script:uiStartedAtUtc = [DateTime]::UtcNow
 $script:lastUpdateCheckAt = [DateTime]::MinValue
+$script:clientUpdateProcess = $null
+$script:repositorySyncStatus = $null
+$script:seenRepositoryAlerts = @{}
 
 function Start-ClientUpdateCheck {
-    if (([DateTime]::UtcNow - $script:lastUpdateCheckAt).TotalMinutes -lt 5) { return }
+    param([switch]$Install)
+    if ($script:clientUpdateProcess -and -not $script:clientUpdateProcess.HasExited) { return }
+    if (-not $Install -and ([DateTime]::UtcNow - $script:lastUpdateCheckAt).TotalMinutes -lt 5) { return }
     $updater = Join-Path $PSScriptRoot 'update-client.ps1'
     if (-not (Test-Path -LiteralPath $updater -PathType Leaf) -or
         -not (Test-Path -LiteralPath (Join-Path $projectRoot 'node.exe') -PathType Leaf) -or
-        -not (Test-Path -LiteralPath (Join-Path $projectRoot 'review\EaWReview.exe') -PathType Leaf)) { return }
+        -not (Test-Path -LiteralPath (Join-Path $projectRoot 'review\EaWReview.exe') -PathType Leaf)) {
+        if ($Install) { throw 'Обновление доступно только для установленного клиента, не для исходников.' }
+        return
+    }
     $script:lastUpdateCheckAt = [DateTime]::UtcNow
     $ownerStartedAtTicks = [System.Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().Ticks
     $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ' +
         (Quote-AgentArgument $updater) + ' -ProjectRoot ' + (Quote-AgentArgument $projectRoot) +
         " -OwnerProcessId $PID -OwnerStartedAtTicks $ownerStartedAtTicks"
-    Start-Process -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
-        -ArgumentList $arguments -WorkingDirectory $projectRoot -WindowStyle Hidden | Out-Null
+    if ($Install) { $arguments += ' -Install' }
+    $script:clientUpdateProcess = Start-Process -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
+        -ArgumentList $arguments -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru
+    $updateClientButton.Enabled = $false
+    if ($Install) { $status.Text = 'Проверяем релизы GitHub. Скачивание и установка начнутся, если есть новая версия…' }
 }
 
 function Find-RegisteredAgentProcess {
@@ -326,8 +338,10 @@ function New-TextBox([int]$X, [int]$Y, [int]$Width) {
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = [System.Windows.Forms.Form]::new()
 $form.Text = "EaW Localisation Hub $($clientStatusMetadata.Version) – Desktop Agent"
-$form.Size = [System.Drawing.Size]::new(720, 811)
-$form.MinimumSize = [System.Drawing.Size]::new(720, 811)
+$form.Size = [System.Drawing.Size]::new(720, [Math]::Min(947, [Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Height - 40))
+$form.MinimumSize = [System.Drawing.Size]::new(720, 640)
+$form.AutoScroll = $true
+$form.AutoScrollMinSize = [System.Drawing.Size]::new(690, 908)
 $form.StartPosition = 'CenterScreen'
 
 $title = New-Label 'Настройка Desktop Agent' 24 18
@@ -450,21 +464,54 @@ $stateGroup.Controls.Add($agentState)
 $lastCheckState = [System.Windows.Forms.Label]::new()
 $lastCheckState.ForeColor = [System.Drawing.Color]::DimGray
 $lastCheckState.Location = [System.Drawing.Point]::new(14, 84)
-$lastCheckState.Size = [System.Drawing.Size]::new(405, 25)
+$lastCheckState.Size = [System.Drawing.Size]::new(288, 25)
 $stateGroup.Controls.Add($lastCheckState)
 $checkStateButton = [System.Windows.Forms.Button]::new()
 $checkStateButton.Text = 'Проверить сейчас'
 $checkStateButton.Location = [System.Drawing.Point]::new(470, 80)
 $checkStateButton.Size = [System.Drawing.Size]::new(155, 30)
 $stateGroup.Controls.Add($checkStateButton)
+$updateClientButton = [System.Windows.Forms.Button]::new()
+$updateClientButton.Text = 'Обновить клиент…'
+$updateClientButton.Location = [System.Drawing.Point]::new(308, 80)
+$updateClientButton.Size = [System.Drawing.Size]::new(155, 30)
+$stateGroup.Controls.Add($updateClientButton)
 
 $status = [System.Windows.Forms.Label]::new()
 $status.Text = 'Для первого входа нужны приглашение и новый пароль; затем достаточно имени и пароля.'
 $status.BorderStyle = 'FixedSingle'
-$status.Location = [System.Drawing.Point]::new(27, 668)
+$status.Location = [System.Drawing.Point]::new(27, 830)
 $status.Size = [System.Drawing.Size]::new(643, 66)
 $status.TextAlign = 'MiddleLeft'
 $form.Controls.Add($status)
+
+$repositoryGroup = [System.Windows.Forms.GroupBox]::new()
+$repositoryGroup.Text = 'Git — текущая ветка репозитория (не обновление клиента)'
+$repositoryGroup.Location = [System.Drawing.Point]::new(27, 665)
+$repositoryGroup.Size = [System.Drawing.Size]::new(643, 156)
+$form.Controls.Add($repositoryGroup)
+$repositoryState = [System.Windows.Forms.Label]::new()
+$repositoryState.Location = [System.Drawing.Point]::new(14, 21)
+$repositoryState.Size = [System.Drawing.Size]::new(612, 67)
+$repositoryGroup.Controls.Add($repositoryState)
+$repositoryTiming = [System.Windows.Forms.Label]::new()
+$repositoryTiming.Location = [System.Drawing.Point]::new(14, 88)
+$repositoryTiming.Size = [System.Drawing.Size]::new(612, 22)
+$repositoryTiming.ForeColor = [Drawing.Color]::DimGray
+$repositoryGroup.Controls.Add($repositoryTiming)
+$repositoryButtons = @{}
+$buttonSpecs = @(
+    @('details', 'Подробнее', 14, 95),
+    @('check', 'Проверить снова', 116, 135),
+    @('update', 'Обновить репозиторий сейчас', 258, 215),
+    @('settings', 'Настройки Git…', 480, 145)
+)
+foreach ($spec in $buttonSpecs) {
+    $button = [System.Windows.Forms.Button]::new()
+    $button.Text = $spec[1]; $button.Location = [System.Drawing.Point]::new([int]$spec[2], 116)
+    $button.Size = [System.Drawing.Size]::new([int]$spec[3], 28)
+    $repositoryGroup.Controls.Add($button); $repositoryButtons[$spec[0]] = $button
+}
 
 $tray = [System.Windows.Forms.NotifyIcon]::new()
 $tray.Icon = [System.Drawing.SystemIcons]::Application
@@ -496,6 +543,88 @@ function Current-Config {
         KeepInTray = $trayModeCheck.Checked
     }
 }
+
+function Update-RepositorySyncTiming {
+    $text = if ($script:repositorySyncStatus) { Get-EawRepositorySyncTiming $script:repositorySyncStatus } else { '' }
+    if ($repositoryTiming.Text -cne $text) { $repositoryTiming.Text = $text }
+}
+
+function Update-RepositorySyncView {
+    $script:repositorySyncStatus = $null
+    $buttonsEnabled = $false
+    $stateText = 'Git: выберите корректный репозиторий EaW.'
+    $stateColor = [Drawing.Color]::DimGray
+    try {
+        $directory = Get-EawRepositorySyncDirectory $stateDirectory $repoBox.Text.Trim()
+        $settings = Get-EawRepositorySyncSettings $directory
+        $automationText = 'Авто-fetch: ' + $(if ($settings.autoFetch -or $settings.autoPull) { 'вкл.' } else { 'выкл.' }) +
+            '; автообновление ветки: ' + $(if ($settings.autoPull) { 'вкл.' } else { 'выкл.' })
+        $stateText = $automationText + "`r`nЗапустите Agent для работы с Git."
+        $agent = Sync-AgentProcessReference
+        if (-not $agent -or $agent.HasExited) { return }
+        $value = Read-EawRepositorySyncJson (Join-Path $directory 'status.json')
+        if (-not (Test-EawRepositorySyncStatus $value $agent.Id $repoBox.Text.Trim())) { return }
+        $script:repositorySyncStatus = $value
+        $busy = $value.stage -in @('checking', 'fetching', 'updating')
+        $buttonsEnabled = -not $busy
+        $counts = $(if ($null -ne $value.behind) { " | новых коммитов: $($value.behind)" } else { '' })
+        $stateText = "$automationText`r`n$($value.branch)$counts`r`n$($value.message)"
+        if ($value.stage -eq 'blocked' -and [int]$value.behind -gt 0) { $stateColor = [Drawing.Color]::Firebrick }
+        elseif ($value.stage -in @('current', 'updated')) { $stateColor = [Drawing.Color]::ForestGreen }
+        elseif ($value.stage -eq 'error') { $stateColor = [Drawing.Color]::DarkOrange }
+        if ($value.alertId -and -not $script:seenRepositoryAlerts.ContainsKey([string]$value.alertId)) {
+            $script:seenRepositoryAlerts[[string]$value.alertId] = $true
+            Show-EawRepositorySyncAlert $form $tray $settings "Ветка $($value.branch): новых коммитов — $($value.behind). $($value.message)"
+        }
+    } catch {
+        $script:repositorySyncStatus = $null
+        $buttonsEnabled = $false
+        $stateText = 'Git: выберите корректный репозиторий EaW.'
+        $stateColor = [Drawing.Color]::DimGray
+    } finally {
+        # Commit the final view once, without clearing/repainting it on every tick.
+        if ($repositoryState.Text -cne $stateText) { $repositoryState.Text = $stateText }
+        if ($repositoryState.ForeColor -ne $stateColor) { $repositoryState.ForeColor = $stateColor }
+        foreach ($name in @('check', 'update')) {
+            if ($repositoryButtons[$name].Enabled -ne $buttonsEnabled) { $repositoryButtons[$name].Enabled = $buttonsEnabled }
+        }
+        Update-RepositorySyncTiming
+    }
+}
+
+$repositoryButtons['settings'].Add_Click({
+    try {
+        $directory = Get-EawRepositorySyncDirectory $stateDirectory $repoBox.Text.Trim()
+        Show-EawRepositorySyncSettings $form $directory
+        Update-RepositorySyncView
+    } catch { $status.Text = "Ошибка настроек Git: $($_.Exception.Message)" }
+})
+$repositoryButtons['details'].Add_Click({
+    $value = $script:repositorySyncStatus
+    $message = if ($value) {
+        "Репозиторий: $($value.repository)`r`nВетка: $($value.branch)`r`nUpstream: $($value.upstream)`r`nНовых коммитов: $($value.behind); локальных: $($value.ahead)`r`n$(Get-EawRepositorySyncTiming $value)`r`n`r`n$($value.message)"
+    } else { $repositoryState.Text }
+    [void][Windows.Forms.MessageBox]::Show($form, $message, 'Состояние Git', 'OK', 'Information')
+})
+function Send-RepositorySyncRequest {
+    param([ValidateSet('check', 'update')][string]$Action)
+    Update-RepositorySyncView
+    if (-not $script:repositorySyncStatus) { throw 'Запустите Agent с выбранным репозиторием.' }
+    $directory = Get-EawRepositorySyncDirectory $stateDirectory $repoBox.Text.Trim()
+    Request-EawRepositorySync $directory $script:agentProcess.Id $Action
+    $repositoryButtons['check'].Enabled = $false; $repositoryButtons['update'].Enabled = $false
+    $repositoryState.Text = 'Запрос отправлен Agent…'
+}
+$repositoryButtons['check'].Add_Click({
+    try { Send-RepositorySyncRequest 'check' } catch { $status.Text = $_.Exception.Message }
+})
+$repositoryButtons['update'].Add_Click({
+    $answer = [Windows.Forms.MessageBox]::Show($form,
+        'Проверить remote и обновить текущую ветку до upstream? Только fast-forward и только при чистом рабочем каталоге. Локальные изменения не удаляются и не прячутся в stash.',
+        'Обновить Git-репозиторий', 'YesNo', 'Question', 'Button2')
+    if ($answer -ne [Windows.Forms.DialogResult]::Yes) { return }
+    try { Send-RepositorySyncRequest 'update' } catch { $status.Text = $_.Exception.Message }
+})
 
 function Update-ColorPreview {
     if ($colorBox.Text.Trim() -match '^#[0-9A-Fa-f]{6}$') {
@@ -804,7 +933,17 @@ $startupCheck.Add_CheckedChanged({
     try { Set-StartupShortcut -Enabled $startupCheck.Checked } catch { $status.Text = "Не удалось изменить автозапуск: $($_.Exception.Message)" }
 })
 $trayModeCheck.Add_CheckedChanged({ Save-AgentConfig (Current-Config) })
-$checkStateButton.Add_Click({ Update-AgentStateView })
+$checkStateButton.Add_Click({
+    Update-AgentStateView
+    try { Start-ClientUpdateCheck } catch { $status.Text = "Ошибка проверки обновления: $($_.Exception.Message)" }
+})
+$updateClientButton.Add_Click({
+    $answer = [System.Windows.Forms.MessageBox]::Show($form,
+        'Скачать и установить новую версию с GitHub Releases? Если обновление найдено, Agent и Review будут закрыты на время установки, затем запущены снова. Windows может запросить права администратора. Без вашего подтверждения клиент не обновляется.',
+        'Обновление EaW Localisation Hub', 'YesNo', 'Question', 'Button2')
+    if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+    try { Start-ClientUpdateCheck -Install } catch { $status.Text = "Не удалось запустить обновление: $($_.Exception.Message)" }
+})
 
 $showTrayItem.Add_Click({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
 $tray.Add_DoubleClick({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
@@ -832,6 +971,12 @@ $form.Add_FormClosing({
 $timer = [System.Windows.Forms.Timer]::new()
 $timer.Interval = 1000
 $timer.Add_Tick({
+    Update-RepositorySyncView
+    if ($script:clientUpdateProcess -and $script:clientUpdateProcess.HasExited) {
+        $script:clientUpdateProcess.Dispose()
+        $script:clientUpdateProcess = $null
+        $updateClientButton.Enabled = $true
+    }
     $updateStatusPath = Join-Path $stateDirectory 'update-status.json'
     if (Test-Path -LiteralPath $updateStatusPath -PathType Leaf) {
         try {
@@ -843,9 +988,10 @@ $timer.Add_Tick({
                     [Globalization.CultureInfo]::InvariantCulture,
                     [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
                 if ($updateAtUtc -ge $script:uiStartedAtUtc -and
-                    $updateStatus.Stage -in @('downloading', 'installing', 'switching', 'error')) {
+                    ($updateStatus.Stage -eq 'available' -or $updateStatus.InstallRequested) -and
+                    $updateStatus.Stage -in @('checking', 'available', 'current', 'downloading', 'verifying', 'installing', 'switching', 'restarting', 'complete', 'error')) {
                     $status.Text = [string]$updateStatus.Message
-                    if ($updateStatus.Stage -eq 'error') {
+                    if ($updateStatus.Stage -eq 'error' -and $updateStatus.InstallRequested) {
                         $tray.ShowBalloonTip(5000, 'EaW Hub – ошибка обновления', [string]$updateStatus.Message, 'Error')
                     }
                 }

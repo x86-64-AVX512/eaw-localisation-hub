@@ -1,12 +1,16 @@
 ﻿param(
     [Parameter(Mandatory = $true)][string]$ProjectRoot,
     [Parameter(Mandatory = $true)][int]$OwnerProcessId,
-    [Parameter(Mandatory = $true)][long]$OwnerStartedAtTicks
+    [Parameter(Mandatory = $true)][long]$OwnerStartedAtTicks,
+    [switch]$Install
 )
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'agent-status.ps1')
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
+. (Join-Path $PSScriptRoot 'client-update-ui.ps1')
+. (Join-Path $PSScriptRoot 'client-update-transfer.ps1')
+. (Join-Path $PSScriptRoot 'client-update-restart.ps1')
 
 $projectRoot = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\')
 $stateRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'EaWLocalisationHub'
@@ -18,19 +22,26 @@ $mutex = [System.Threading.Mutex]::new($false, 'Local\EaWHubClientUpdater')
 $hasMutex = $false
 $workRoot = $null
 $clientStopped = $false
+$script:clientRestartLaunched = $false
 
 function Write-UpdateStatus {
-    param([string]$Stage, [string]$Message, [string]$Version = '')
+    param([string]$Stage, [string]$Message, [string]$Version = '',
+        [Nullable[int]]$ProgressPercent = $null, [long]$BytesReceived = 0, [long]$BytesTotal = 0)
     New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
     $record = [pscustomobject]@{
         Stage = $Stage
         Message = $Message
         Version = $Version
+        ProgressPercent = $ProgressPercent
+        BytesReceived = $BytesReceived
+        BytesTotal = $BytesTotal
+        InstallRequested = $Install.IsPresent
         UpdatedAt = [DateTime]::UtcNow.ToString('o')
     }
     $temporary = "$statusPath.$PID.tmp"
     [System.IO.File]::WriteAllText($temporary, ($record | ConvertTo-Json -Compress), [System.Text.UTF8Encoding]::new($false))
     Move-Item -LiteralPath $temporary -Destination $statusPath -Force
+    Set-ClientUpdateWindowStatus -Status $record
 }
 
 function Get-OwnerProcess {
@@ -152,7 +163,11 @@ function Invoke-ClientInstaller {
     $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/SP-', '/NORESTART',
         '/RESTARTEXITCODE=3010', '/CLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS',
         ('/DIR="' + $InstallRoot + '"'))
-    $process = Start-Process -FilePath $InstallerPath -ArgumentList $arguments -Verb RunAs -Wait -PassThru
+    $process = Start-Process -FilePath $InstallerPath -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
+    while (-not $process.HasExited) {
+        Invoke-ClientUpdateUiPulse
+        Start-Sleep -Milliseconds 100
+    }
     if ($process.ExitCode -ne 0) { throw "Installer finished with exit code $($process.ExitCode)." }
 }
 
@@ -166,9 +181,19 @@ try {
         -not (Test-Path -LiteralPath (Join-Path $projectRoot 'review\EaWReview.exe') -PathType Leaf)) { return }
     $installed = Get-EawHubClientStatusMetadata -ProjectRoot $projectRoot
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    if ($Install) {
+        Write-UpdateStatus -Stage 'checking' -Message 'Проверяется наличие новой версии на GitHub Releases…' -Version $installed.Version
+    }
     $release = Find-NewClientRelease -InstalledVersion $installed.Version
     if (-not $release) {
         Write-UpdateStatus -Stage 'current' -Message "Опубликованной версии новее $($installed.Version) нет; клиент не менялся." -Version $installed.Version
+        return
+    }
+
+    # Startup, periodic and compatibility checks are read-only. Only an explicit
+    # button action may request downloads, stop the client or run an installer.
+    if (-not $Install) {
+        Write-UpdateStatus -Stage 'available' -Message "Доступна версия $($release.Version). Нажмите «Обновить клиент…», чтобы скачать и установить её." -Version $release.Version
         return
     }
 
@@ -177,9 +202,13 @@ try {
     New-Item -ItemType Directory -Path $workRoot -Force | Out-Null
     $installerPath = Join-Path $workRoot $release.InstallerName
     $checksumPath = "$installerPath.sha256"
+    Show-ClientUpdateWindow -Version $release.Version
     Write-UpdateStatus -Stage 'downloading' -Message "Скачивается установщик $($release.Version) с GitHub Releases…" -Version $release.Version
-    Invoke-WebRequest -Uri $release.Installer.browser_download_url -UseBasicParsing -TimeoutSec 600 -OutFile $installerPath
-    Invoke-WebRequest -Uri $release.Checksum.browser_download_url -UseBasicParsing -TimeoutSec 30 -OutFile $checksumPath
+    Save-ClientReleaseAsset -Url $release.Installer.browser_download_url -Destination $installerPath `
+        -ExpectedBytes ([long]$release.Installer.size) -Version $release.Version -ReportProgress
+    Write-UpdateStatus -Stage 'verifying' -Message 'Проверяется целостность установщика (SHA-256)…' -Version $release.Version
+    Save-ClientReleaseAsset -Url $release.Checksum.browser_download_url -Destination $checksumPath `
+        -ExpectedBytes ([long]$release.Checksum.size) -Version $release.Version -TimeoutSeconds 30
     Assert-ClientReleaseInstaller -Release $release -InstallerPath $installerPath -ChecksumPath $checksumPath
     if (-not (Get-OwnerProcess)) { return }
     Write-UpdateStatus -Stage 'installing' -Message "Устанавливается клиент $($release.Version); Windows может запросить права администратора…" -Version $release.Version
@@ -199,46 +228,15 @@ try {
     if ($installedAfter.Version -cne $release.Version) {
         throw "Installer did not update the client at $projectRoot."
     }
-    Write-UpdateStatus -Stage 'switching' -Message "Обновление $($release.Version) установлено; перезапуск клиента…" -Version $release.Version
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
-        (Join-Path $projectRoot 'scripts\start-agent-ui.ps1') + '" -StartMinimized'
-    Start-Process -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
-        -ArgumentList $arguments -WorkingDirectory $projectRoot -WindowStyle Hidden
+    Restart-UpdatedClient -InstallRoot $projectRoot -Version $release.Version -ReopenReview $reviewWasOpen | Out-Null
     $clientStopped = $false
-    if ($reviewWasOpen) {
-        $sessionPath = Join-Path $stateRoot 'review-session.json'
-        $newNodePath = Join-Path $projectRoot 'node.exe'
-        $reviewReady = $false
-        for ($attempt = 0; $attempt -lt 60; $attempt++) {
-            Start-Sleep -Milliseconds 500
-            try {
-                $session = Get-Content -LiteralPath $sessionPath -Raw -Encoding utf8 | ConvertFrom-Json
-                $newAgent = Get-Process -Id ([int]$session.pid) -ErrorAction Stop
-                if ([string]::Equals($newAgent.Path, $newNodePath, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    $reviewReady = $true
-                    break
-                }
-            } catch {}
-        }
-        if ($reviewReady) {
-            $reviewArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
-                (Join-Path $projectRoot 'scripts\start-hub.ps1') + '"'
-            Start-Process -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
-                -ArgumentList $reviewArguments -WorkingDirectory $projectRoot -WindowStyle Hidden
-        } else {
-            Write-UpdateStatus -Stage 'complete' -Message "Клиент обновлён до $($release.Version), но Review не удалось открыть автоматически." -Version $release.Version
-            return
-        }
-    }
-    Write-UpdateStatus -Stage 'complete' -Message "Клиент обновлён до $($release.Version)." -Version $release.Version
+    Write-UpdateStatus -Stage 'complete' -Message "Клиент обновлён до $($release.Version). Agent перезапущен." -Version $release.Version -ProgressPercent 100
 } catch {
-    Write-UpdateStatus -Stage 'error' -Message "Автообновление не удалось: $($_.Exception.Message)"
-    if ($clientStopped -and (Test-Path -LiteralPath (Join-Path $projectRoot 'scripts\start-agent-ui.ps1') -PathType Leaf)) {
+    Write-UpdateStatus -Stage 'error' -Message "Обновление не удалось: $($_.Exception.Message)"
+    if ($clientStopped -and -not $script:clientRestartLaunched -and
+        (Test-Path -LiteralPath (Join-Path $projectRoot 'scripts\start-agent-ui.ps1') -PathType Leaf)) {
         try {
-            $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
-                (Join-Path $projectRoot 'scripts\start-agent-ui.ps1') + '" -StartMinimized'
-            Start-Process -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
-                -ArgumentList $arguments -WorkingDirectory $projectRoot -WindowStyle Hidden
+            Start-ClientAfterUpdate -InstallRoot $projectRoot
         } catch {}
     }
 } finally {
@@ -252,4 +250,5 @@ try {
     }
     if ($hasMutex) { $mutex.ReleaseMutex() }
     $mutex.Dispose()
+    Close-ClientUpdateWindow
 }

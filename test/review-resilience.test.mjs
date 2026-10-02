@@ -47,6 +47,12 @@ test('ticket panel retries transient initialisation failures and can recover con
   assert.match(reviewApp, /ticketPanel\.dispose\(\)/u);
 });
 
+test('Review starts document connection without waiting for the auxiliary ticket catalog', () => {
+  assert.match(reviewApp, /void ticketPanel\.initialise\(\);[\s\S]*agentConnection = createAgentConnection/u);
+  assert.doesNotMatch(reviewApp, /await ticketPanel\.initialise/u);
+  assert.match(reviewApp, /variants: 'compact-v1'/u);
+});
+
 test('ticket navigation closes the active presence before reloading Review', () => {
   assert.match(ticketPanel, /await options\.beforeNavigate\?\.\(\)[\s\S]*location\.reload\(\)/u);
   assert.match(reviewApp, /send\(\{ type: 'deactivate'[\s\S]*send\(\{ type: 'close'[\s\S]*await agentConnection\?\.flush/u);

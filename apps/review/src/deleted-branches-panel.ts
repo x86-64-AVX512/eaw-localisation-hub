@@ -1,4 +1,5 @@
 import type * as Monaco from 'monaco-editor';
+import { reviewFontFamily } from './editor-font.ts';
 import { requiredButton, requiredDialog, requiredElement, requiredInput } from './dom-elements.ts';
 import { decodeBase64 } from './review-utilities.ts';
 
@@ -120,8 +121,8 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
       editorElement.replaceChildren();
       preview = monaco.editor.create(editorElement, {
         value: decodeBase64(payload.textBase64), language: 'eaw-yaml',
-        readOnly: true, automaticLayout: true, minimap: { enabled: false },
-        wordWrap: 'on', scrollBeyondLastLine: false,
+        readOnly: true, automaticLayout: true, minimap: { enabled: false }, fontFamily: reviewFontFamily(),
+        wordWrap: 'on', wrappingStrategy: 'advanced', scrollBeyondLastLine: false,
         unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
       });
       selectedFile = relativePath;

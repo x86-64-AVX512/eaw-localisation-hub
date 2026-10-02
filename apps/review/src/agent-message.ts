@@ -72,7 +72,7 @@ const optionalFields: Partial<Readonly<Record<AgentMessage['type'], Shape>>> = {
     temporaryPassword: 'boolean', version: 'string', serverVersion: 'string', trainingProgressConfirmed: 'boolean' },
   documentStatus: { reason: 'string', branch: 'string', changedFiles: 'array', message: 'string' },
   documentVariants: { sharedBase64: 'string', mineBase64: 'string', gitBase64: 'string',
-    mineBaseRevision: 'string', mineRevision: 'string', contributors: 'array', conflicts: 'array',
+    mineFromGit: 'boolean', mineBaseRevision: 'string', mineRevision: 'string', contributors: 'array', conflicts: 'array',
     gitConflicts: 'array', localSelections: 'array', localSelectionBlocked: 'string', localSelectionRevision: 'string' },
   presenceSnapshot: { presences: 'array' }, reservationSnapshot: { reservations: 'array' },
   reservationTargetSnapshot: { targets: 'array' }, externalConflictReset: { source: 'string' },
@@ -115,6 +115,8 @@ export function parseAgentMessage(value: unknown): AgentMessage | null {
   if (value.type === 'history' && !optionalArray(value, 'entries', {
     id: 'string', reason: 'string', author: 'string', createdAt: 'string',
   })) return null;
+  if (value.type === 'documentVariants' && value.mineFromGit === true
+    && (value.minePatch !== undefined || value.mineBase64 !== undefined)) return null;
   if (value.type === 'documentVariants' && value.minePatch !== undefined
     && (!isRecord(value.minePatch) || !fieldsMatch(value.minePatch, {
       positionByte: 'number', deleteBytes: 'number', insertBase64: 'string',

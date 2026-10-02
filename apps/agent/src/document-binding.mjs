@@ -77,16 +77,20 @@ export class DocumentBinding {
     const headers = this.hub.options.token
       ? { Authorization: `Bearer ${this.hub.options.token}` }
       : undefined;
+    this.serverStateVector = null;
     this.socket = new WebSocket(url, { maxPayload: MAX_MESSAGE_BYTES, headers });
-    this.socket.binaryType = 'arraybuffer';
+    const socket = this.socket; socket.binaryType = 'arraybuffer';
     this.socket.on('open', () => {
       console.log('[agent] document connected');
       this.emitDocumentStatus('syncing');
     });
     this.socket.on('message', (data, isBinary) => {
+      if (this.socket !== socket) return;
       try {
         if (isBinary) {
-          Y.applyUpdate(this.document, new Uint8Array(data), REMOTE_ORIGIN);
+          const update = new Uint8Array(data);
+          if (!this.synced) this.serverStateVector = Y.encodeStateVectorFromUpdate(update);
+          Y.applyUpdate(this.document, update, REMOTE_ORIGIN);
         } else {
           this.receiveServerMessage(validateServerMessage(JSON.parse(data.toString('utf8'))));
         }
@@ -95,6 +99,7 @@ export class DocumentBinding {
       }
     });
     this.socket.on('close', (code, reason) => {
+      if (this.socket !== socket) return;
       diskRequests.rejectDiskMergeRequests(this);
       delivery.handleSocketClose(this);
       this.synced = false;

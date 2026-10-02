@@ -60,6 +60,9 @@ test('canonical cache clones sparse localisation trees and refreshes branch head
     git(source, 'push', origin, 'general-dev');
     const third = await cache.snapshot('general-dev:localisation/replace/russian/b.yml', { force: true });
     assert.deepEqual(await cache.changedFilesSince(
+      'general-dev:localisation/russian/a.yml', first.commit, { remoteHead: second.commit },
+    ), ['localisation/russian/a.yml'], 'a delayed startup summary stays pinned to its validated commit');
+    assert.deepEqual(await cache.changedFilesSince(
       'general-dev:localisation/russian/a.yml', first.commit,
     ), ['localisation/replace/russian/b.yml', 'localisation/russian/a.yml']);
 

@@ -45,7 +45,7 @@ function schedulePendingRetry(binding, client, absolutePath, state, pending, not
 }
 
 async function confirmDiskMerge(binding, client, absolutePath, state, pending, notice) {
-  if (pending.checking) return;
+  if (pending.checking || binding.hub?.gitOperationInProgress?.()) return;
   pending.checking = true;
   try {
     const personalBefore = binding.localFileText();
@@ -58,10 +58,12 @@ async function confirmDiskMerge(binding, client, absolutePath, state, pending, n
     if (state.pendingExternal !== pending || state.binding !== binding
       || client.documents.get(absolutePath) !== state) return;
     if (result.error) throw Object.assign(new Error(result.error), { code: result.code });
-    if (!binding.synced || !binding.gitWritable || binding.paused || binding.closing) return;
+    if (!binding.synced || !binding.gitWritable || binding.paused || binding.closing
+      || binding.hub?.gitOperationInProgress?.()) return;
     const diskNow = binding.readDiskText ? await binding.readDiskText(absolutePath) : pending.external;
     if (state.pendingExternal !== pending || state.binding !== binding
-      || !binding.synced || !binding.gitWritable || binding.paused || binding.closing) return;
+      || !binding.synced || !binding.gitWritable || binding.paused || binding.closing
+      || binding.hub?.gitOperationInProgress?.()) return;
     if (diskNow !== pending.external) {
       pending.external = diskNow;
       pending.resolutions.clear();

@@ -32,3 +32,15 @@ test('Russian client UI does not use the hybrid recovery-code wording', () => {
   assert.match(agentUi, /Приглашение \/ код восстановления:/u);
   assert.match(adminUi, /Разрешить новый код восстановления/u);
 });
+
+test('only the confirmed Agent update button requests installation', () => {
+  assert.match(agentUi, /\$updateClientButton\.Text = 'Обновить клиент…'/u);
+  const handler = agentUi.slice(agentUi.indexOf('$updateClientButton.Add_Click({'), agentUi.indexOf('$showTrayItem.Add_Click'));
+  assert.match(handler, /MessageBox\]::Show\(\$form/u);
+  assert.match(handler, /'YesNo', 'Question', 'Button2'/u, 'No is the default confirmation choice');
+  assert.match(handler, /if \(\$answer -ne \[System\.Windows\.Forms\.DialogResult\]::Yes\) \{ return \}/u);
+  assert.match(handler, /Start-ClientUpdateCheck -Install/u);
+  assert.equal((agentUi.match(/Start-ClientUpdateCheck -Install/gu) ?? []).length, 1,
+    'startup, timers and compatibility checks must never request an install');
+  assert.match(agentUi, /\$updateTimer\.Add_Tick\(\{ try \{ Start-ClientUpdateCheck \}/u);
+});

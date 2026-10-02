@@ -103,16 +103,17 @@ try {
     $script:installerInvocation = $null
     $script:installerExitCode = 0
     function Start-Process {
-        param($FilePath, $ArgumentList, $Verb, [switch]$Wait, [switch]$PassThru)
+        param($FilePath, $ArgumentList, $Verb, $WindowStyle, [switch]$Wait, [switch]$PassThru)
         $script:installerInvocation = [pscustomobject]@{
             FilePath = $FilePath; Arguments = @($ArgumentList); Verb = $Verb
-            Wait = $Wait.IsPresent; PassThru = $PassThru.IsPresent
+            Wait = $Wait.IsPresent; PassThru = $PassThru.IsPresent; WindowStyle = $WindowStyle
         }
-        [pscustomobject]@{ ExitCode = $script:installerExitCode }
+        [pscustomobject]@{ ExitCode = $script:installerExitCode; HasExited = $true }
     }
     Invoke-ClientInstaller -InstallerPath $installerPath -InstallRoot 'C:\Program Files\EaW Localisation Hub'
     $invocation = $script:installerInvocation
-    if ($invocation.Verb -cne 'RunAs' -or -not $invocation.Wait -or -not $invocation.PassThru -or
+    if ($invocation.Verb -cne 'RunAs' -or $invocation.Wait -or -not $invocation.PassThru -or
+        $invocation.WindowStyle -cne 'Hidden' -or
         '/VERYSILENT' -cnotin $invocation.Arguments -or
         '/NORESTART' -cnotin $invocation.Arguments -or
         '/DIR="C:\Program Files\EaW Localisation Hub"' -cnotin $invocation.Arguments) {

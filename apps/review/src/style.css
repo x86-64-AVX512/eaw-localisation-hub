@@ -1,5 +1,7 @@
 @import "../../../node_modules/monaco-editor/min/vs/editor/editor.main.css";
 
+@import './em-dash-font.css';
+
 :root {
   color-scheme: dark;
   font-family: "Segoe UI", system-ui, sans-serif;
@@ -109,6 +111,10 @@ button.primary { border-color: #517bdc; background: #315db8; }
 }
 #personal-file-open.has-included { border-color: #48ae78; color: #baf0d0; }
 .personal-file-dialog { width: min(860px, calc(100vw - 40px)); }
+.repository-sync-dialog { width: min(650px, calc(100vw - 40px)); }
+.repository-sync-dialog .history-toolbar h2 { flex: 1; margin: 0; }
+#repository-sync-message { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+#repository-sync-progress { width: 100%; margin-top: 14px; }
 .personal-file-dialog p { margin: 0 0 12px; line-height: 1.45; }
 .personal-file-dialog.has-conflicts { border-color: #d78b37; }
 .personal-file-dialog.has-conflicts #personal-file-message { color: #ffd59b; }
@@ -608,6 +614,9 @@ dialog.fullscreen .history-shell, dialog.fullscreen .git-conflict-shell, dialog.
 }
 .comparison del { color: #d78b91; text-decoration-thickness: 2px; }
 .comparison ins { color: var(--author-color, #6aa9ff); text-decoration: none; font-weight: 650; }
+.active-suggestion-original-zone, .multiline-suggestion-zone, .comparison {
+  font-family: "EaW Em Dash", Consolas, monospace;
+}
 .thread { display: flex; max-height: 150px; flex-direction: column; gap: 8px; overflow: auto; margin-top: 8px; }
 .thread-message { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 7px; }
 .message-meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 7px; }

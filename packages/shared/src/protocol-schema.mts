@@ -13,7 +13,7 @@ const base64Field = text(12 * 1024 * 1024);
 const positionField = integer(0x7fffffff);
 
 const clientSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Object.freeze({
-  open: { path: pathField, textBase64: base64Field, ticketId: text(64, false), crdt: text(32, false) },
+  open: { path: pathField, textBase64: base64Field, ticketId: text(64, false), crdt: text(32, false), variants: text(32, false) },
   activate: { path: pathField, positionByte: positionField, anchorByte: positionField },
   deactivate: { path: pathField },
   close: { path: pathField },

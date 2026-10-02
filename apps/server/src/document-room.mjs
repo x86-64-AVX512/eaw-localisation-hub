@@ -69,13 +69,13 @@ export async function closeDocumentRoomValidator() {
 }
 
 export class DocumentRoom {
-  static async load(dataDirectory, documentId, authStore, registry, canonicalSource = null) {
+  static async load(dataDirectory, documentId, authStore, registry, canonicalSource = null, canonicalSnapshot = null) {
     const hash = crypto.createHash('sha256').update(documentId).digest('hex');
     const room = new DocumentRoom(dataDirectory, documentId, hash, authStore, registry, canonicalSource);
     await room.loadFromDisk();
     if (canonicalSource?.enabled) {
       try {
-        await room.applyCanonicalSnapshot(await canonicalSource.snapshot(documentId));
+        await room.applyCanonicalSnapshot(canonicalSnapshot ?? await canonicalSource.snapshot(documentId));
       } catch (error) {
         if (!room.gitBase || !room.hasStoredState) {
           room.destroy();

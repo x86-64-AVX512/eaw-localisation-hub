@@ -10,17 +10,19 @@ export function variantTexts(previous: DocumentVariants | null, payload: Documen
   const patch = payload.minePatch;
   const patchCurrent = patch && previous
     && previous.mineRevision === payload.mineBaseRevision;
-  const mine = patchCurrent ? previous.mine.slice(0, byteToUtf16(previous.mine, patch.positionByte))
+  const git = payload.gitBase64 !== undefined ? decodeBase64(payload.gitBase64) : previous?.git ?? '';
+  const mine = payload.mineFromGit === true ? git : patchCurrent ? previous.mine.slice(0, byteToUtf16(previous.mine, patch.positionByte))
     + decodeBase64(patch.insertBase64)
     + previous.mine.slice(byteToUtf16(previous.mine, patch.positionByte + patch.deleteBytes))
     : payload.mineBase64 !== undefined ? decodeBase64(payload.mineBase64) : previous?.mine ?? '';
   return {
     shared: reviewText ?? (payload.sharedBase64 !== undefined ? decodeBase64(payload.sharedBase64) : previous?.shared ?? ''),
     mine,
-    mineRevision: patchCurrent || payload.mineBase64 !== undefined
+    mineRevision: patchCurrent || payload.mineBase64 !== undefined || payload.mineFromGit === true
       ? payload.mineRevision ?? '' : previous?.mineRevision ?? '',
-    minePatchMissed: Boolean(patch && !patchCurrent),
-    git: payload.gitBase64 !== undefined ? decodeBase64(payload.gitBase64) : previous?.git ?? '',
+    minePatchMissed: Boolean((patch && !patchCurrent)
+      || (payload.mineFromGit === true && payload.gitBase64 === undefined && !previous)),
+    git,
   };
 }
 

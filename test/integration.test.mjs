@@ -11,6 +11,7 @@ import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import * as Y from 'yjs';
 import { createReviewDocument } from '../apps/review/src/review-document.ts';
+import { variantTexts } from '../apps/review/src/document-variants.ts';
 import { normaliseLineEndings, withoutUtf8Bom } from '../packages/shared/src/text.mts';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
@@ -75,7 +76,7 @@ async function stopProcess(child) {
   if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
 }
 
-async function connectReview(stateDirectory, filePath, initialText, retained = null) {
+async function connectReview(stateDirectory, filePath, initialText, retained = null, compact = true) {
   const discovery = JSON.parse(await fs.readFile(path.join(stateDirectory, 'review-session.json'), 'utf8'));
   const socket = new WebSocket(`${discovery.origin.replace('http:', 'ws:')}/review-socket?token=${discovery.token}`, {
     origin: discovery.origin,
@@ -94,6 +95,10 @@ async function connectReview(stateDirectory, filePath, initialText, retained = n
     const message = JSON.parse(data.toString('utf8'));
     client.messages.push(message);
     if (message.type === 'documentSync') client.document.receive(message);
+    if (message.type === 'documentVariants') {
+      client.variants = variantTexts(client.variants ?? null, message, client.document.text());
+      assert.equal(client.variants.minePatchMissed, false, 'real wire variants must remain reconstructible');
+    }
     if (message.type === 'documentReady') {
       client.ready = true; client.document.replay();
       socket.send(JSON.stringify(client.document.anchor({ type: 'cursor', path: filePath, positionByte: 0, anchorByte: 0 })));
@@ -101,6 +106,7 @@ async function connectReview(stateDirectory, filePath, initialText, retained = n
   });
   await once(socket, 'open');
   socket.send(JSON.stringify({ type: 'open', path: filePath, crdt: 'yjs-v1',
+    ...(compact ? { variants: 'compact-v1' } : {}),
     textBase64: Buffer.from(initialText).toString('base64') }));
   socket.send(JSON.stringify(client.document.anchor({ type: 'activate', path: filePath, positionByte: 0, anchorByte: 0 })));
   await waitUntil(() => client.ready, 'Review ready');
@@ -122,6 +128,12 @@ test('real Review–Agent–server transport preserves in-flight typing and writ
       for (const file of [fileAlice, fileBob]) {
         await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, original);
       }
+      for (const repo of [repoAlice, repoBob]) {
+        const git = (...args) => execFileSync('git', args, { cwd: repo, windowsHide: true, stdio: 'pipe' });
+        git('init', '-b', 'general-dev'); git('config', 'user.name', 'Test');
+        git('config', 'user.email', 'test@example.invalid'); git('config', 'core.autocrlf', 'false');
+        git('add', '.'); git('commit', '-m', 'test-baseline');
+      }
       server = spawnNode(['apps/server/src/main.mjs', '--port', String(port),
         '--data', path.join(temporary, 'data'), '--auth', 'disabled']);
       await waitForHealth(port);
@@ -135,7 +147,10 @@ test('real Review–Agent–server transport preserves in-flight typing and writ
         waitUntil(async () => { try { await fs.access(path.join(stateBob, 'review-session.json')); return true; } catch { return false; } }, 'Bob Review endpoint'),
       ]);
       alice = await connectReview(stateAlice, fileAlice, original);
-      bob = await connectReview(stateBob, fileBob, original);
+      bob = await connectReview(stateBob, fileBob, original, null, false);
+      await waitUntil(() => alice.variants && bob.variants, 'mixed-capability initial variants');
+      assert.equal(alice.messages.find((message) => message.type === 'documentVariants').sharedBase64, undefined);
+      assert.ok(bob.messages.find((message) => message.type === 'documentVariants').sharedBase64);
       alice.holding = true;
       alice.document.commit(original.replace('"One"', '"Alice One"'));
       bob.document.commit(original.replace('"Two"', '"Bob Two"'));
@@ -226,6 +241,7 @@ test('real BAR deletion, checkbox and watcher round trip keeps disk equal to the
         const latest = review.messages.filter((m) => m.type === 'documentVariants').at(-1);
         assert.equal(latest.localSelections.find((e) => e.id === 'key:BAR_viira_hierarchy')?.state, include ? 'included' : 'excluded');
         assert.equal(await readDisk(), include ? original.replace('  BAR_viira_hierarchy:0 "Structured Hierarchy"\n', '') : original);
+        assert.equal(normaliseLineEndings(review.variants.mine), await readDisk(), 'compact Review personal text must match the materialised file');
         assert.equal(review.document.text(), sharedDeleted, 'materialising a checkbox must not mutate the shared document');
       }
       assert.equal(review.messages.some((m) => m.type === 'notice' && /Изменения с диска объединены/u.test(m.message)), false,

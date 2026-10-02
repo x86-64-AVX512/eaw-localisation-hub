@@ -1,4 +1,5 @@
 import type * as Monaco from 'monaco-editor';
+import { reviewFontFamily } from './editor-font.ts';
 
 interface LineRange { start: number; end: number }
 type HiddenAreasEditor = Monaco.editor.IStandaloneCodeEditor & {
@@ -64,7 +65,7 @@ export function createStandardDiffView({
   const modifiedModel = monaco.editor.createModel('', language);
   const diff = monaco.editor.createDiffEditor(container, {
     theme: 'vs-dark', readOnly: true, automaticLayout: !preserveOnDeactivate,
-    minimap: { enabled: false },
+    minimap: { enabled: false }, fontFamily: reviewFontFamily(),
     renderSideBySide: true, originalEditable: false, hideUnchangedRegions: { enabled: false },
     wordWrap: 'on', diffWordWrap: 'on', wordWrapOverride1: 'on', wordWrapOverride2: 'on',
     wrappingStrategy: 'advanced', scrollBeyondLastLine: false, ...editorOptions,

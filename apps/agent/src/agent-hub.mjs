@@ -71,6 +71,10 @@ export class AgentHub {
     this.branchDebounce = null;
     this.gitIndexPath = '';
     this.gitIndexLock = '';
+    this.repositoryUpdating = false;
+    /** @type {import('./repository-sync.mjs').RepositorySync | null} */
+    this.repositorySync = null;
+    this.repositoryEditEpoch = 0;
     this.accountRefreshTimer = setInterval(() => {
       this.refreshAccountStatus().catch(() => {});
     }, 15_000);
@@ -402,7 +406,7 @@ export class AgentHub {
   }
 
   async checkGitCommitChange() {
-    if (this.closing || this.workspaceTransitioning || this.gitCommitCheckPending) return;
+    if (this.closing || this.workspaceTransitioning || this.repositoryUpdating || this.gitCommitCheckPending) return;
     this.gitCommitCheckPending = true;
     try {
       if (!this.options.workspaceExplicit) {
@@ -449,11 +453,11 @@ export class AgentHub {
   }
 
   gitOperationInProgress() {
-    return this.workspaceTransitioning || Boolean(this.gitIndexLock && fs.existsSync(this.gitIndexLock));
+    return this.repositoryUpdating || this.workspaceTransitioning || Boolean(this.gitIndexLock && fs.existsSync(this.gitIndexLock));
   }
 
   checkWorkspaceChange(observedWorkspace = '') {
-    if (this.options.workspaceExplicit || this.workspaceTransitioning) return;
+    if (this.options.workspaceExplicit || this.workspaceTransitioning || this.repositoryUpdating) return;
     const workspace = observedWorkspace || this.currentGitWorkspace();
     if (!workspace || workspace === this.options.workspace) {
       this.detectedWorkspace = this.options.workspace;
@@ -486,6 +490,8 @@ export class AgentHub {
   }
 
   receiveClientMessage(client, message) {
+    // Opening/closing files changes the set of rooms checked by preflight.
+    if (message.type === 'open' || message.type === 'close') this.repositoryEditEpoch += 1;
     if (message.type === 'recoveryIssue') {
       this.issueRecoveryCode(client).catch(() => client.send({
         type: 'error', message: 'Не удалось выпустить код восстановления.',
@@ -582,6 +588,8 @@ export class AgentHub {
       'externalConflictResolve', 'personalFileMaterialize', 'personalConflictResolve',
       'personalFileSelectionSet', 'documentVariantRequest',
     ]);
+    // Heartbeats and cursor motion must not cancel an otherwise safe update.
+    if (gitMutations.has(message.type)) this.repositoryEditEpoch += 1;
     if (!state.binding.gitWritable && gitMutations.has(message.type)
       && !(message.type === 'externalConflictResolve' && state.binding.gitState?.status === 'conflict')) {
       client.send({
@@ -674,6 +682,8 @@ export class AgentHub {
     }
     else if (message.type === 'documentVariantsRequest') {
       state.variantMineText = undefined;
+      state.variantGitText = undefined;
+      state.variantSharedSent = false;
       state.variantMineRevision = '';
       state.binding.emitDocumentVariants(client);
     }
@@ -773,6 +783,7 @@ export class AgentHub {
   }
 
   detachClient(client) {
+    this.repositoryEditEpoch += 1;
     this.clients.delete(client);
     this.clientsById.delete(client.clientId);
     const bindings = new Set([...client.documents.values()].map((state) => state.binding));

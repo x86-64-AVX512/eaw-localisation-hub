@@ -31,6 +31,7 @@ export interface DocumentVariantsPayload {
   sharedBase64?: string;
   mineBase64?: string;
   gitBase64?: string;
+  mineFromGit?: boolean;
   minePatch?: MinePatch;
   mineBaseRevision?: string;
   mineRevision?: string;

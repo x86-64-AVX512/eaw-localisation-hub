@@ -1,4 +1,5 @@
 import { decodeBase64 } from './review-utilities.ts';
+import { reviewFontFamily } from './editor-font.ts';
 import { createTicketCatalogWatch } from './ticket-catalog-watch.ts';
 import { confirmAction } from './confirm-action.ts';
 import {
@@ -152,7 +153,7 @@ export function createTicketPanel(options: TicketPanelOptions) {
     const modified = monaco.editor.createModel(decodeBase64(snapshot.ticketTextBase64), 'eaw-yaml');
     diffModels = [original, modified];
     diffEditor = monaco.editor.createDiffEditor(diffContainer, {
-      theme: 'vs-dark', readOnly: true, automaticLayout: true, minimap: { enabled: false },
+      theme: 'vs-dark', readOnly: true, automaticLayout: true, minimap: { enabled: false }, fontFamily: reviewFontFamily(),
       renderSideBySide: true, originalEditable: false,
       hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 4, revealLineCount: 10 },
       wordWrap: 'on', diffWordWrap: 'on', wrappingStrategy: 'advanced',

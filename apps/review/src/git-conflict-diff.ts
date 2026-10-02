@@ -1,4 +1,5 @@
 import type * as Monaco from 'monaco-editor';
+import { reviewFontFamily } from './editor-font.ts';
 import { requiredElement } from './dom-elements.ts';
 import type { ReviewExternalConflict } from './review-state.ts';
 
@@ -30,7 +31,7 @@ export function createGitConflictDiff({ monaco, state, send }: {
     originalModel = monaco.editor.createModel(conflict.collaborativeLine || '', 'eaw-yaml');
     modifiedModel = monaco.editor.createModel(conflict.externalLine || '', 'eaw-yaml');
     diffEditor ??= monaco.editor.createDiffEditor(container, {
-      theme: 'vs-dark', automaticLayout: true, readOnly: true,
+      theme: 'vs-dark', automaticLayout: true, readOnly: true, fontFamily: reviewFontFamily(),
       renderSideBySide: true, originalEditable: false,
       hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 2 },
       minimap: { enabled: false }, scrollBeyondLastLine: false,

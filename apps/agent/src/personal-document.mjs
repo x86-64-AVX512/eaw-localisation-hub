@@ -42,7 +42,8 @@ function sendVariants(client, state, absolutePath, payload) {
     gitConflicts: payload.gitConflicts, localSelections: payload.localSelections,
     localSelectionBlocked: payload.localSelectionBlocked,
     localSelectionRevision: payload.localSelectionRevision };
-  if (!state.variantSharedSent) {
+  const compact = client.reviewCrdt && client.compactVariants && state.reviewSynced;
+  if (!state.variantSharedSent && !compact) {
     message.sharedBase64 = Buffer.from(payload.shared, 'utf8').toString('base64');
     state.variantSharedSent = true;
   }
@@ -52,9 +53,10 @@ function sendVariants(client, state, absolutePath, payload) {
   }
   if (state.variantMineText !== payload.mine) {
     const baseRevision = state.variantMineRevision ?? '';
-    const patch = typeof state.variantMineText === 'string'
+    const patch = !(compact && payload.mine === payload.git) && typeof state.variantMineText === 'string'
       ? computeSingleReplace(state.variantMineText, payload.mine) : null;
-    if (patch && Buffer.byteLength(patch.insertText, 'utf8') < Buffer.byteLength(payload.mine, 'utf8') / 2) {
+    if (compact && payload.mine === payload.git) message.mineFromGit = true;
+    else if (patch && Buffer.byteLength(patch.insertText, 'utf8') < Buffer.byteLength(payload.mine, 'utf8') / 2) {
       message.minePatch = { positionByte: patch.positionByte, deleteBytes: patch.deleteBytes,
         insertBase64: Buffer.from(patch.insertText, 'utf8').toString('base64') };
       message.mineBaseRevision = baseRevision;

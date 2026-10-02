@@ -287,18 +287,20 @@ export class GitBranchCache {
     };
   }
 
-  async changedFilesSince(documentId, localHead) {
+  async changedFilesSince(documentId, localHead, options = {}) {
     const parts = documentParts(documentId);
     if (!this.enabled || !parts || !/^[0-9a-f]{40,64}$/iu.test(String(localHead ?? ''))) return [];
     const branch = await this.refreshBranch(parts.branch);
-    if (localHead === branch.commit) return [];
+    const remoteHead = options.remoteHead ?? branch.commit;
+    if (!/^[0-9a-f]{40,64}$/iu.test(String(remoteHead))) return [];
+    if (localHead === remoteHead) return [];
     try {
       await this.git(branch.directory, ['cat-file', '-e', `${localHead}^{commit}`]);
     } catch {
       await this.git(branch.directory, ['fetch', '--deepen=256', 'origin', parts.branch]);
     }
     const changed = await this.git(branch.directory, [
-      'diff', '--name-only', localHead, branch.commit, '--', ...SPARSE_PATHS,
+      'diff', '--name-only', localHead, remoteHead, '--', ...SPARSE_PATHS,
     ]);
     return changed.split(/\r?\n/u)
       .map((value) => value.trim().replaceAll('\\', '/'))

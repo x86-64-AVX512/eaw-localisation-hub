@@ -1,6 +1,19 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F6` form; package metadata uses `0.8.8-beta.6`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F7` form; package metadata uses `0.8.8-beta.7`.
+
+## 0.8.8F7 (Unreleased)
+
+- Start Review document sync without waiting for the ticket catalog; reuse validated canonical snapshots and load branch change summaries in the background without relaxing access or Git conflict checks.
+- Send only missing Agent-to-server Yjs state on connect while preserving offline deletion recovery and durable flush acknowledgements. Negotiate compact local variants to avoid duplicate shared and unchanged personal text; keep legacy clients supported.
+- Add opt-in per-repository automatic fetch and fast-forward-only branch updates. Keep both off by default; provide manual check/update buttons and configurable intervals in Agent.
+- Add an Update repository button to Review using the same guarded Agent service, explicit branch confirmation, live progress and actionable blocking reasons.
+- Block Git updates on dirty/staged/untracked files, divergence, active Git operations, Review conflicts and unconfirmed edits. Drain materialisation, confirm server delivery, recheck branch/HEAD and reconnect Review using the new disk base.
+- Show the blocking reason and new-commit count; optionally play one sound, flash the taskbar finitely and show a Windows notification per unresolved blocking episode. Network errors and ordinary synchronisation waits do not trigger these signals.
+- Check for releases without downloading or installing automatically. Add an explicit “Update client” button with confirmation explaining the download, installation and restart.
+- Show user-requested updates in a standalone progress window that remains visible while Agent is stopped. Display downloaded bytes and percentage, plus verification, installation and restart stages.
+- Restart Agent after installation and verify the new version, process identity and Review discovery before reporting success; reopen Review if it was running. Keep update failures visible until dismissed.
+- Prepare F7 metadata only; no installer or deployer has been built or published for this work-in-progress release.
 
 ## 0.8.8F6
 
@@ -171,3 +184,4 @@ All notable public changes to EaW Localisation Hub are recorded here. Version na
 - Fixed synchronization races, stale visual conflicts, review navigation and incremental-edit rendering issues.
 
 This is an early beta and the program is still rough. Back up project and server data before upgrades.
+- Render U+2014 em dashes longer in Review and comparisons using an original single-glyph display font. U+2013 en dashes, copied text and saved localisation bytes are unchanged.

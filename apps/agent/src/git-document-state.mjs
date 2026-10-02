@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import * as Y from 'yjs';
+import { documentUpdateForServer } from './document-sync-update.mjs';
 import { currentGitFileBlob } from './git-ticket-context.mts';
 import { preserveChangedFile } from './git-recovery.mts';
 import { resetPersonalRequest, seedAttachedDocument } from './personal-document.mjs';
@@ -50,8 +50,8 @@ export function applySyncedMessage(binding, message) {
   binding.synced = true;
   seedAttachedDocument(binding);
   if (binding.gitWritable) {
-    binding.socket.send(Y.encodeStateAsUpdate(binding.document));
-    binding.pendingUpdateSent = true;
+    const update = documentUpdateForServer(binding.document, binding.serverStateVector, binding.localUpdatePending);
+    if (update) { binding.socket.send(update); binding.pendingUpdateSent = true; }
   }
   binding.requestPersonalDocument();
   binding.localPresences.replay();
