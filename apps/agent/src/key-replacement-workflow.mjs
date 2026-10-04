@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { requireDocumentEdit } from '../../../packages/shared/src/document-permissions.mts';
 import {
   localisationEntries, parseKeyReplacementBatch, replaceLocalisationValues,
 } from '../../../packages/shared/src/localisation-replace.mts';
@@ -89,6 +90,7 @@ export class KeyReplacementWorkflow {
   }
 
   async apply(input, expectedFiles, language = 'russian') {
+    requireDocumentEdit(this.hub.identity, `localisation/${language}/batch.yml`);
     const preview = await this.preview(input, language);
     if (preview.errors.length || preview.duplicateKeys.length || preview.missingKeys.length
       || preview.duplicateMatches.length) throw new Error('Предпросмотр содержит ошибки; применение остановлено.');
@@ -99,6 +101,7 @@ export class KeyReplacementWorkflow {
       throw new Error('Файлы изменились после предпросмотра. Обновите предпросмотр и повторите операцию.');
     }
     const wanted = new Map(preview.entries.map((entry) => [entry.key, entry.text]));
+    for (const file of preview.files) requireDocumentEdit(this.hub.identity, file.path);
     const originals = [];
     try {
       for (const file of preview.files) {
@@ -106,6 +109,7 @@ export class KeyReplacementWorkflow {
         const original = withoutUtf8Bom(await readTrackedTextFile(this.hub.options.repo, absolutePath));
         if (digest(original) !== file.hash) throw new Error(`Файл ${file.path} изменился во время применения.`);
         const next = replaceLocalisationValues(original, wanted).text;
+        requireDocumentEdit(this.hub.identity, file.path);
         originals.push({ absolutePath, original });
         await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(next));
       }

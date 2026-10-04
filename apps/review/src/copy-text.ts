@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 export async function copyTextToClipboard(text: string): Promise<void> {
   try {
     if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return; }
@@ -12,7 +13,7 @@ export async function copyTextToClipboard(text: string): Promise<void> {
   document.body.append(textarea);
   try {
     textarea.select();
-    if (!document.execCommand('copy')) throw new Error('Не удалось скопировать текст. Выделите его и нажмите Ctrl+C.');
+    if (!document.execCommand('copy')) throw new Error(uiText("Не удалось скопировать текст. Выделите его и нажмите Ctrl+C."));
   } finally {
     textarea.remove();
     if (active instanceof HTMLElement) active.focus({ preventScroll: true });

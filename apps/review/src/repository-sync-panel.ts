@@ -1,3 +1,4 @@
+import { uiText, uiMessage } from '../../../packages/shared/src/ui-language.mts';
 import { confirmAction } from './confirm-action.ts';
 import { requiredButton, requiredDialog, requiredElement } from './dom-elements.ts';
 
@@ -26,17 +27,17 @@ export function createRepositorySyncPanel({ token, showToast, confirm = confirmA
         headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
         cache: 'no-store', signal: controller.signal, ...(body ? { body: JSON.stringify(body) } : {}) });
       const status = await response.json() as SyncStatus;
-      if (!response.ok) throw new ApiError(status.error || 'Не удалось обратиться к Desktop Agent.');
+      if (!response.ok) throw new ApiError(status.error || uiText("Не удалось обратиться к Desktop Agent."));
       return status;
     } finally { clearTimeout(timeout); controllers.delete(controller); }
   }
   function render(status: SyncStatus): void {
     message.textContent = [status.repository, status.checkout?.branch || status.branch,
-      status.message, status.behind ? `Новых коммитов: ${status.behind}` : ''].filter(Boolean).join('\n');
+      uiMessage(status.message), status.behind ? uiText("Новых коммитов: {0}", status.behind) : ''].filter(Boolean).join('\n');
     progress.hidden = !busy(status);
     button.disabled = pending = Boolean(busy(status));
-    button.textContent = pending ? 'Обновление репозитория…' : 'Обновить репозиторий';
-    button.title = status.message;
+    button.textContent = pending ? uiText("Обновление репозитория…") : uiText("Обновить репозиторий");
+    button.title = uiMessage(status.message);
   }
   function show(status: SyncStatus): void {
     render(status); if (!dialog.open) dialog.showModal();
@@ -47,11 +48,11 @@ export function createRepositorySyncPanel({ token, showToast, confirm = confirmA
       if (disposed || ticket !== generation) return;
       render(status);
       if (busy(status)) timer = setTimeout(() => { void poll(ticket); }, 1000);
-      else showToast(status.message, ['blocked', 'error'].includes(status.stage));
+      else showToast(uiMessage(status.message), ['blocked', 'error'].includes(status.stage));
     } catch (error) {
       if (disposed || ticket !== generation) return;
       // A lost response may hide an accepted update; read status, never POST again.
-      message.textContent = `Связь с Agent потеряна: ${String(error)}. Повторяем проверку статуса…`;
+      message.textContent = uiText("Связь с Agent потеряна: {0}. Повторяем проверку статуса…", String(error));
       timer = setTimeout(() => { void poll(ticket); }, 3000);
     }
   }
@@ -63,12 +64,12 @@ export function createRepositorySyncPanel({ token, showToast, confirm = confirmA
       const status = await api();
       if (disposed) return;
       if (busy(status)) { show(status); void poll(ticket); return; }
-      if (!status.checkout) throw new Error('Текущая Git-ветка недоступна (возможно, detached HEAD).');
+      if (!status.checkout) throw new Error(uiText("Текущая Git-ветка недоступна (возможно, detached HEAD)."));
       const accepted = await confirm(button,
-        `Обновить текущую Git-ветку «${status.checkout.branch}» из «${status.checkout.upstream}» во всём репозитории? `
-        + 'Только fast-forward. Локальные изменения не будут удалены или спрятаны.', { label: 'Обновить' });
+        uiText("Обновить текущую Git-ветку «{0}» из «{1}» во всём репозитории? ", status.checkout.branch, status.checkout.upstream)
+        + uiText("Только fast-forward. Локальные изменения не будут удалены или спрятаны."), { label: uiText("Обновить") });
       if (!accepted || disposed) return;
-      show({ ...status, stage: 'checking', message: 'Запрашиваем обновление у Agent…', busy: true });
+      show({ ...status, stage: 'checking', message: uiText("Запрашиваем обновление у Agent…"), busy: true });
       try {
         const result = await api({ action: 'update', confirmed: true, checkout: status.checkout });
         if (disposed) return;

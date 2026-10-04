@@ -62,6 +62,8 @@ export interface DocumentVariants extends VariantTexts {
 }
 
 export interface DocumentVariantsState {
+  roles?: string[];
+  relativePath?: string;
   ready: boolean;
   documentView: string;
   path: string;

@@ -12,6 +12,9 @@ $required = @(
     'Launch EaW Hub Deployer.cmd', 'apps\deployer\src\main.mjs',
     'apps\deployer\src\deployment-core.mjs', 'apps\server\src\main.mjs',
     'packages\shared\src\constants.mts', 'scripts\deploy-server-ui.ps1',
+    'packages\shared\src\ui-language.mts', 'packages\shared\src\document-permissions.mts',
+    'packages\shared\locales\en.json', 'scripts\ui-language.ps1',
+    'apps\server\src\document-actor.mjs',
     'scripts\manage-server.mjs', 'deploy\Dockerfile.incremental', 'node_modules\ssh2\package.json'
 )
 foreach ($relative in $required) {

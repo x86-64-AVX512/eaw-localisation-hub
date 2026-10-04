@@ -32,18 +32,40 @@ export function reviewItemsAtByte(
     });
 }
 
-export function createReviewNavigation({ state, editor, positionByteAt, focusCard, onSuggestion }: {
+export function createReviewNavigation({ state, editor, positionByteAt, focusCard, onSuggestion, finishSuggestionAt }: {
   state: ReviewNavigationState;
   editor: Monaco.editor.IStandaloneCodeEditor;
   positionByteAt: (position: Monaco.IPosition) => number;
   focusCard: (kind: PositionedReviewItem['kind'], id: string) => boolean;
   onSuggestion: (item: PositionedReviewItem) => void;
+  finishSuggestionAt?: (position: Monaco.IPosition) => boolean;
 }) {
   let lastPosition = -1;
   let lastKeys = '';
   let index = 0;
-  return editor.onMouseUp((event) => {
-    if (!event.target.position || state.editingSuggestionId) return;
+  let editingAtMouseDown = false;
+  const domNode = editor.getDomNode();
+  const mouseDown = (event: MouseEvent) => {
+    // Capture before Monaco moves its cursor. Its onMouseDown notification
+    // runs after cursor listeners may have restored the canonical model.
+    editingAtMouseDown = Boolean(state.editingSuggestionId);
+    if (!editingAtMouseDown || !finishSuggestionAt || event.button !== 0
+      || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = editor.getTargetAtClientPoint(event.clientX, event.clientY);
+    // Original view-zone text is a preview, not an outside editor click.
+    if (!target?.position || target.type === 5 || target.type === 8) return;
+    if (!finishSuggestionAt(target.position)) return;
+    // Finish before Monaco begins a gesture on the projected model. Letting
+    // that gesture continue on the restored base selects unrelated lines.
+    event.preventDefault(); event.stopImmediatePropagation(); editor.focus();
+  };
+  domNode?.addEventListener('mousedown', mouseDown, true);
+  const mouseUp = editor.onMouseUp((event) => {
+    const finishingDraft = editingAtMouseDown;
+    editingAtMouseDown = false;
+    // Right-click opens Monaco's context menu. Moving focus to a card on
+    // mouse-up would immediately dismiss that menu (and could open a draft).
+    if (finishingDraft || !event.event.leftButton || !event.target.position || state.editingSuggestionId) return;
     const positionByte = positionByteAt(event.target.position);
     const items = reviewItemsAtByte(state, positionByte);
     if (items.length === 0) return;
@@ -56,4 +78,5 @@ export function createReviewNavigation({ state, editor, positionByteAt, focusCar
     focusCard(item.kind, item.id);
     if (item.kind === 'suggestion') onSuggestion(item);
   });
+  return { dispose() { domNode?.removeEventListener('mousedown', mouseDown, true); mouseUp.dispose(); } };
 }

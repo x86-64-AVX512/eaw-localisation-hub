@@ -38,7 +38,7 @@ foreach ($file in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'deploy') -
     Copy-Item -LiteralPath $file.FullName -Destination $deployDestination
 }
 New-Item -ItemType Directory -Path (Join-Path $packageRoot 'scripts') -Force | Out-Null
-foreach ($scriptName in @('deploy-server-ui.ps1', 'manage-server.mjs')) {
+foreach ($scriptName in @('deploy-server-ui.ps1', 'ui-language.ps1', 'manage-server.mjs')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot "scripts\$scriptName") -Destination (Join-Path $packageRoot 'scripts')
 }
 New-Item -ItemType Directory -Path (Join-Path $packageRoot 'node_modules') -Force | Out-Null

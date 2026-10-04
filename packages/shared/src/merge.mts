@@ -27,6 +27,15 @@ export interface LocalisationConflict {
 
 export type LocalisationVariant = Map<string, string | null>;
 
+function declarationKey(content: string): string | null {
+  // A draft may stop immediately after ':' or its version number. It still
+  // belongs to that key: treating it as raw structure leaves an orphan line
+  // when the local-file checkbox restores the complete Git declaration.
+  // This is identity matching, not validation; syntax diagnostics stay strict.
+  if (/^l_[a-z_]+:$/iu.test(content.trim())) return null;
+  return /^[ \t]*([^#\s][^:\r\n]*):(?:\d+)?(?:[ \t]+|$)/u.exec(content)?.[1]?.trim() ?? null;
+}
+
 function splitLines(text: string): LineRecord[] {
   if (!text) return [];
   const records: LineRecord[] = [];
@@ -38,8 +47,7 @@ function splitLines(text: string): LineRecord[] {
     const raw = text.slice(position, end);
     const eol = raw.endsWith('\r\n') ? '\r\n' : raw.endsWith('\n') ? '\n' : '';
     const content = eol ? raw.slice(0, -eol.length) : raw;
-    const match = /^[ \t]*([^#\s][^:\r\n]*):(?:\d+)?[ \t]+/.exec(content);
-    records.push({ content, eol, key: match ? match[1].trim() : null });
+    records.push({ content, eol, key: declarationKey(content) });
     position = end;
   }
   return records;
@@ -152,9 +160,8 @@ function singleLineVariant(previousText: string, currentText: string): Localisat
   const currentEol = currentRaw.endsWith('\n');
   const previousLine = previousRaw.replace(/\r?\n$/u, '');
   const currentLine = currentRaw.replace(/\r?\n$/u, '');
-  const expression = /^[ \t]*([^#\s][^:\r\n]*):(?:\d+)?[ \t]+/u;
-  const previousKey = expression.exec(previousLine)?.[1]?.trim();
-  const currentKey = expression.exec(currentLine)?.[1]?.trim();
+  const previousKey = declarationKey(previousLine);
+  const currentKey = declarationKey(currentLine);
   if (!previousKey || previousKey !== currentKey || previousEol !== currentEol
     || earlierKeyExists(previousText, previousLineStart, previousKey)
     || earlierKeyExists(currentText, currentLineStart, currentKey)
@@ -241,7 +248,7 @@ function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
   const template = analyse(templateText);
   const projected = analyse(projectedText);
   if (git.duplicates.has(key) || template.duplicates.has(key) || projected.duplicates.has(key)
-    || template.lines.has(key) || !projected.lines.has(key)) return projectedText;
+    || template.lines.has(key)) return projectedText;
   const keyIndex = git.records.findIndex((record) => record.key === key);
   if (keyIndex < 0) return projectedText;
   const anchorIndex = (candidate: string, records: LineRecord[]) => records.findIndex((record) => record.key === candidate);
@@ -264,12 +271,54 @@ function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
     const end = after ? anchorIndex(after, records) : records.length;
     return end > start ? records.slice(start + 1, end) : [];
   };
-  const gitNonKeys = gap(git.records).filter((record) => !record.key);
-  const templateNonKeys = gap(template.records).filter((record) => !record.key);
-  const projectedNonKeys = gap(projected.records).filter((record) => !record.key);
+  const gitGap = gap(git.records);
+  const templateGap = gap(template.records);
+  const projectedGap = gap(projected.records);
+  const gitNonKeys = gitGap.filter((record) => !record.key);
+  const templateNonKeys = templateGap.filter((record) => !record.key);
+  const projectedNonKeys = projectedGap.filter((record) => !record.key);
   const raw = (record: LineRecord) => record.content + record.eol;
   const sameRecord = (left: LineRecord, right: LineRecord) =>
     left.content === right.content && Boolean(left.eol) === Boolean(right.eol);
+  const sameRecords = (left: LineRecord[], right: LineRecord[]) => left.length === right.length
+    && left.every((record, index) => sameRecord(record, right[index]));
+  const groupKeys = gitGap.filter((record) => record.key).map((record) => record.key!);
+  const groupKeySet = new Set(groupKeys);
+  // A deleted group can contain blank separators of its own. Anchor the whole
+  // group before its untouched suffix (including comment headings), rather
+  // than appending restored keys at the next keyed line after that suffix.
+  // Only repair a proven deletion footprint: unchanged prefix/suffix, no new
+  // keys, no ambiguous occurrences, and at most one blank editor placeholder.
+  if (groupKeys.length && groupKeys.every((candidate) => !template.lines.has(candidate)
+    && !git.duplicates.has(candidate) && !projected.duplicates.has(candidate))
+    && templateGap.every((record) => !record.key)
+    && projectedGap.every((record) => !record.key || groupKeySet.has(record.key))) {
+    const firstKey = gitGap.findIndex((record) => record.key);
+    const lastKey = gitGap.findLastIndex((record) => record.key);
+    const prefix = gitGap.slice(0, firstKey);
+    const suffix = gitGap.slice(lastKey + 1);
+    const middle = templateGap.slice(prefix.length, templateGap.length - suffix.length);
+    const untouchedEdges = templateGap.length >= prefix.length + suffix.length
+      && sameRecords(templateGap.slice(0, prefix.length), prefix)
+      && sameRecords(suffix.length ? templateGap.slice(-suffix.length) : [], suffix);
+    const onlyDeletedSpacing = gitGap.slice(firstKey, lastKey + 1)
+      .every((record) => record.key || !record.content.trim());
+    if (untouchedEdges && onlyDeletedSpacing && middle.length <= 1
+      && middle.every((record) => !record.content.trim())
+      && (sameRecords(projectedNonKeys, templateNonKeys) || sameRecords(projectedNonKeys, gitNonKeys))) {
+      const restored = new Map(projectedGap.filter((record) => record.key).map((record) => [record.key!, record]));
+      const replacement = restored.size ? gitGap.flatMap((record) => {
+        if (!record.key) return [record];
+        const chosen = restored.get(record.key);
+        return chosen ? [chosen] : [];
+      }) : [...prefix, ...suffix];
+      const start = before ? anchorIndex(before, projected.records) + 1 : 0;
+      const end = after ? anchorIndex(after, projected.records) : projected.records.length;
+      projected.records.splice(start, end - start, ...replacement);
+      return projected.records.map(raw).join('');
+    }
+  }
+  if (!projected.lines.has(key)) return projectedText;
   const spacingMatchesGit = projectedNonKeys.length === gitNonKeys.length
     && projectedNonKeys.every((record, index) => sameRecord(record, gitNonKeys[index]));
   let extraIndex = -1;
@@ -296,7 +345,6 @@ function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
   const restoredIndex = projected.records.findIndex((record) => record.key === key);
   if (restoredIndex < 0) return projectedText;
   const [restored] = projected.records.splice(restoredIndex, 1);
-  const gitGap = gap(git.records);
   const gitKeyIndex = gitGap.findIndex((record) => record.key === key);
   const projectedBefore = before ? anchorIndex(before, projected.records) : -1;
   const projectedEnd = after ? anchorIndex(after, projected.records) : projected.records.length;
@@ -764,6 +812,6 @@ export function setLocalisationSelection(gitText: string, sharedText: string, lo
     : [...git.order, ...shared.order.filter((candidate) => !git.lines.has(candidate))];
   preferred.push(...local.order.filter((candidate) => !preferred.includes(candidate)));
   const projected = renderWithChoices(localText, choices, [...new Set(preferred)], duplicateKeys);
-  return !include && git.lines.has(key) && !shared.lines.has(key)
+  return git.lines.has(key) && !shared.lines.has(key)
     ? removeRestoredKeyPlaceholder(gitText, sharedText, projected, key) : projected;
 }

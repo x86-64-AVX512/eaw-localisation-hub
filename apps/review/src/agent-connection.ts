@@ -1,11 +1,16 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
+import { createEmbeddedConnection, embeddedSessionId } from './workspace-bridge.ts';
 export interface AgentConnectionOptions {
   token: string;
   onMessage: (message: unknown) => void;
   onOpen: () => void;
   onWaiting: (retryDelay: number, error?: string) => void;
+  multiplex?: boolean;
 }
 
-export function createAgentConnection({ token, onMessage, onOpen, onWaiting }: AgentConnectionOptions) {
+export function createAgentConnection(options: AgentConnectionOptions) {
+  if (embeddedSessionId()) return createEmbeddedConnection(options);
+  const { token, onMessage, onOpen, onWaiting, multiplex = false } = options;
   let socket: WebSocket | null = null;
   let retryTimer = 0;
   let retryDelay = 500;
@@ -39,10 +44,10 @@ export function createAgentConnection({ token, onMessage, onOpen, onWaiting }: A
 
   function connect() {
     if (disposed || socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
-    socket = new WebSocket(`ws://${location.host}/review-socket?token=${encodeURIComponent(token)}`);
+    socket = new WebSocket(`ws://${location.host}/review-socket?token=${encodeURIComponent(token)}${multiplex ? '&multiplex=1' : ''}`);
     socket.addEventListener('message', (event) => {
       try { onMessage(JSON.parse(event.data)); }
-      catch { onWaiting(0, 'Получено некорректное сообщение Agent.'); }
+      catch { onWaiting(0, uiText("Получено некорректное сообщение Agent.")); }
     });
     socket.addEventListener('open', () => {
       retryDelay = 500;

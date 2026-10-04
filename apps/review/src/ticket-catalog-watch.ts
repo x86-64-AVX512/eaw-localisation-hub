@@ -1,5 +1,6 @@
 // Push notifications are the fast path; revision polling recovers missed signals
 // without downloading all tickets repeatedly. A single refresh runs at a time.
+import { isWorkspaceVisible } from './workspace-runtime.ts';
 interface TicketCatalogWatchOptions {
   refresh: () => Promise<unknown>;
   revision: () => Promise<{ revision: string }>;
@@ -21,7 +22,7 @@ export function createTicketCatalogWatch({ refresh, revision, currentRevision, i
     return running;
   }
   async function check() {
-    if (disposed || document.hidden) return;
+    if (disposed || document.hidden || !isWorkspaceVisible()) return;
     try { await changed((await revision()).revision); } catch { /* retry on next tick or focus */ }
   }
   const timer = setInterval(check, interval);

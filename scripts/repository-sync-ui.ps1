@@ -1,7 +1,9 @@
-﻿# Shared file contract with apps/agent/src/repository-sync.mjs. No Git runs on the UI thread.
+﻿
+. (Join-Path $PSScriptRoot 'ui-language.ps1')
+# Shared file contract with apps/agent/src/repository-sync.mjs. No Git runs on the UI thread.
 function Get-EawRepositorySyncDirectory {
     param([string]$StateDirectory, [string]$Repository)
-    if ([string]::IsNullOrWhiteSpace($Repository)) { throw 'Выберите репозиторий EaW.' }
+    if ([string]::IsNullOrWhiteSpace($Repository)) { throw (Get-EawUiText -Text 'Выберите репозиторий EaW.') }
     $identity = [IO.Path]::GetFullPath($Repository).TrimEnd([char[]]'\/').ToLowerInvariant()
     $hasher = [Security.Cryptography.SHA256]::Create()
     try { $digest = -join ($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($identity)) | ForEach-Object { $_.ToString('x2') }) }
@@ -49,18 +51,18 @@ function Show-EawRepositorySyncSettings {
     param($Owner, [string]$Directory)
     $settings = Get-EawRepositorySyncSettings $Directory
     $dialog = [Windows.Forms.Form]::new()
-    $dialog.Text = 'Git — настройки для выбранного репозитория'
+    $dialog.Text = (Get-EawUiText -Text 'Git – настройки для выбранного репозитория')
     $dialog.ClientSize = [Drawing.Size]::new(570, 385)
     $dialog.FormBorderStyle = 'FixedDialog'
     $dialog.MaximizeBox = $false; $dialog.MinimizeBox = $false
     $dialog.StartPosition = 'CenterParent'
     $checks = @{}
     $rows = @(
-        @('autoFetch', 'Автоматически проверять новые коммиты (git fetch)'),
-        @('autoPull', 'Автоматически обновлять текущую ветку (только fast-forward)'),
-        @('sound', 'Звуковой сигнал при блокировке обновления'),
-        @('flash', 'Мигание кнопки Agent на панели задач'),
-        @('notification', 'Уведомление Windows о блокировке обновления')
+        @('autoFetch', (Get-EawUiText -Text 'Автоматически проверять новые коммиты (git fetch)')),
+        @('autoPull', (Get-EawUiText -Text 'Автоматически обновлять текущую ветку (только fast-forward)')),
+        @('sound', (Get-EawUiText -Text 'Звуковой сигнал при блокировке обновления')),
+        @('flash', (Get-EawUiText -Text 'Мигание кнопки Agent на панели задач')),
+        @('notification', (Get-EawUiText -Text 'Уведомление Windows о блокировке обновления'))
     )
     for ($index = 0; $index -lt $rows.Count; $index++) {
         $check = [Windows.Forms.CheckBox]::new()
@@ -72,7 +74,7 @@ function Show-EawRepositorySyncSettings {
         $checks[$rows[$index][0]] = $check
     }
     $label = [Windows.Forms.Label]::new()
-    $label.Text = 'Интервал проверки, минут:'
+    $label.Text = (Get-EawUiText -Text 'Интервал проверки, минут:')
     $label.Location = [Drawing.Point]::new(18, 183); $label.Size = [Drawing.Size]::new(220, 25)
     $dialog.Controls.Add($label)
     $interval = [Windows.Forms.ComboBox]::new()
@@ -82,14 +84,14 @@ function Show-EawRepositorySyncSettings {
     $interval.Location = [Drawing.Point]::new(240, 180); $interval.Size = [Drawing.Size]::new(75, 25)
     $dialog.Controls.Add($interval)
     $notice = [Windows.Forms.Label]::new()
-    $notice.Text = 'Автообновление включает проверку новых коммитов. Нужен настроенный upstream. При локальных изменениях, конфликтах или неподтверждённых правках Review ветка не меняется. Никаких reset, stash, rebase, коммитов и push. Сигнал — один раз, пока проблема не решена.'
+    $notice.Text = (Get-EawUiText -Text 'Автообновление включает проверку новых коммитов. Нужен настроенный upstream. При локальных изменениях, конфликтах или неподтверждённых правках Review ветка не меняется. Никаких reset, stash, rebase, коммитов и push. Сигнал – один раз, пока проблема не решена.')
     $notice.Location = [Drawing.Point]::new(18, 221); $notice.Size = [Drawing.Size]::new(530, 91)
     $dialog.Controls.Add($notice)
     $save = [Windows.Forms.Button]::new()
-    $save.Text = 'Сохранить'; $save.Location = [Drawing.Point]::new(330, 331); $save.Size = [Drawing.Size]::new(105, 32)
+    $save.Text = (Get-EawUiText -Text 'Сохранить'); $save.Location = [Drawing.Point]::new(330, 331); $save.Size = [Drawing.Size]::new(105, 32)
     $dialog.Controls.Add($save)
     $cancel = [Windows.Forms.Button]::new()
-    $cancel.Text = 'Отмена'; $cancel.Location = [Drawing.Point]::new(443, 331); $cancel.Size = [Drawing.Size]::new(105, 32)
+    $cancel.Text = (Get-EawUiText -Text 'Отмена'); $cancel.Location = [Drawing.Point]::new(443, 331); $cancel.Size = [Drawing.Size]::new(105, 32)
     $cancel.DialogResult = 'Cancel'; $dialog.Controls.Add($cancel)
     $dialog.CancelButton = $cancel
     $save.Add_Click({
@@ -98,7 +100,7 @@ function Show-EawRepositorySyncSettings {
             foreach ($name in $checks.Keys) { $value[$name] = $checks[$name].Checked }
             Write-EawRepositorySyncJson (Join-Path $Directory 'settings.json') $value
             $dialog.DialogResult = 'OK'; $dialog.Close()
-        } catch { [void][Windows.Forms.MessageBox]::Show($dialog, $_.Exception.Message, 'Настройки не сохранены', 'OK', 'Warning') }
+        } catch { [void][Windows.Forms.MessageBox]::Show($dialog, $_.Exception.Message, (Get-EawUiText -Text 'Настройки не сохранены'), 'OK', 'Warning') }
     })
     try { [void]$dialog.ShowDialog($Owner) } finally { $dialog.Dispose() }
 }
@@ -116,21 +118,21 @@ function Test-EawRepositorySyncStatus {
 
 function Get-EawRepositorySyncTiming {
     param($Value, [DateTime]$NowUtc = [DateTime]::UtcNow)
-    $last = 'ещё не было'
+    $last = (Get-EawUiText -Text 'ещё не было')
     if ($Value.checkedAt) {
         try { $last = [DateTime]::Parse([string]$Value.checkedAt).ToLocalTime().ToString('dd.MM HH:mm:ss') } catch {}
     }
-    $next = 'Расписание пока недоступно.'
-    if ($Value.stage -in @('checking', 'fetching')) { $next = 'Проверка выполняется…' }
-    elseif ($Value.stage -eq 'updating') { $next = 'Обновление выполняется…' }
-    elseif ($Value.settings -and -not ($Value.settings.autoFetch -or $Value.settings.autoPull)) { $next = 'Автопроверка выключена.' }
+    $next = (Get-EawUiText -Text 'Расписание пока недоступно.')
+    if ($Value.stage -in @('checking', 'fetching')) { $next = (Get-EawUiText -Text 'Проверка выполняется…') }
+    elseif ($Value.stage -eq 'updating') { $next = (Get-EawUiText -Text 'Обновление выполняется…') }
+    elseif ($Value.settings -and -not ($Value.settings.autoFetch -or $Value.settings.autoPull)) { $next = (Get-EawUiText -Text 'Автопроверка выключена.') }
     elseif ($Value.nextCheckAt) {
         try {
             $seconds = [Math]::Max(0, [Math]::Ceiling(([DateTime]::Parse([string]$Value.nextCheckAt).ToUniversalTime() - $NowUtc.ToUniversalTime()).TotalSeconds))
-            $next = if ($seconds -gt 0) { 'Следующая через {0:00}:{1:00}' -f [Math]::Floor($seconds / 60), ($seconds % 60) } else { 'Следующая: скоро…' }
+            $next = if ($seconds -gt 0) { (Get-EawUiText -Text 'Следующая через {0:00}:{1:00}') -f [Math]::Floor($seconds / 60), ($seconds % 60) } else { (Get-EawUiText -Text 'Следующая: скоро…') }
         } catch {}
     }
-    "Последняя проверка: $last | $next"
+    (Get-EawUiText -Text 'Последняя проверка: {0} | {1}' -Values @($last, $next))
 }
 
 function Show-EawRepositorySyncAlert {
@@ -156,5 +158,5 @@ public static class EawRepositorySyncFlash {
         if ($Owner.Visible) { [EawRepositorySyncFlash]::Flash($Owner.Handle) }
     }
     if ($Settings.sound) { [Media.SystemSounds]::Exclamation.Play() }
-    if ($Settings.notification) { $Tray.ShowBalloonTip(6000, 'EaW Hub — ветка не обновлена', $Message, 'Warning') }
+    if ($Settings.notification) { $Tray.ShowBalloonTip(6000, (Get-EawUiText -Text 'EaW Hub – ветка не обновлена'), $Message, 'Warning') }
 }

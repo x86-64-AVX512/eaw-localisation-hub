@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import type * as Monaco from 'monaco-editor';
 import { createStandardDiffView } from './standard-diff-view.ts';
 import { requiredElement } from './dom-elements.ts';
@@ -96,19 +97,19 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
     filterLabel.hidden = structural;
     structureHost.hidden = !structural;
     if (payload) {
-      const counts = `Русский файл – ${payload.russianLineCount} строк; английский – ${payload.englishLineCount} строк.`;
+      const counts = uiText("Русский файл – {0} строк; английский – {1} строк.", payload.russianLineCount, payload.englishLineCount);
       if (structural) {
-        summary.textContent = `Слева русский файл, справа английский. ${counts} ${payload.structureMatches
-          ? 'Физические строки, пустые места и порядок ключей совпадают.'
-          : 'Структура не совпадает. Красным отмечены удалённые или смещённые строки, зелёным – добавленные.'}`;
+        summary.textContent = uiText("Слева русский файл, справа английский. {0} {1}", counts, payload.structureMatches
+          ? uiText("Физические строки, пустые места и порядок ключей совпадают.")
+          : uiText("Структура не совпадает. Красным отмечены удалённые или смещённые строки, зелёным – добавленные."));
         summary.classList.toggle('error', !payload.structureMatches);
         summary.classList.toggle('ok', payload.structureMatches);
         requestAnimationFrame(structureDiff.layout);
         return;
       }
-      summary.textContent = `Русский: ${payload.russianPath}. Английский: ${payload.englishPath}. `
-        + `Русский файл – ${payload.russianKeyCount} ключей / ${payload.russianLineCount} строк; `
-        + `английский – ${payload.englishKeyCount} ключей / ${payload.englishLineCount} строк.`;
+      summary.textContent = uiText("Русский: {0}. Английский: {1}. ", payload.russianPath, payload.englishPath)
+        + uiText("Русский файл – {0} ключей / {1} строк; ", payload.russianKeyCount, payload.russianLineCount)
+        + uiText("английский – {0} ключей / {1} строк.", payload.englishKeyCount, payload.englishLineCount);
       const keysMatch = payload.rows.every((row) => row.status === 'ok');
       summary.classList.toggle('error', !keysMatch);
       summary.classList.toggle('ok', keysMatch);
@@ -122,12 +123,12 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
       const key = document.createElement('strong');
       key.className = 'audit-key';
       key.textContent = row.key;
-      item.append(key, sideCell(row.russian, 'Нет в русском файле'), sideCell(row.english, 'Нет в английском файле'));
+      item.append(key, sideCell(row.russian, uiText("Нет в русском файле")), sideCell(row.english, uiText("Нет в английском файле")));
       results.append(item);
     }
     if (!rows.length) {
       const empty = document.createElement('p'); empty.className = 'dialog-hint';
-      empty.textContent = 'Для выбранного фильтра расхождений нет.'; results.append(empty);
+      empty.textContent = uiText("Для выбранного фильтра расхождений нет."); results.append(empty);
     }
   }
 
@@ -142,7 +143,7 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
       if (!response.ok) {
         const error = responsePayload && typeof responsePayload === 'object'
           ? (responsePayload as Record<string, unknown>).error : null;
-        throw new Error(typeof error === 'string' ? error : 'Не удалось выполнить сверку.');
+        throw new Error(typeof error === 'string' ? error : uiText("Не удалось выполнить сверку."));
       }
       payload = responsePayload as AuditPayload;
       structureDiff.setTexts(payload.russianDiffText ?? '', payload.englishDiffText ?? '');
@@ -162,7 +163,7 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
   const fullscreen = requiredElement<HTMLButtonElement>('#localisation-audit-fullscreen');
   fullscreen.addEventListener('click', () => {
     dialog.classList.toggle('fullscreen');
-    fullscreen.textContent = dialog.classList.contains('fullscreen') ? 'Обычный размер' : 'На весь экран';
+    fullscreen.textContent = dialog.classList.contains('fullscreen') ? uiText("Обычный размер") : uiText("На весь экран");
     requestAnimationFrame(structureDiff.layout);
   });
   return { dispose() { originalComments.clear(); modifiedComments.clear(); structureDiff.dispose(); } };

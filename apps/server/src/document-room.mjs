@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import { canEditDocument, requireDocumentEdit, requireDocumentControl } from '../../../packages/shared/src/document-permissions.mts';
+import { currentDocumentActor } from './document-actor.mjs';
 import path from 'node:path';
 import { WebSocket } from 'ws';
 import * as Y from 'yjs';
@@ -56,6 +58,8 @@ import {
   PRESENCE_SWEEP_MILLISECONDS,
   PRESENCE_TTL_MILLISECONDS,
   PROTOCOL_VERSION,
+  PROTOCOL_NAME,
+  PROTOCOL_ABBREVIATION,
 } from '../../../packages/shared/src/constants.mts';
 
 const MAX_ROOM_METADATA_BYTES = 2 * 1024 * 1024;
@@ -246,13 +250,15 @@ export class DocumentRoom {
     const content = this.document.getText('content');
     socket.gitWritable = !this.gitBase || (!this.gitBase.stale && !this.gitConflict
       && Boolean(socket.localBlob && socket.localBlob === this.gitBase.blob));
-    const canSeed = !this.gitBase && content.length === 0 && !this.seedClaimed;
+    const canSeed = canEditDocument(currentDocumentActor(this.authStore, socket.identity), this.documentId) && !this.gitBase && content.length === 0 && !this.seedClaimed;
     if (canSeed) this.seedClaimed = true;
     if (!sendWithBackpressure(socket, Y.encodeStateAsUpdate(this.document), { binary: true })) return;
     this.expirePresences();
     sendWithBackpressure(socket, JSON.stringify({
       type: 'synced',
       protocol: PROTOCOL_VERSION,
+      protocolName: PROTOCOL_NAME,
+      protocolAbbreviation: PROTOCOL_ABBREVIATION,
       version: DISPLAY_VERSION,
       documentId: this.documentId,
       canSeed,
@@ -606,6 +612,9 @@ export class DocumentRoom {
 
   async applyBinary(socket, incoming, authorise = () => {}) {
     authorise();
+    // Yjs sends an empty update while completing a read-only synchronisation.
+    if (incoming.byteLength === 2 && incoming[0] === 0 && incoming[1] === 0) return;
+    requireDocumentEdit(currentDocumentActor(this.authStore, socket.identity), this.documentId);
     if (this.destroyed || socket.readyState !== WebSocket.OPEN) return;
 
     let projectedBytes = this.stateBudgetBytes + incoming.byteLength;
@@ -632,6 +641,7 @@ export class DocumentRoom {
     if (this.destroyed || socket.readyState !== WebSocket.OPEN) return;
     authorise();
     if (projectedBytes > MAX_ROOM_STATE_BYTES) throw new ProtocolLimitError('Document state exceeds the per-room limit');
+    requireDocumentEdit(currentDocumentActor(this.authStore, socket.identity), this.documentId);
     this.registry.assertStateBudget(this, projectedBytes);
 
     Y.applyUpdate(this.document, incoming, socket);
@@ -662,6 +672,7 @@ export class DocumentRoom {
     if (!message || typeof message !== 'object' || Array.isArray(message)) {
       throw new ProtocolLimitError('Control message must be a JSON object');
     }
+    requireDocumentControl(currentDocumentActor(this.authStore, socket.identity), this.documentId, message.type);
     if (message.type === 'disk-merge-check') {
       const requestId = controlledString(message.requestId, 'Disk merge request id', 128, { required: true });
       const expectedSharedHash = controlledString(message.sharedHash, 'Shared document hash', 64, { required: true });

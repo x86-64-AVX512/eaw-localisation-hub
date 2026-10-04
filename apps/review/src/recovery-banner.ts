@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { requiredElement } from './dom-elements.ts';
 
 interface RecoveryFileHandle {
@@ -26,11 +27,11 @@ function safeFileName(value: string | undefined): string {
 
 function recoveryFile(user: string | undefined, code: string): string {
   return [
-    'EaW Localisation Hub – код восстановления', '',
-    `Пользователь: ${user}`, `Код: ${code}`, '',
-    'Храните этот файл отдельно и не отправляйте его другим людям.',
-    'Код одноразовый: после восстановления пароля потребуется новый.',
-    'Администратор и сервер не могут показать этот код повторно.', '',
+    uiText("EaW Localisation Hub – код восстановления"), '',
+    uiText("Пользователь: {0}", user), uiText("Код: {0}", code), '',
+    uiText("Храните этот файл отдельно и не отправляйте его другим людям."),
+    uiText("Код одноразовый: после восстановления пароля потребуется новый."),
+    uiText("Администратор и сервер не могут показать этот код повторно."), '',
   ].join('\r\n');
 }
 
@@ -46,23 +47,23 @@ export function createRecoveryBanner({ state, send, showToast }: RecoveryBannerO
     action.hidden = status === 'admin_authorization_required';
     action.disabled = saving;
     if (status === 'setup_required') {
-      message.textContent = 'У аккаунта нет сохранённого кода восстановления.';
-      action.textContent = 'Получить и сохранить';
+      message.textContent = uiText("У аккаунта нет сохранённого кода восстановления.");
+      action.textContent = uiText("Получить и сохранить");
     } else if (status === 'pending_confirmation') {
-      message.textContent = 'Сохранение кода не было подтверждено. Несохранённый код необходимо аннулировать.';
-      action.textContent = 'Аннулировать код';
+      message.textContent = uiText("Сохранение кода не было подтверждено. Несохранённый код необходимо аннулировать.");
+      action.textContent = uiText("Аннулировать код");
     } else if (status === 'admin_authorization_required') {
-      message.textContent = 'Код восстановления использован или сброшен. Обратитесь к администратору за разрешением на новый.';
+      message.textContent = uiText("Код восстановления использован или сброшен. Обратитесь к администратору за разрешением на новый.");
     } else if (status === 'issuance_authorized') {
-      message.textContent = 'Администратор разрешил выдачу нового кода восстановления.';
-      action.textContent = 'Получить и сохранить';
+      message.textContent = uiText("Администратор разрешил выдачу нового кода восстановления.");
+      action.textContent = uiText("Получить и сохранить");
     }
   }
 
   action.addEventListener('click', () => {
     if (state.recoveryStatus === 'pending_confirmation') send({ type: 'recoveryDiscard' });
     else if (typeof window.showSaveFilePicker !== 'function') {
-      showToast('Системный диалог сохранения недоступен. Обновите Microsoft Edge WebView2 Runtime.', true);
+      showToast(uiText("Системный диалог сохранения недоступен. Обновите Microsoft Edge WebView2 Runtime."), true);
     } else {
       saving = true;
       refresh();
@@ -73,10 +74,10 @@ export function createRecoveryBanner({ state, send, showToast }: RecoveryBannerO
   async function save(code: string): Promise<void> {
     try {
       const picker = window.showSaveFilePicker;
-      if (!picker) throw new Error('Системный диалог сохранения недоступен.');
+      if (!picker) throw new Error(uiText("Системный диалог сохранения недоступен."));
       const handle = await picker({
         suggestedName: safeFileName(state.user),
-        types: [{ description: 'Текстовый файл', accept: { 'text/plain': ['.txt'] } }],
+        types: [{ description: uiText("Текстовый файл"), accept: { 'text/plain': ['.txt'] } }],
       });
       const writable = await handle.createWritable();
       await writable.write(recoveryFile(state.user, code));
@@ -84,7 +85,7 @@ export function createRecoveryBanner({ state, send, showToast }: RecoveryBannerO
       send({ type: 'recoveryConfirm', recoveryCode: code });
     } catch {
       send({ type: 'recoveryDiscard' });
-      showToast('Код не сохранён и был аннулирован. Попробуйте ещё раз.', true);
+      showToast(uiText("Код не сохранён и был аннулирован. Попробуйте ещё раз."), true);
     } finally {
       saving = false;
       refresh();

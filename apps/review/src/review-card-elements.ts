@@ -1,10 +1,9 @@
+import { uiText, uiLocale } from '../../../packages/shared/src/ui-language.mts';
 import { avatarElement } from './avatar-view.ts';
 import { decodeBase64 } from './review-utilities.ts';
 import { copyTextToClipboard } from './copy-text.ts';
 
-const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
-  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-});
+const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 
 export interface ReviewCardItem {
   id: string;
@@ -26,8 +25,12 @@ export interface ReviewCardMessage {
 }
 
 function formatDate(value: string | undefined): string {
+  const locale = uiLocale();
+  if (!dateFormatters.has(locale)) dateFormatters.set(locale, new Intl.DateTimeFormat(locale, {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  }));
   const parsed = Date.parse(value ?? '');
-  return Number.isFinite(parsed) ? dateFormatter.format(parsed) : 'дата неизвестна';
+  return Number.isFinite(parsed) ? dateFormatters.get(locale)!.format(parsed) : uiText("дата неизвестна");
 }
 
 export function cardButton<T extends ReviewCardItem>(label: string,
@@ -48,7 +51,7 @@ export function cardHeader(item: ReviewCardItem): HTMLDivElement {
   identity.append(avatarElement(item.author, item.color, item.avatarBase64));
   const authorBlock = document.createElement('div');
   const author = document.createElement('strong');
-  author.textContent = item.author || 'Неизвестно';
+  author.textContent = item.author || uiText("Неизвестно");
   const date = document.createElement('time');
   date.dateTime = item.createdAt || '';
   date.textContent = formatDate(item.createdAt);
@@ -58,12 +61,12 @@ export function cardHeader(item: ReviewCardItem): HTMLDivElement {
   badges.className = 'card-badges';
   const badge = document.createElement('span');
   badge.className = `card-kind ${item.kind}`;
-  badge.textContent = item.kind === 'suggestion' ? 'Правка' : 'Комментарий';
+  badge.textContent = item.kind === 'suggestion' ? uiText("Правка") : uiText("Комментарий");
   const status = document.createElement('span');
   status.className = 'card-status';
   const labels: Record<string, string> = {
-    open: 'открыто', resolved: 'закрыто', accepted: 'принято', rejected: 'отклонено',
-    stale: 'устарело', orphaned: 'без привязки',
+    open: uiText("открыто"), resolved: uiText("закрыто"), accepted: uiText("принято"), rejected: uiText("отклонено"),
+    stale: uiText("устарело"), orphaned: uiText("без привязки"),
   };
   status.textContent = labels[item.status] ?? item.status;
   badges.append(badge, status);
@@ -80,7 +83,7 @@ function messageElement(message: ReviewCardMessage, fallback: ReviewCardItem,
   const meta = document.createElement('div');
   meta.className = 'message-meta';
   const author = document.createElement('strong');
-  author.textContent = message.author || fallback.author || 'Неизвестно';
+  author.textContent = message.author || fallback.author || uiText("Неизвестно");
   const date = document.createElement('time');
   date.dateTime = message.createdAt || fallback.createdAt || '';
   date.textContent = formatDate(message.createdAt || fallback.createdAt);
@@ -92,11 +95,11 @@ function messageElement(message: ReviewCardMessage, fallback: ReviewCardItem,
   const copy = document.createElement('button');
   copy.type = 'button';
   copy.className = 'message-copy';
-  copy.textContent = 'Копировать';
-  copy.title = 'Скопировать текст сообщения';
-  copy.setAttribute('aria-label', 'Скопировать текст сообщения');
+  copy.textContent = uiText("Копировать");
+  copy.title = uiText("Скопировать текст сообщения");
+  copy.setAttribute('aria-label', uiText("Скопировать текст сообщения"));
   copy.addEventListener('click', async () => {
-    try { await copyTextToClipboard(body.textContent ?? ''); showToast('Текст сообщения скопирован.'); }
+    try { await copyTextToClipboard(body.textContent ?? ''); showToast(uiText("Текст сообщения скопирован.")); }
     catch (error) { showToast(error instanceof Error ? error.message : String(error), true); }
   });
   meta.append(copy);

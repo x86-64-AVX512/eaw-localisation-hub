@@ -1,4 +1,6 @@
-﻿$script:clientUpdateWindow = $null
+﻿
+. (Join-Path $PSScriptRoot 'ui-language.ps1')
+$script:clientUpdateWindow = $null
 
 function Initialize-ClientUpdateWindow {
     param([string]$Version)
@@ -6,7 +8,7 @@ function Initialize-ClientUpdateWindow {
     Add-Type -AssemblyName System.Drawing
     [System.Windows.Forms.Application]::EnableVisualStyles()
     $window = [System.Windows.Forms.Form]::new()
-    $window.Text = "EaW Hub — обновление до $Version"
+    $window.Text = (Get-EawUiText -Text 'EaW Hub – обновление до {0}' -Values @($Version))
     $window.ClientSize = [System.Drawing.Size]::new(540, 245)
     $window.StartPosition = 'CenterScreen'
     $window.FormBorderStyle = 'FixedDialog'
@@ -15,7 +17,7 @@ function Initialize-ClientUpdateWindow {
     $window.AutoScaleMode = 'Dpi'
     $window.Font = [System.Drawing.Font]::new('Segoe UI', 10)
     $heading = [System.Windows.Forms.Label]::new()
-    $heading.Text = "Обновление EaW Localisation Hub до $Version"
+    $heading.Text = (Get-EawUiText -Text 'Обновление EaW Localisation Hub до {0}' -Values @($Version))
     $heading.Font = [System.Drawing.Font]::new('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
     $heading.SetBounds(20, 18, 500, 32)
     $message = [System.Windows.Forms.TextBox]::new()
@@ -32,10 +34,10 @@ function Initialize-ClientUpdateWindow {
     $detail = [System.Windows.Forms.Label]::new()
     $detail.SetBounds(20, 152, 500, 25)
     $footer = [System.Windows.Forms.Label]::new()
-    $footer.Text = 'Agent автоматически перезапустится после установки.'
+    $footer.Text = (Get-EawUiText -Text 'Agent автоматически перезапустится после установки.')
     $footer.SetBounds(20, 193, 405, 40)
     $close = [System.Windows.Forms.Button]::new()
-    $close.Text = 'Закрыть'
+    $close.Text = (Get-EawUiText -Text 'Закрыть')
     $close.SetBounds(430, 191, 90, 32)
     $close.Visible = $false
     $close.Add_Click({ $script:clientUpdateWindow.Form.Close() })
@@ -76,11 +78,11 @@ function Set-ClientUpdateWindowStatus {
         $view.Progress.Style = 'Marquee'
     }
     $view.Detail.Text = if ($Status.BytesTotal -gt 0) {
-        '{0:N1} / {1:N1} МБ — {2}%' -f ($Status.BytesReceived / 1MB), ($Status.BytesTotal / 1MB), $Status.ProgressPercent
+        (Get-EawUiText -Text '{0:N1} / {1:N1} МБ – {2}%') -f ($Status.BytesReceived / 1MB), ($Status.BytesTotal / 1MB), $Status.ProgressPercent
     } elseif ($Status.Stage -eq 'installing') {
-        'Ожидание установщика и подтверждения Windows (UAC)…'
+        (Get-EawUiText -Text 'Ожидание установщика и подтверждения Windows (UAC)…')
     } elseif ($Status.Stage -eq 'restarting') {
-        'Проверка запуска нового Agent…'
+        (Get-EawUiText -Text 'Проверка запуска нового Agent…')
     } else { '' }
     if ($Status.Stage -in @('complete', 'error')) {
         $view.Terminal = $true
@@ -89,7 +91,7 @@ function Set-ClientUpdateWindowStatus {
         $view.Progress.Style = 'Continuous'
         $view.Progress.Value = if ($view.Failed) { 0 } else { 100 }
         $view.Message.ForeColor = if ($view.Failed) { [System.Drawing.Color]::Firebrick } else { [System.Drawing.Color]::ForestGreen }
-        $view.Footer.Text = if ($view.Failed) { 'Клиент не обновлён полностью. Проверьте сообщение выше.' } else { 'Можно продолжать работу.' }
+        $view.Footer.Text = if ($view.Failed) { (Get-EawUiText -Text 'Клиент не обновлён полностью. Проверьте сообщение выше.') } else { (Get-EawUiText -Text 'Можно продолжать работу.') }
         $view.Form.WindowState = 'Normal'
         $view.Form.Activate()
     }

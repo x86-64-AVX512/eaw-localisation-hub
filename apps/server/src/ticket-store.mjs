@@ -3,6 +3,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { AuthError } from './auth.mjs';
 import { TRACKED_PATH_PATTERN } from '../../../packages/shared/src/constants.mts';
+import { isModContributorOnly } from '../../../packages/shared/src/document-permissions.mts';
+
+export function assertCanManageTicket(actor, ticket) {
+  if (isModContributorOnly(actor) && actor.id !== ticket.creatorId) {
+    throw new AuthError('Mod contributors may manage their own tickets only', 403, 'ticket_management_forbidden');
+  }
+}
 
 const STATUSES = new Set(['draft', 'in_progress', 'review', 'needs_changes', 'ready', 'git_conflict', 'applied', 'closed']);
 const USER_STATUSES = new Set(['draft', 'in_progress', 'review', 'needs_changes', 'ready', 'closed']);
@@ -155,6 +162,10 @@ export class TicketStore {
 
   async update(actor, id, input) {
     const ticket = this.mutable(id);
+    assertCanManageTicket(actor, ticket);
+    if (isModContributorOnly(actor) && ['ready', 'needs_changes'].includes(String(input.status))) {
+      throw new AuthError('A translation role is required to review tickets', 403, 'ticket_review_forbidden');
+    }
     if (ticket.archivedAt) throw new AuthError('Archived ticket is read-only', 409, 'ticket_archived');
     const changed = [];
     if (input.title !== undefined) {
@@ -185,6 +196,7 @@ export class TicketStore {
 
   async setFiles(actor, id, files) {
     const ticket = this.mutable(id);
+    assertCanManageTicket(actor, ticket);
     if (['applied', 'closed'].includes(ticket.status) || ticket.archivedAt) {
       throw new AuthError('Ticket files cannot be changed now', 409, 'ticket_read_only');
     }
@@ -263,6 +275,7 @@ export class TicketStore {
 
   async archive(actor, id) {
     const ticket = this.mutable(id);
+    assertCanManageTicket(actor, ticket);
     ticket.archivedAt = new Date().toISOString();
     if (ticket.status !== 'applied') ticket.status = 'closed';
     this.addEvent(ticket, actor, 'archived');
@@ -272,6 +285,7 @@ export class TicketStore {
   }
 
   async remove(actor, id) {
+    assertCanManageTicket(actor, this.get(id));
     const index = this.tickets.findIndex((item) => item.id === String(id));
     if (index < 0) throw new AuthError('Ticket not found', 404, 'ticket_not_found');
     const [ticket] = this.tickets.splice(index, 1);

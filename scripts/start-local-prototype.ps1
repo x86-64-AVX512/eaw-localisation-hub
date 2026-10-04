@@ -170,7 +170,7 @@ try {
     $startedProcesses.Add($reviewB)
 
     $state = [pscustomobject]@{
-        Version = '0.8.8F7'
+        Version = '0.8.8F8'
         Status = 'running'
         SessionId = $sessionId
         StartedAt = [DateTime]::UtcNow.ToString('o')

@@ -1,3 +1,4 @@
+import { uiText, uiLocale } from '../../../packages/shared/src/ui-language.mts';
 import { decodeBase64 } from './review-utilities.ts';
 import { createGitHistoryDiffViews } from './git-history-diff-views.ts';
 import { requiredButton, requiredDialog, requiredElement, requiredSelect } from './dom-elements.ts';
@@ -76,7 +77,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
     });
     const payload = await response.json() as T & { error?: string };
-    if (!response.ok) throw new Error(payload.error || 'Не удалось прочитать историю Git.');
+    if (!response.ok) throw new Error(payload.error || uiText("Не удалось прочитать историю Git."));
     return payload;
   }
 
@@ -85,7 +86,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
   }
 
   function shortLabel(revision: string): string {
-    if (revision === 'HEAD') return 'текущий HEAD';
+    if (revision === 'HEAD') return uiText("текущий HEAD");
     return entryFor(revision)?.shortCommit ?? revision.slice(0, 10);
   }
 
@@ -96,7 +97,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       select.replaceChildren();
       const head = document.createElement('option');
       head.value = 'HEAD';
-      head.textContent = 'HEAD · текущая версия Git';
+      head.textContent = uiText("HEAD · текущая версия Git");
       select.append(head);
       for (const entry of entries) {
         const option = document.createElement('option');
@@ -130,8 +131,8 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       author.textContent = `${entry.shortCommit} · ${entry.author}`;
       author.title = entry.author;
       const date = new Date(entry.date);
-      requiredElement('small', item).textContent = Number.isNaN(date.valueOf()) ? '' : date.toLocaleString();
-      item.title = 'Выбрать эту версию слева';
+      requiredElement('small', item).textContent = Number.isNaN(date.valueOf()) ? '' : date.toLocaleString(uiLocale());
+      item.title = uiText("Выбрать эту версию слева");
       item.addEventListener('click', () => {
         fromSelect.value = entry.commit;
         compare();
@@ -157,7 +158,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       shownPair = '';
       pendingPair = '';
       diffViews.clear();
-      selection.textContent = 'Загрузка истории Git…';
+      selection.textContent = uiText("Загрузка истории Git…");
     }
     render();
     try {
@@ -166,7 +167,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       if (generation !== loadId || !dialog.open || state.path !== requestedPath) return;
       const headCommit = payload.headCommit ?? '';
       if (!/^[0-9a-f]{40,64}$/iu.test(headCommit)) {
-        throw new Error('Agent не сообщил текущий Git HEAD. Обновите Desktop Agent.');
+        throw new Error(uiText("Agent не сообщил текущий Git HEAD. Обновите Desktop Agent."));
       }
       if (!reset && headCommit !== loadedHead) { reload = true; return; }
       loadedPath = requestedPath;
@@ -179,7 +180,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       updateSelectors();
       if (entries.length) await compare();
       else {
-        savedSelection = 'История файла пуста';
+        savedSelection = uiText("История файла пуста");
         selection.textContent = savedSelection;
       }
     } catch (error) {
@@ -223,7 +224,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       render();
       return;
     }
-    selection.textContent = `${pairLabel} · загрузка…`;
+    selection.textContent = uiText("{0} · загрузка…", pairLabel);
     shownPair = '';
     diffViews.showLoading();
     render();
@@ -238,7 +239,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       const payload = await request<GitHistoryDiff>(`/api/git-history/diff?${query}`);
       if (requestId !== comparisonId || !dialog.open || state.path !== requestedPath
         || loadedHead !== headAtRequest) return;
-      selection.textContent = `${pairLabel} · вычисление отличий…`;
+      selection.textContent = uiText("{0} · вычисление отличий…", pairLabel);
       diffViews.prepare(pair, decodeBase64(payload.baseBase64), decodeBase64(payload.headBase64), () => {
         if (requestId !== comparisonId || !dialog.open || state.path !== requestedPath
           || loadedHead !== headAtRequest) return;
@@ -261,7 +262,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
     const requestedPath = state.path;
     const generation = ++headCheckId;
     const comparisonAtStart = comparisonId;
-    selection.textContent = `${savedSelection} · проверка Git…`;
+    selection.textContent = uiText("{0} · проверка Git…", savedSelection);
     try {
       const query = new URLSearchParams({ path: requestedPath });
       const { headCommit } = await request<{ headCommit: string }>(`/api/git-history/head?${query}`);
@@ -271,7 +272,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       if (!shownPair && entries.length) compare();
     } catch (error) {
       if (generation !== headCheckId || !dialog.open || state.path !== requestedPath) return;
-      selection.textContent = `${savedSelection} · актуальность Git не проверена`;
+      selection.textContent = uiText("{0} · актуальность Git не проверена", savedSelection);
       showToast(errorMessage(error), true);
     }
   }
@@ -312,7 +313,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
     dialog.classList.toggle('fullscreen');
     const button = event.currentTarget;
     if (button instanceof HTMLButtonElement) {
-      button.textContent = dialog.classList.contains('fullscreen') ? 'Обычный размер' : 'На весь экран';
+      button.textContent = dialog.classList.contains('fullscreen') ? uiText("Обычный размер") : uiText("На весь экран");
     }
     requestAnimationFrame(diffViews.layout);
   });

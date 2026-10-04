@@ -142,7 +142,8 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
 
     const index = await fetch(`${discovery.origin}/`);
     assert.equal(index.status, 200);
-    assert.match(index.headers.get('content-security-policy'), /frame-ancestors 'none'/u);
+    assert.match(index.headers.get('content-security-policy'), /frame-ancestors 'self'/u);
+    assert.match(index.headers.get('content-security-policy'), /frame-src 'self'/u);
     assert.match(await index.text(), /E[aA]W Localisation Hub/u);
 
     const unauthorized = await fetch(`${discovery.origin}/api/bootstrap?path=${encodeURIComponent(tracked)}`);
@@ -223,6 +224,25 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       method: 'POST', headers: { Authorization: `Bearer ${discovery.token}` },
     });
     assert.equal(remoteCheckForbidden.status, 405, 'document text must never be proxied for spellchecking');
+
+    const languageUnauthorized = await fetch(`${discovery.origin}/api/ui-language`);
+    assert.equal(languageUnauthorized.status, 401);
+    const languageHeaders = { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json' };
+    const languageSaved = await fetch(`${discovery.origin}/api/ui-language`, {
+      method: 'POST', headers: languageHeaders, body: JSON.stringify({ preference: 'en' }),
+    });
+    assert.equal(languageSaved.status, 200);
+    assert.equal((await languageSaved.json()).language, 'en');
+    const languageLoaded = await fetch(`${discovery.origin}/api/ui-language`, { headers: languageHeaders });
+    assert.equal((await languageLoaded.json()).preference, 'en');
+    for (const body of ['{broken', JSON.stringify({ preference: 'other' }), 'x'.repeat(1025)]) {
+      const invalid = await fetch(`${discovery.origin}/api/ui-language`, { method: 'POST', headers: languageHeaders, body });
+      assert.equal(invalid.status, 400);
+    }
+    const languageForeignOrigin = await fetch(`${discovery.origin}/api/ui-language`, {
+      method: 'POST', headers: { ...languageHeaders, Origin: 'https://attacker.invalid' }, body: JSON.stringify({ preference: 'ru' }),
+    });
+    assert.equal(languageForeignOrigin.status, 403);
 
     const cacheUnauthorized = await fetch(`${discovery.origin}/api/diff-cache`);
     assert.equal(cacheUnauthorized.status, 401);

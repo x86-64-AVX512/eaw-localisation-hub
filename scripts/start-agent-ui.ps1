@@ -1,4 +1,6 @@
 ﻿param([switch]$StartMinimized)
+. (Join-Path $PSScriptRoot 'ui-language.ps1')
+
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -30,7 +32,7 @@ function Start-ClientUpdateCheck {
     if (-not (Test-Path -LiteralPath $updater -PathType Leaf) -or
         -not (Test-Path -LiteralPath (Join-Path $projectRoot 'node.exe') -PathType Leaf) -or
         -not (Test-Path -LiteralPath (Join-Path $projectRoot 'review\EaWReview.exe') -PathType Leaf)) {
-        if ($Install) { throw 'Обновление доступно только для установленного клиента, не для исходников.' }
+        if ($Install) { throw (Get-EawUiText -Text 'Обновление доступно только для установленного клиента, не для исходников.') }
         return
     }
     $script:lastUpdateCheckAt = [DateTime]::UtcNow
@@ -42,7 +44,7 @@ function Start-ClientUpdateCheck {
     $script:clientUpdateProcess = Start-Process -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
         -ArgumentList $arguments -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru
     $updateClientButton.Enabled = $false
-    if ($Install) { $status.Text = 'Проверяем релизы GitHub. Скачивание и установка начнутся, если есть новая версия…' }
+    if ($Install) { $status.Text = (Get-EawUiText -Text 'Проверяем релизы GitHub. Скачивание и установка начнутся, если есть новая версия…') }
 }
 
 function Find-RegisteredAgentProcess {
@@ -89,7 +91,7 @@ function Convert-AgentServerToHttp {
     $builder = [UriBuilder]::new($uri)
     if ($builder.Scheme -eq 'ws') { $builder.Scheme = 'http' }
     elseif ($builder.Scheme -eq 'wss') { $builder.Scheme = 'https' }
-    else { throw 'Адрес сервера должен начинаться с ws:// или wss://.' }
+    else { throw (Get-EawUiText -Text 'Адрес сервера должен начинаться с ws:// или wss://.') }
     $builder.Path = ''
     $builder.Query = ''
     $builder.Uri.AbsoluteUri.TrimEnd('/')
@@ -100,7 +102,7 @@ function Assert-SecureTransport {
     $uri = [Uri]$Server
     $loopback = $uri.Host -in @('localhost', '127.0.0.1', '::1')
     if ($uri.Scheme -eq 'ws' -and -not $loopback) {
-        throw 'Передача пароля или токена по ws:// запрещена. Для удалённого сервера используйте только wss://.'
+        throw (Get-EawUiText -Text 'Передача пароля или токена по ws:// запрещена. Для удалённого сервера используйте только wss://.')
     }
 }
 
@@ -109,7 +111,7 @@ function Assert-ValidNewPassword {
     $byteCount = [System.Text.Encoding]::UTF8.GetByteCount($Password)
     if ($Password.Length -lt 12 -or $Password.Length -gt 256 -or $byteCount -gt 1024 `
         -or $Password.Contains([char]0) -or $Password.Contains("`r") -or $Password.Contains("`n")) {
-        throw 'Пароль должен содержать от 12 до 256 символов без переносов строк.'
+        throw (Get-EawUiText -Text 'Пароль должен содержать от 12 до 256 символов без переносов строк.')
     }
 }
 
@@ -123,13 +125,13 @@ function Get-HubApiErrorMessage {
                 $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8)
                 try { $payload = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
                 switch ([string]$payload.code) {
-                    'invalid_password' { return 'Пароль должен содержать от 12 до 256 символов без переносов строк.' }
-                    'invalid_invite' { return 'Приглашение недействительно или уже использовано.' }
-                    'expired_invite' { return 'Срок действия приглашения истёк.' }
-                    'name_taken' { return 'Это имя участника уже зарегистрировано.' }
-                    'invalid_credentials' { return 'Неверное имя участника или пароль.' }
-                    'invalid_recovery_code' { return 'Код восстановления недействителен или уже использован.' }
-                    'rate_limited' { return 'Слишком много попыток. Подождите и повторите вход.' }
+                    'invalid_password' { return (Get-EawUiText -Text 'Пароль должен содержать от 12 до 256 символов без переносов строк.') }
+                    'invalid_invite' { return (Get-EawUiText -Text 'Приглашение недействительно или уже использовано.') }
+                    'expired_invite' { return (Get-EawUiText -Text 'Срок действия приглашения истёк.') }
+                    'name_taken' { return (Get-EawUiText -Text 'Это имя участника уже зарегистрировано.') }
+                    'invalid_credentials' { return (Get-EawUiText -Text 'Неверное имя участника или пароль.') }
+                    'invalid_recovery_code' { return (Get-EawUiText -Text 'Код восстановления недействителен или уже использован.') }
+                    'rate_limited' { return (Get-EawUiText -Text 'Слишком много попыток. Подождите и повторите вход.') }
                 }
                 if (-not [string]::IsNullOrWhiteSpace([string]$payload.error)) {
                     return [string]$payload.error
@@ -146,7 +148,7 @@ function Save-AuthenticatedSession($Result) {
     $nameBox.Text = [string]$Result.user.displayName
     Save-AgentConfig (Current-Config)
     $roles = @($Result.user.roles) -join ', '
-    $status.Text = "Вход сохранён в Windows Credential Manager. Роли: $roles."
+    $status.Text = (Get-EawUiText -Text 'Вход сохранён в Windows Credential Manager. Роли: {0}.' -Values @($roles))
     Update-AgentStateView
 }
 
@@ -180,28 +182,27 @@ function Save-RecoveryCodeFile {
     param([string]$Code, [string]$DisplayName, [string]$Token)
     if ([string]::IsNullOrWhiteSpace($Code)) { return $false }
     [void][System.Windows.Forms.MessageBox]::Show(
-        'Сейчас необходимо сохранить единственный код восстановления. Сервер и администратор не смогут показать его повторно.',
-        'Код восстановления EaW Hub', 'OK', 'Warning')
+        (Get-EawUiText -Text 'Сейчас необходимо сохранить единственный код восстановления. Сервер и администратор не смогут показать его повторно.'),
+        (Get-EawUiText -Text 'Код восстановления EaW Hub'), 'OK', 'Warning')
     $dialog = [System.Windows.Forms.SaveFileDialog]::new()
     $safeName = ($DisplayName -replace '[<>:"/\\|?*]', '_')
     $dialog.FileName = "EaW-Hub-Recovery-$safeName.txt"
-    $dialog.Filter = 'Текстовый файл (*.txt)|*.txt'
-    $dialog.Title = 'Сохраните код восстановления EaW Hub'
+    $dialog.Filter = (Get-EawUiText -Text 'Текстовый файл (*.txt)|*.txt')
+    $dialog.Title = (Get-EawUiText -Text 'Сохраните код восстановления EaW Hub')
     try {
         if ($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) {
             [void](Invoke-HubAuthApi -Route '/api/auth/recovery/discard' -Token $Token -Body @{})
             return $false
         }
-        $content = @"
-EaW Localisation Hub – код восстановления
+        $content = (Get-EawUiText -Text 'EaW Localisation Hub – код восстановления
 
-Пользователь: $DisplayName
-Код: $Code
+Пользователь: {0}
+Код: {1}
 
 Храните этот файл отдельно и не отправляйте его другим людям.
 Код одноразовый: после восстановления пароля потребуется новый.
 Администратор и сервер не могут показать этот код повторно.
-"@
+' -Values @($DisplayName, $Code))
         [System.IO.File]::WriteAllText($dialog.FileName, $content, [System.Text.UTF8Encoding]::new($false))
         [void](Invoke-HubAuthApi -Route '/api/auth/recovery/confirm' -Token $Token -Body @{ recoveryCode = $Code })
         return $true
@@ -218,10 +219,10 @@ function Show-ChangePasswordDialog {
     $credentialTarget = Get-EawHubCredentialTarget -Server $serverBox.Text.Trim() -Kind 'AgentToken'
     $credential = Get-EawHubCredential -Target $credentialTarget
     if (-not $credential -or [string]::IsNullOrWhiteSpace($credential.Secret)) {
-        throw 'Сначала войдите в учётную запись.'
+        throw (Get-EawUiText -Text 'Сначала войдите в учётную запись.')
     }
     $dialog = [System.Windows.Forms.Form]::new()
-    $dialog.Text = 'Изменение пароля EaW Hub'
+    $dialog.Text = (Get-EawUiText -Text 'Изменение пароля EaW Hub')
     $dialog.Size = [System.Drawing.Size]::new(500, 325)
     $dialog.FormBorderStyle = 'FixedDialog'
     $dialog.MaximizeBox = $false
@@ -229,13 +230,13 @@ function Show-ChangePasswordDialog {
     $dialog.StartPosition = 'CenterParent'
 
     $notice = [System.Windows.Forms.Label]::new()
-    $notice.Text = 'Используйте отдельный пароль только для этого сервера. После смены остальные активные сессии будут завершены.'
+    $notice.Text = (Get-EawUiText -Text 'Используйте отдельный пароль только для этого сервера. После смены остальные активные сессии будут завершены.')
     $notice.ForeColor = [System.Drawing.Color]::DarkRed
     $notice.Location = [System.Drawing.Point]::new(20, 15)
     $notice.Size = [System.Drawing.Size]::new(445, 42)
     $dialog.Controls.Add($notice)
 
-    $labels = @('Текущий пароль:', 'Новый пароль:', 'Повтор нового пароля:')
+    $labels = @((Get-EawUiText -Text 'Текущий пароль:'), (Get-EawUiText -Text 'Новый пароль:'), (Get-EawUiText -Text 'Повтор нового пароля:'))
     $boxes = @()
     for ($index = 0; $index -lt 3; $index++) {
         $label = [System.Windows.Forms.Label]::new()
@@ -252,12 +253,12 @@ function Show-ChangePasswordDialog {
     }
 
     $save = [System.Windows.Forms.Button]::new()
-    $save.Text = 'Изменить'
+    $save.Text = (Get-EawUiText -Text 'Изменить')
     $save.Location = [System.Drawing.Point]::new(268, 215)
     $save.Size = [System.Drawing.Size]::new(95, 32)
     $dialog.Controls.Add($save)
     $cancel = [System.Windows.Forms.Button]::new()
-    $cancel.Text = 'Отмена'
+    $cancel.Text = (Get-EawUiText -Text 'Отмена')
     $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $cancel.Location = [System.Drawing.Point]::new(370, 215)
     $cancel.Size = [System.Drawing.Size]::new(95, 32)
@@ -266,7 +267,7 @@ function Show-ChangePasswordDialog {
 
     $save.Add_Click({
         try {
-            if ($boxes[1].Text -cne $boxes[2].Text) { throw 'Новые пароли не совпадают.' }
+            if ($boxes[1].Text -cne $boxes[2].Text) { throw (Get-EawUiText -Text 'Новые пароли не совпадают.') }
             Assert-ValidNewPassword -Password $boxes[1].Text
             $result = Invoke-HubAuthApi -Route '/api/auth/password/change' -Token $credential.Secret -Body @{
                 currentPassword = $boxes[0].Text
@@ -277,7 +278,7 @@ function Show-ChangePasswordDialog {
             $dialog.Close()
         } catch {
             $boxes | ForEach-Object { $_.Clear() }
-            [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Пароль не изменён', 'OK', 'Warning')
+            [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, (Get-EawUiText -Text 'Пароль не изменён'), 'OK', 'Warning')
         }
     })
     $changed = $dialog.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK
@@ -289,7 +290,7 @@ function Show-ChangePasswordDialog {
 function Quote-AgentArgument {
     param([string]$Value)
     if ($Value.Contains('"') -or $Value.Contains("`r") -or $Value.Contains("`n")) {
-        throw 'Параметр Agent содержит недопустимую кавычку или перенос строки.'
+        throw (Get-EawUiText -Text 'Параметр Agent содержит недопустимую кавычку или перенос строки.')
     }
     '"' + $Value + '"'
 }
@@ -343,104 +344,110 @@ $form.MinimumSize = [System.Drawing.Size]::new(720, 640)
 $form.AutoScroll = $true
 $form.AutoScrollMinSize = [System.Drawing.Size]::new(690, 908)
 $form.StartPosition = 'CenterScreen'
+$languageButton = [Windows.Forms.Button]::new()
+$languageButton.Text = 'RU / EN'
+$languageButton.Location = [Drawing.Point]::new(585, 17)
+$languageButton.Size = [Drawing.Size]::new(80, 27)
+$languageButton.Add_Click({ Show-EawUiLanguageSettings -Owner $form })
+$form.Controls.Add($languageButton)
 
-$title = New-Label 'Настройка Desktop Agent' 24 18
+$title = New-Label (Get-EawUiText -Text 'Настройка Desktop Agent') 24 18
 $title.Font = [System.Drawing.Font]::new('Segoe UI', 14, [System.Drawing.FontStyle]::Bold)
 
-New-Label 'Сервер WebSocket:' 27 66 | Out-Null
+New-Label (Get-EawUiText -Text 'Сервер WebSocket:') 27 66 | Out-Null
 $serverBox = New-TextBox 195 62 475
-New-Label 'Репозиторий EaW:' 27 105 | Out-Null
+New-Label (Get-EawUiText -Text 'Репозиторий EaW:') 27 105 | Out-Null
 $repoBox = New-TextBox 195 101 395
 $browseButton = [System.Windows.Forms.Button]::new()
-$browseButton.Text = 'Обзор…'
+$browseButton.Text = (Get-EawUiText -Text 'Обзор…')
 $browseButton.Location = [System.Drawing.Point]::new(597, 100)
 $browseButton.Size = [System.Drawing.Size]::new(73, 26)
 $form.Controls.Add($browseButton)
-New-Label 'Имя участника:' 27 144 | Out-Null
+New-Label (Get-EawUiText -Text 'Имя участника:') 27 144 | Out-Null
 $nameBox = New-TextBox 195 140 250
-New-Label 'Цвет:' 465 144 | Out-Null
+New-Label (Get-EawUiText -Text 'Цвет:') 465 144 | Out-Null
 $colorBox = New-TextBox 515 140 100
 $colorPickerButton = [System.Windows.Forms.Button]::new()
-$colorPickerButton.AccessibleName = 'Выбрать цвет участника'
+$colorPickerButton.AccessibleName = (Get-EawUiText -Text 'Выбрать цвет участника')
 $colorPickerButton.Location = [System.Drawing.Point]::new(622, 139)
 $colorPickerButton.Size = [System.Drawing.Size]::new(48, 27)
 $colorPickerButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $colorPickerButton.UseVisualStyleBackColor = $false
 $form.Controls.Add($colorPickerButton)
 $warning = [System.Windows.Forms.Label]::new()
-$warning.Text = 'ВАЖНО: придумайте отдельный пароль только для этого сервера. Не используйте пароль от GitHub, Discord, почты, банка или любого другого сайта.'
+$warning.Text = (Get-EawUiText -Text 'ВАЖНО: придумайте отдельный пароль только для этого сервера. Не используйте пароль от GitHub, Discord, почты, банка или любого другого сайта.')
 $warning.ForeColor = [System.Drawing.Color]::DarkRed
 $warning.Font = [System.Drawing.Font]::new('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
 $warning.Location = [System.Drawing.Point]::new(27, 177)
 $warning.Size = [System.Drawing.Size]::new(643, 46)
 $form.Controls.Add($warning)
 
-New-Label 'Приглашение / код восстановления:' 27 239 | Out-Null
+New-Label (Get-EawUiText -Text 'Приглашение / код восстановления:') 27 239 | Out-Null
 $inviteBox = New-TextBox 245 235 425
-New-Label 'Пароль:' 27 278 | Out-Null
+New-Label (Get-EawUiText -Text 'Пароль:') 27 278 | Out-Null
 $passwordBox = New-TextBox 220 274 450
 $passwordBox.UseSystemPasswordChar = $true
-New-Label 'Повтор нового пароля:' 27 317 | Out-Null
+New-Label (Get-EawUiText -Text 'Повтор нового пароля:') 27 317 | Out-Null
 $passwordConfirmBox = New-TextBox 220 313 450
 $passwordConfirmBox.UseSystemPasswordChar = $true
 
 $activateButton = [System.Windows.Forms.Button]::new()
-$activateButton.Text = 'Регистрация по приглашению'
+$activateButton.Text = (Get-EawUiText -Text 'Регистрация по приглашению')
 $activateButton.Location = [System.Drawing.Point]::new(27, 353)
 $activateButton.Size = [System.Drawing.Size]::new(210, 34)
 $form.Controls.Add($activateButton)
 $loginButton = [System.Windows.Forms.Button]::new()
-$loginButton.Text = 'Войти по паролю'
+$loginButton.Text = (Get-EawUiText -Text 'Войти по паролю')
 $loginButton.Location = [System.Drawing.Point]::new(247, 353)
 $loginButton.Size = [System.Drawing.Size]::new(190, 34)
 $form.Controls.Add($loginButton)
 $resetPasswordButton = [System.Windows.Forms.Button]::new()
-$resetPasswordButton.Text = 'Восстановить по коду'
+$resetPasswordButton.Text = (Get-EawUiText -Text 'Восстановить по коду')
 $resetPasswordButton.Location = [System.Drawing.Point]::new(447, 353)
 $resetPasswordButton.Size = [System.Drawing.Size]::new(180, 34)
 $form.Controls.Add($resetPasswordButton)
 
 $startupCheck = [System.Windows.Forms.CheckBox]::new()
-$startupCheck.Text = 'Запускать Agent вместе с Windows'
+$startupCheck.Text = (Get-EawUiText -Text 'Запускать Agent вместе с Windows')
 $startupCheck.AutoSize = $true
 $startupCheck.Location = [System.Drawing.Point]::new(27, 407)
 $form.Controls.Add($startupCheck)
 
 $trayModeCheck = [System.Windows.Forms.CheckBox]::new()
-$trayModeCheck.Text = 'После закрытия оставлять в области уведомлений'
+$trayModeCheck.Text = (Get-EawUiText -Text 'После закрытия оставлять в области уведомлений')
 $trayModeCheck.AutoSize = $true
 $trayModeCheck.Location = [System.Drawing.Point]::new(300, 407)
 $form.Controls.Add($trayModeCheck)
 
 $startButton = [System.Windows.Forms.Button]::new()
-$startButton.Text = 'Запустить Agent'
+$startButton.Text = (Get-EawUiText -Text 'Запустить Agent')
 $startButton.Location = [System.Drawing.Point]::new(27, 441)
 $startButton.Size = [System.Drawing.Size]::new(190, 38)
 $form.Controls.Add($startButton)
 $stopButton = [System.Windows.Forms.Button]::new()
-$stopButton.Text = 'Остановить Agent'
+$stopButton.Text = (Get-EawUiText -Text 'Остановить Agent')
 $stopButton.Location = [System.Drawing.Point]::new(228, 441)
 $stopButton.Size = [System.Drawing.Size]::new(190, 38)
 $form.Controls.Add($stopButton)
 $logoutButton = [System.Windows.Forms.Button]::new()
-$logoutButton.Text = 'Выйти и удалить токен'
+$logoutButton.Text = (Get-EawUiText -Text 'Выйти и удалить токен')
 $logoutButton.Location = [System.Drawing.Point]::new(429, 441)
 $logoutButton.Size = [System.Drawing.Size]::new(210, 38)
 $form.Controls.Add($logoutButton)
 $reviewButton = [System.Windows.Forms.Button]::new()
-$reviewButton.Text = 'Запустить Review'
+$reviewButton.Text = (Get-EawUiText -Text 'Запустить Review')
 $reviewButton.Location = [System.Drawing.Point]::new(27, 487)
 $reviewButton.Size = [System.Drawing.Size]::new(391, 32)
 $reviewButton.Enabled = $false
 $form.Controls.Add($reviewButton)
 $changePasswordButton = [System.Windows.Forms.Button]::new()
-$changePasswordButton.Text = 'Изменить мой пароль…'
+$changePasswordButton.Text = (Get-EawUiText -Text 'Изменить мой пароль…')
 $changePasswordButton.Location = [System.Drawing.Point]::new(429, 487)
 $changePasswordButton.Size = [System.Drawing.Size]::new(210, 32)
 $form.Controls.Add($changePasswordButton)
 
 $stateGroup = [System.Windows.Forms.GroupBox]::new()
-$stateGroup.Text = 'Состояние'
+$stateGroup.Text = (Get-EawUiText -Text 'Состояние')
 $stateGroup.Location = [System.Drawing.Point]::new(27, 529)
 $stateGroup.Size = [System.Drawing.Size]::new(643, 128)
 $form.Controls.Add($stateGroup)
@@ -467,18 +474,18 @@ $lastCheckState.Location = [System.Drawing.Point]::new(14, 84)
 $lastCheckState.Size = [System.Drawing.Size]::new(288, 25)
 $stateGroup.Controls.Add($lastCheckState)
 $checkStateButton = [System.Windows.Forms.Button]::new()
-$checkStateButton.Text = 'Проверить сейчас'
+$checkStateButton.Text = (Get-EawUiText -Text 'Проверить сейчас')
 $checkStateButton.Location = [System.Drawing.Point]::new(470, 80)
 $checkStateButton.Size = [System.Drawing.Size]::new(155, 30)
 $stateGroup.Controls.Add($checkStateButton)
 $updateClientButton = [System.Windows.Forms.Button]::new()
-$updateClientButton.Text = 'Обновить клиент…'
+$updateClientButton.Text = (Get-EawUiText -Text 'Обновить клиент…')
 $updateClientButton.Location = [System.Drawing.Point]::new(308, 80)
 $updateClientButton.Size = [System.Drawing.Size]::new(155, 30)
 $stateGroup.Controls.Add($updateClientButton)
 
 $status = [System.Windows.Forms.Label]::new()
-$status.Text = 'Для первого входа нужны приглашение и новый пароль; затем достаточно имени и пароля.'
+$status.Text = (Get-EawUiText -Text 'Для первого входа нужны приглашение и новый пароль; затем достаточно имени и пароля.')
 $status.BorderStyle = 'FixedSingle'
 $status.Location = [System.Drawing.Point]::new(27, 830)
 $status.Size = [System.Drawing.Size]::new(643, 66)
@@ -486,7 +493,7 @@ $status.TextAlign = 'MiddleLeft'
 $form.Controls.Add($status)
 
 $repositoryGroup = [System.Windows.Forms.GroupBox]::new()
-$repositoryGroup.Text = 'Git — текущая ветка репозитория (не обновление клиента)'
+$repositoryGroup.Text = (Get-EawUiText -Text 'Git – текущая ветка репозитория (не обновление клиента)')
 $repositoryGroup.Location = [System.Drawing.Point]::new(27, 665)
 $repositoryGroup.Size = [System.Drawing.Size]::new(643, 156)
 $form.Controls.Add($repositoryGroup)
@@ -501,10 +508,10 @@ $repositoryTiming.ForeColor = [Drawing.Color]::DimGray
 $repositoryGroup.Controls.Add($repositoryTiming)
 $repositoryButtons = @{}
 $buttonSpecs = @(
-    @('details', 'Подробнее', 14, 95),
-    @('check', 'Проверить снова', 116, 135),
-    @('update', 'Обновить репозиторий сейчас', 258, 215),
-    @('settings', 'Настройки Git…', 480, 145)
+    @('details', (Get-EawUiText -Text 'Подробнее'), 14, 95),
+    @('check', (Get-EawUiText -Text 'Проверить снова'), 116, 135),
+    @('update', (Get-EawUiText -Text 'Обновить репозиторий сейчас'), 258, 215),
+    @('settings', (Get-EawUiText -Text 'Настройки Git…'), 480, 145)
 )
 foreach ($spec in $buttonSpecs) {
     $button = [System.Windows.Forms.Button]::new()
@@ -518,11 +525,11 @@ $tray.Icon = [System.Drawing.SystemIcons]::Application
 $tray.Text = 'EaW Localisation Hub Agent'
 $tray.Visible = $true
 $trayMenu = [System.Windows.Forms.ContextMenuStrip]::new()
-$showTrayItem = $trayMenu.Items.Add('Открыть настройки')
-$startTrayItem = $trayMenu.Items.Add('Запустить Agent')
-$stopTrayItem = $trayMenu.Items.Add('Остановить Agent')
+$showTrayItem = $trayMenu.Items.Add((Get-EawUiText -Text 'Открыть настройки'))
+$startTrayItem = $trayMenu.Items.Add((Get-EawUiText -Text 'Запустить Agent'))
+$stopTrayItem = $trayMenu.Items.Add((Get-EawUiText -Text 'Остановить Agent'))
 $trayMenu.Items.Add('-') | Out-Null
-$exitTrayItem = $trayMenu.Items.Add('Закрыть Agent')
+$exitTrayItem = $trayMenu.Items.Add((Get-EawUiText -Text 'Закрыть Agent'))
 $tray.ContextMenuStrip = $trayMenu
 
 $saved = Read-AgentConfig
@@ -552,14 +559,15 @@ function Update-RepositorySyncTiming {
 function Update-RepositorySyncView {
     $script:repositorySyncStatus = $null
     $buttonsEnabled = $false
-    $stateText = 'Git: выберите корректный репозиторий EaW.'
+    $stateText = (Get-EawUiText -Text 'Git: выберите корректный репозиторий EaW.')
     $stateColor = [Drawing.Color]::DimGray
     try {
         $directory = Get-EawRepositorySyncDirectory $stateDirectory $repoBox.Text.Trim()
         $settings = Get-EawRepositorySyncSettings $directory
-        $automationText = 'Авто-fetch: ' + $(if ($settings.autoFetch -or $settings.autoPull) { 'вкл.' } else { 'выкл.' }) +
-            '; автообновление ветки: ' + $(if ($settings.autoPull) { 'вкл.' } else { 'выкл.' })
-        $stateText = $automationText + "`r`nЗапустите Agent для работы с Git."
+        $automationText = (Get-EawUiText -Text 'Авто-fetch: ') + $(if ($settings.autoFetch -or $settings.autoPull) { (Get-EawUiText -Text 'вкл.') } else { (Get-EawUiText -Text 'выкл.') }) +
+            (Get-EawUiText -Text '; автообновление ветки: ') + $(if ($settings.autoPull) { (Get-EawUiText -Text 'вкл.') } else { (Get-EawUiText -Text 'выкл.') })
+        $stateText = $automationText + (Get-EawUiText -Text '
+Запустите Agent для работы с Git.')
         $agent = Sync-AgentProcessReference
         if (-not $agent -or $agent.HasExited) { return }
         $value = Read-EawRepositorySyncJson (Join-Path $directory 'status.json')
@@ -567,19 +575,19 @@ function Update-RepositorySyncView {
         $script:repositorySyncStatus = $value
         $busy = $value.stage -in @('checking', 'fetching', 'updating')
         $buttonsEnabled = -not $busy
-        $counts = $(if ($null -ne $value.behind) { " | новых коммитов: $($value.behind)" } else { '' })
-        $stateText = "$automationText`r`n$($value.branch)$counts`r`n$($value.message)"
+        $counts = $(if ($null -ne $value.behind) { (Get-EawUiText -Text ' | новых коммитов: {0}' -Values @($($value.behind))) } else { '' })
+        $stateText = "$automationText`r`n$($value.branch)$counts`r`n$(Get-EawUiMessage $value.message)"
         if ($value.stage -eq 'blocked' -and [int]$value.behind -gt 0) { $stateColor = [Drawing.Color]::Firebrick }
         elseif ($value.stage -in @('current', 'updated')) { $stateColor = [Drawing.Color]::ForestGreen }
         elseif ($value.stage -eq 'error') { $stateColor = [Drawing.Color]::DarkOrange }
         if ($value.alertId -and -not $script:seenRepositoryAlerts.ContainsKey([string]$value.alertId)) {
             $script:seenRepositoryAlerts[[string]$value.alertId] = $true
-            Show-EawRepositorySyncAlert $form $tray $settings "Ветка $($value.branch): новых коммитов — $($value.behind). $($value.message)"
+            Show-EawRepositorySyncAlert $form $tray $settings (Get-EawUiText -Text 'Ветка {0}: новых коммитов – {1}. {2}' -Values @($($value.branch), $($value.behind), $(Get-EawUiMessage $value.message)))
         }
     } catch {
         $script:repositorySyncStatus = $null
         $buttonsEnabled = $false
-        $stateText = 'Git: выберите корректный репозиторий EaW.'
+        $stateText = (Get-EawUiText -Text 'Git: выберите корректный репозиторий EaW.')
         $stateColor = [Drawing.Color]::DimGray
     } finally {
         # Commit the final view once, without clearing/repainting it on every tick.
@@ -597,31 +605,37 @@ $repositoryButtons['settings'].Add_Click({
         $directory = Get-EawRepositorySyncDirectory $stateDirectory $repoBox.Text.Trim()
         Show-EawRepositorySyncSettings $form $directory
         Update-RepositorySyncView
-    } catch { $status.Text = "Ошибка настроек Git: $($_.Exception.Message)" }
+    } catch { $status.Text = (Get-EawUiText -Text 'Ошибка настроек Git: {0}' -Values @($($_.Exception.Message))) }
 })
 $repositoryButtons['details'].Add_Click({
     $value = $script:repositorySyncStatus
     $message = if ($value) {
-        "Репозиторий: $($value.repository)`r`nВетка: $($value.branch)`r`nUpstream: $($value.upstream)`r`nНовых коммитов: $($value.behind); локальных: $($value.ahead)`r`n$(Get-EawRepositorySyncTiming $value)`r`n`r`n$($value.message)"
+        (Get-EawUiText -Text 'Репозиторий: {0}
+Ветка: {1}
+Upstream: {2}
+Новых коммитов: {3}; локальных: {4}
+{5}
+
+{6}' -Values @($($value.repository), $($value.branch), $($value.upstream), $($value.behind), $($value.ahead), $(Get-EawRepositorySyncTiming $value), $(Get-EawUiMessage $value.message)))
     } else { $repositoryState.Text }
-    [void][Windows.Forms.MessageBox]::Show($form, $message, 'Состояние Git', 'OK', 'Information')
+    [void][Windows.Forms.MessageBox]::Show($form, $message, (Get-EawUiText -Text 'Состояние Git'), 'OK', 'Information')
 })
 function Send-RepositorySyncRequest {
     param([ValidateSet('check', 'update')][string]$Action)
     Update-RepositorySyncView
-    if (-not $script:repositorySyncStatus) { throw 'Запустите Agent с выбранным репозиторием.' }
+    if (-not $script:repositorySyncStatus) { throw (Get-EawUiText -Text 'Запустите Agent с выбранным репозиторием.') }
     $directory = Get-EawRepositorySyncDirectory $stateDirectory $repoBox.Text.Trim()
     Request-EawRepositorySync $directory $script:agentProcess.Id $Action
     $repositoryButtons['check'].Enabled = $false; $repositoryButtons['update'].Enabled = $false
-    $repositoryState.Text = 'Запрос отправлен Agent…'
+    $repositoryState.Text = (Get-EawUiText -Text 'Запрос отправлен Agent…')
 }
 $repositoryButtons['check'].Add_Click({
     try { Send-RepositorySyncRequest 'check' } catch { $status.Text = $_.Exception.Message }
 })
 $repositoryButtons['update'].Add_Click({
     $answer = [Windows.Forms.MessageBox]::Show($form,
-        'Проверить remote и обновить текущую ветку до upstream? Только fast-forward и только при чистом рабочем каталоге. Локальные изменения не удаляются и не прячутся в stash.',
-        'Обновить Git-репозиторий', 'YesNo', 'Question', 'Button2')
+        (Get-EawUiText -Text 'Проверить remote и обновить текущую ветку до upstream? Только fast-forward и только при чистом рабочем каталоге. Локальные изменения не удаляются и не прячутся в stash.'),
+        (Get-EawUiText -Text 'Обновить Git-репозиторий'), 'YesNo', 'Question', 'Button2')
     if ($answer -ne [Windows.Forms.DialogResult]::Yes) { return }
     try { Send-RepositorySyncRequest 'update' } catch { $status.Text = $_.Exception.Message }
 })
@@ -649,62 +663,62 @@ function Update-AgentStateView {
     try {
         [void](Sync-AgentProcessReference)
         if ($script:agentProcess -and -not $script:agentProcess.HasExited) {
-            Set-StateText $agentState "Agent: запущен (PID $($script:agentProcess.Id))" ([System.Drawing.Color]::ForestGreen)
+            Set-StateText $agentState (Get-EawUiText -Text 'Agent: запущен (PID {0})' -Values @($($script:agentProcess.Id))) ([System.Drawing.Color]::ForestGreen)
             $reviewButton.Enabled = $true
         } else {
-            Set-StateText $agentState 'Agent: остановлен' ([System.Drawing.Color]::DimGray)
+            Set-StateText $agentState (Get-EawUiText -Text 'Agent: остановлен') ([System.Drawing.Color]::DimGray)
             $reviewButton.Enabled = $false
         }
 
-        Set-StateText $serverState 'Сервер: проверка…' ([System.Drawing.Color]::DimGray)
-        Set-StateText $versionState "Клиент: $($clientStatusMetadata.Version); сервер: проверка…" ([System.Drawing.Color]::DimGray)
-        Set-StateText $tokenState 'Токен: проверка…' ([System.Drawing.Color]::DimGray)
+        Set-StateText $serverState (Get-EawUiText -Text 'Сервер: проверка…') ([System.Drawing.Color]::DimGray)
+        Set-StateText $versionState (Get-EawUiText -Text 'Клиент: {0}; сервер: проверка…' -Values @($($clientStatusMetadata.Version))) ([System.Drawing.Color]::DimGray)
+        Set-StateText $tokenState (Get-EawUiText -Text 'Токен: проверка…') ([System.Drawing.Color]::DimGray)
         $form.Refresh()
 
         try {
             $health = Invoke-HubAuthApi -Route '/health' -Method Get
         } catch {
-            Set-StateText $serverState 'Сервер: недоступен' ([System.Drawing.Color]::Firebrick)
-            Set-StateText $versionState "Клиент: $($clientStatusMetadata.Version); обновление не проверено" ([System.Drawing.Color]::DarkOrange)
-            Set-StateText $tokenState 'Токен: состояние неизвестно' ([System.Drawing.Color]::DarkOrange)
-            $lastCheckState.Text = "Последняя проверка: $([DateTime]::Now.ToString('G'))"
+            Set-StateText $serverState (Get-EawUiText -Text 'Сервер: недоступен') ([System.Drawing.Color]::Firebrick)
+            Set-StateText $versionState (Get-EawUiText -Text 'Клиент: {0}; обновление не проверено' -Values @($($clientStatusMetadata.Version))) ([System.Drawing.Color]::DarkOrange)
+            Set-StateText $tokenState (Get-EawUiText -Text 'Токен: состояние неизвестно') ([System.Drawing.Color]::DarkOrange)
+            $lastCheckState.Text = (Get-EawUiText -Text 'Последняя проверка: {0}' -Values @($([DateTime]::Now.ToString('G'))))
             return
         }
 
-        Set-StateText $serverState "Сервер: доступен ($($health.version))" ([System.Drawing.Color]::ForestGreen)
+        Set-StateText $serverState (Get-EawUiText -Text 'Сервер: доступен ({0})' -Values @($($health.version))) ([System.Drawing.Color]::ForestGreen)
         $versionComparison = Compare-EawHubDisplayVersion `
             -Installed $clientStatusMetadata.Version -Recommended ([string]$health.version)
         if ([int]$health.protocol -ne $clientStatusMetadata.Protocol) {
-            Set-StateText $versionState "Протокол несовместим: клиент $($clientStatusMetadata.Protocol), сервер $($health.protocol)" ([System.Drawing.Color]::Firebrick)
-            try { Start-ClientUpdateCheck } catch { $status.Text = "Ошибка проверки обновления: $($_.Exception.Message)" }
+            Set-StateText $versionState (Get-EawUiText -Text 'Протокол несовместим: клиент {0}, сервер {1}' -Values @($($clientStatusMetadata.Protocol), $($health.protocol))) ([System.Drawing.Color]::Firebrick)
+            try { Start-ClientUpdateCheck } catch { $status.Text = (Get-EawUiText -Text 'Ошибка проверки обновления: {0}' -Values @($($_.Exception.Message))) }
         } elseif ($null -eq $versionComparison) {
-            Set-StateText $versionState "Версии: клиент $($clientStatusMetadata.Version), сервер $($health.version)" ([System.Drawing.Color]::DarkOrange)
+            Set-StateText $versionState (Get-EawUiText -Text 'Версии: клиент {0}, сервер {1}' -Values @($($clientStatusMetadata.Version), $($health.version))) ([System.Drawing.Color]::DarkOrange)
         } elseif ($versionComparison -lt 0) {
-            Set-StateText $versionState "Доступно обновление: $($clientStatusMetadata.Version) → $($health.version)" ([System.Drawing.Color]::DarkOrange)
-            try { Start-ClientUpdateCheck } catch { $status.Text = "Ошибка проверки обновления: $($_.Exception.Message)" }
+            Set-StateText $versionState (Get-EawUiText -Text 'Доступно обновление: {0} → {1}' -Values @($($clientStatusMetadata.Version), $($health.version))) ([System.Drawing.Color]::DarkOrange)
+            try { Start-ClientUpdateCheck } catch { $status.Text = (Get-EawUiText -Text 'Ошибка проверки обновления: {0}' -Values @($($_.Exception.Message))) }
         } elseif ($versionComparison -gt 0) {
-            Set-StateText $versionState "Клиент $($clientStatusMetadata.Version); сервер требует обновления ($($health.version))" ([System.Drawing.Color]::SteelBlue)
+            Set-StateText $versionState (Get-EawUiText -Text 'Клиент {0}; сервер требует обновления ({1})' -Values @($($clientStatusMetadata.Version), $($health.version))) ([System.Drawing.Color]::SteelBlue)
         } else {
-            Set-StateText $versionState "Версия актуальна: $($clientStatusMetadata.Version), протокол $($health.protocol)" ([System.Drawing.Color]::ForestGreen)
+            Set-StateText $versionState (Get-EawUiText -Text 'Версия актуальна: {0}, EHSP {1}' -Values @($($clientStatusMetadata.Version), $($health.protocol))) ([System.Drawing.Color]::ForestGreen)
         }
 
         $credentialTarget = Get-EawHubCredentialTarget -Server $serverBox.Text.Trim() -Kind 'AgentToken'
         $credential = Get-EawHubCredential -Target $credentialTarget
         if (-not $credential -or [string]::IsNullOrWhiteSpace([string]$credential.Secret)) {
-            Set-StateText $tokenState 'Токен: отсутствует' ([System.Drawing.Color]::DarkOrange)
+            Set-StateText $tokenState (Get-EawUiText -Text 'Токен: отсутствует') ([System.Drawing.Color]::DarkOrange)
         } else {
             try {
                 $account = Invoke-HubAuthApi -Route '/api/auth/me' -Token $credential.Secret -Method Get
                 if ($account.user.temporaryPassword) {
-                    Set-StateText $tokenState 'Токен: действует; смените временный пароль' ([System.Drawing.Color]::DarkOrange)
+                    Set-StateText $tokenState (Get-EawUiText -Text 'Токен: действует; смените временный пароль') ([System.Drawing.Color]::DarkOrange)
                 } else {
-                    Set-StateText $tokenState "Токен: действует ($($account.user.displayName))" ([System.Drawing.Color]::ForestGreen)
+                    Set-StateText $tokenState (Get-EawUiText -Text 'Токен: действует ({0})' -Values @($($account.user.displayName))) ([System.Drawing.Color]::ForestGreen)
                 }
             } catch {
-                Set-StateText $tokenState 'Токен: истёк или отозван – войдите снова' ([System.Drawing.Color]::Firebrick)
+                Set-StateText $tokenState (Get-EawUiText -Text 'Токен: истёк или отозван – войдите снова') ([System.Drawing.Color]::Firebrick)
             }
         }
-        $lastCheckState.Text = "Последняя проверка: $([DateTime]::Now.ToString('G'))"
+        $lastCheckState.Text = (Get-EawUiText -Text 'Последняя проверка: {0}' -Values @($([DateTime]::Now.ToString('G'))))
     } finally {
         $checkStateButton.Enabled = $true
         $script:checkingState = $false
@@ -718,29 +732,29 @@ function Stop-AgentProcess {
         $script:agentProcess.WaitForExit(3000) | Out-Null
     }
     $script:agentProcess = $null
-    $status.Text = 'Desktop Agent остановлен.'
+    $status.Text = (Get-EawUiText -Text 'Desktop Agent остановлен.')
     Update-AgentStateView
 }
 
 function Start-AgentProcess {
     [void](Sync-AgentProcessReference)
     if ($script:agentProcess -and -not $script:agentProcess.HasExited) {
-        $status.Text = "Desktop Agent уже запущен (PID $($script:agentProcess.Id))."
+        $status.Text = (Get-EawUiText -Text 'Desktop Agent уже запущен (PID {0}).' -Values @($($script:agentProcess.Id)))
         return
     }
     $config = Current-Config
-    if (-not (Test-Path -LiteralPath $config.Repo -PathType Container)) { throw 'Выбранный репозиторий не найден.' }
-    if ($config.Server -notmatch '^wss?://') { throw 'Адрес сервера должен начинаться с ws:// или wss://.' }
+    if (-not (Test-Path -LiteralPath $config.Repo -PathType Container)) { throw (Get-EawUiText -Text 'Выбранный репозиторий не найден.') }
+    if ($config.Server -notmatch '^wss?://') { throw (Get-EawUiText -Text 'Адрес сервера должен начинаться с ws:// или wss://.') }
     Assert-SecureTransport -Server $config.Server
-    if ($config.Color -notmatch '^#[0-9A-Fa-f]{6}$') { throw 'Цвет должен иметь вид #RRGGBB.' }
+    if ($config.Color -notmatch '^#[0-9A-Fa-f]{6}$') { throw (Get-EawUiText -Text 'Цвет должен иметь вид #RRGGBB.') }
     $credentialTarget = Get-EawHubCredentialTarget -Server $config.Server -Kind 'AgentToken'
     $credential = Get-EawHubCredential -Target $credentialTarget
     if (-not $credential -or [string]::IsNullOrWhiteSpace($credential.Secret)) {
-        throw 'Сначала зарегистрируйтесь или войдите.'
+        throw (Get-EawUiText -Text 'Сначала зарегистрируйтесь или войдите.')
     }
     $account = Invoke-HubAuthApi -Route '/api/auth/me' -Token $credential.Secret -Method Get
     if ($account.user.temporaryPassword) {
-        throw 'Сначала замените временный пароль на собственный постоянный пароль.'
+        throw (Get-EawUiText -Text 'Сначала замените временный пароль на собственный постоянный пароль.')
     }
     Save-AgentConfig $config
     Set-StartupShortcut -Enabled $startupCheck.Checked
@@ -769,21 +783,21 @@ function Start-AgentProcess {
             $exitCode = $script:agentProcess.ExitCode
             $script:agentProcess = Find-RegisteredAgentProcess
             if ($script:agentProcess -and -not $script:agentProcess.HasExited) {
-                throw "Обнаружен уже работающий Desktop Agent (PID $($script:agentProcess.Id))."
+                throw (Get-EawUiText -Text 'Обнаружен уже работающий Desktop Agent (PID {0}).' -Values @($($script:agentProcess.Id)))
             }
-            throw "Desktop Agent завершился при запуске с кодом $exitCode. Проверьте журнал: $logDirectory"
+            throw (Get-EawUiText -Text 'Desktop Agent завершился при запуске с кодом {0}. Проверьте журнал: {1}' -Values @($exitCode, $logDirectory))
         }
     }
     finally {
         if ($null -eq $previousToken) { Remove-Item Env:EAW_HUB_TOKEN -ErrorAction SilentlyContinue }
         else { $env:EAW_HUB_TOKEN = $previousToken }
     }
-    $status.Text = "Desktop Agent запущен (PID $($script:agentProcess.Id)). Токен получен из Windows Credential Manager."
+    $status.Text = (Get-EawUiText -Text 'Desktop Agent запущен (PID {0}). Токен получен из Windows Credential Manager.' -Values @($($script:agentProcess.Id)))
     Update-AgentStateView
 }
 
 $colorTip = [System.Windows.Forms.ToolTip]::new()
-$colorTip.SetToolTip($colorPickerButton, 'Выбрать цвет участника')
+$colorTip.SetToolTip($colorPickerButton, (Get-EawUiText -Text 'Выбрать цвет участника'))
 $colorBox.Add_TextChanged({ Update-ColorPreview })
 $colorPickerButton.Add_Click({
     $dialog = [System.Windows.Forms.ColorDialog]::new()
@@ -806,7 +820,7 @@ Update-ColorPreview
 
 $browseButton.Add_Click({
     $dialog = [System.Windows.Forms.FolderBrowserDialog]::new()
-    $dialog.Description = 'Выберите корень локального репозитория EaW'
+    $dialog.Description = (Get-EawUiText -Text 'Выберите корень локального репозитория EaW')
     if ($repoBox.Text -and (Test-Path -LiteralPath $repoBox.Text)) { $dialog.SelectedPath = $repoBox.Text }
     if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $repoBox.Text = $dialog.SelectedPath }
 })
@@ -814,9 +828,9 @@ $browseButton.Add_Click({
 $activateButton.Add_Click({
     try {
         $activateButton.Enabled = $false
-        $status.Text = 'Проверка приглашения…'
+        $status.Text = (Get-EawUiText -Text 'Проверка приглашения…')
         $form.Refresh()
-        if ($passwordBox.Text -cne $passwordConfirmBox.Text) { throw 'Пароли не совпадают.' }
+        if ($passwordBox.Text -cne $passwordConfirmBox.Text) { throw (Get-EawUiText -Text 'Пароли не совпадают.') }
         Assert-ValidNewPassword -Password $passwordBox.Text
         $result = Invoke-HubAuthApi -Route '/api/auth/redeem' -Body @{
             inviteCode = $inviteBox.Text.Trim()
@@ -826,12 +840,12 @@ $activateButton.Add_Click({
         Save-AuthenticatedSession $result
         if (-not (Save-RecoveryCodeFile -Code ([string]$result.recoveryCode) `
             -DisplayName ([string]$result.user.displayName) -Token ([string]$result.token))) {
-            $status.Text = 'Аккаунт создан, но код восстановления не сохранён. В Review будет постоянно показано предупреждение.'
+            $status.Text = (Get-EawUiText -Text 'Аккаунт создан, но код восстановления не сохранён. В Review будет постоянно показано предупреждение.')
         }
         $inviteBox.Clear()
     }
     catch {
-        $status.Text = "Не удалось зарегистрироваться: $($_.Exception.Message)"
+        $status.Text = (Get-EawUiText -Text 'Не удалось зарегистрироваться: {0}' -Values @($($_.Exception.Message)))
     }
     finally {
         $passwordBox.Clear()
@@ -843,7 +857,7 @@ $activateButton.Add_Click({
 $loginButton.Add_Click({
     try {
         $loginButton.Enabled = $false
-        $status.Text = 'Проверка имени и пароля…'
+        $status.Text = (Get-EawUiText -Text 'Проверка имени и пароля…')
         $form.Refresh()
         $result = Invoke-HubAuthApi -Route '/api/auth/login' -Body @{
             displayName = $nameBox.Text.Trim()
@@ -851,14 +865,14 @@ $loginButton.Add_Click({
         }
         Save-AuthenticatedSession $result
         if ($result.user.temporaryPassword) {
-            $status.Text = 'Выполнен вход по временному паролю. Замените его перед запуском Agent.'
+            $status.Text = (Get-EawUiText -Text 'Выполнен вход по временному паролю. Замените его перед запуском Agent.')
             [void][System.Windows.Forms.MessageBox]::Show(
-                'Администратор установил временный пароль. Сейчас задайте собственный постоянный пароль.',
-                'Требуется смена пароля', 'OK', 'Warning')
+                (Get-EawUiText -Text 'Администратор установил временный пароль. Сейчас задайте собственный постоянный пароль.'),
+                (Get-EawUiText -Text 'Требуется смена пароля'), 'OK', 'Warning')
             [void](Show-ChangePasswordDialog)
         }
     } catch {
-        $status.Text = "Не удалось войти: $($_.Exception.Message)"
+        $status.Text = (Get-EawUiText -Text 'Не удалось войти: {0}' -Values @($($_.Exception.Message)))
     } finally {
         $passwordBox.Clear()
         $passwordConfirmBox.Clear()
@@ -869,9 +883,9 @@ $loginButton.Add_Click({
 $resetPasswordButton.Add_Click({
     try {
         $resetPasswordButton.Enabled = $false
-        if ($passwordBox.Text -cne $passwordConfirmBox.Text) { throw 'Пароли не совпадают.' }
+        if ($passwordBox.Text -cne $passwordConfirmBox.Text) { throw (Get-EawUiText -Text 'Пароли не совпадают.') }
         Assert-ValidNewPassword -Password $passwordBox.Text
-        $status.Text = 'Проверка одноразового кода восстановления…'
+        $status.Text = (Get-EawUiText -Text 'Проверка одноразового кода восстановления…')
         $form.Refresh()
         $result = Invoke-HubAuthApi -Route '/api/auth/password/recover' -Body @{
             displayName = $nameBox.Text.Trim()
@@ -881,7 +895,7 @@ $resetPasswordButton.Add_Click({
         Save-AuthenticatedSession $result
         $inviteBox.Clear()
     } catch {
-        $status.Text = "Не удалось восстановить пароль: $($_.Exception.Message)"
+        $status.Text = (Get-EawUiText -Text 'Не удалось восстановить пароль: {0}' -Values @($($_.Exception.Message)))
     } finally {
         $passwordBox.Clear()
         $passwordConfirmBox.Clear()
@@ -889,17 +903,17 @@ $resetPasswordButton.Add_Click({
     }
 })
 
-$startButton.Add_Click({ try { Start-AgentProcess } catch { $status.Text = "Ошибка запуска: $($_.Exception.Message)" } })
-$stopButton.Add_Click({ try { Stop-AgentProcess } catch { $status.Text = "Ошибка остановки: $($_.Exception.Message)" } })
+$startButton.Add_Click({ try { Start-AgentProcess } catch { $status.Text = (Get-EawUiText -Text 'Ошибка запуска: {0}' -Values @($($_.Exception.Message))) } })
+$stopButton.Add_Click({ try { Stop-AgentProcess } catch { $status.Text = (Get-EawUiText -Text 'Ошибка остановки: {0}' -Values @($($_.Exception.Message))) } })
 $reviewButton.Add_Click({
     try {
         $reviewButton.Enabled = $false
-        $status.Text = 'Открытие Review…'
+        $status.Text = (Get-EawUiText -Text 'Открытие Review…')
         $form.Refresh()
         & (Join-Path $PSScriptRoot 'start-hub.ps1')
-        $status.Text = 'Review запущен.'
+        $status.Text = (Get-EawUiText -Text 'Review запущен.')
     } catch {
-        $status.Text = "Ошибка запуска Review: $($_.Exception.Message)"
+        $status.Text = (Get-EawUiText -Text 'Ошибка запуска Review: {0}' -Values @($($_.Exception.Message)))
     } finally {
         [void](Sync-AgentProcessReference)
         $reviewButton.Enabled = $script:agentProcess -and -not $script:agentProcess.HasExited
@@ -914,35 +928,35 @@ $logoutButton.Add_Click({
         if ($credential -and -not [string]::IsNullOrWhiteSpace($credential.Secret)) {
             try {
                 [void](Invoke-HubAuthApi -Route '/api/auth/logout' -Token $credential.Secret -Body @{})
-            } catch { $remoteStatus = ' Сервер недоступен, поэтому удалён только локальный токен.' }
+            } catch { $remoteStatus = (Get-EawUiText -Text ' Сервер недоступен, поэтому удалён только локальный токен.') }
         }
     } finally {
         Remove-EawHubCredential -Target $credentialTarget
-        $status.Text = 'Выход выполнен, токен удалён из Windows Credential Manager.' + $remoteStatus
+        $status.Text = (Get-EawUiText -Text 'Выход выполнен, токен удалён из Windows Credential Manager.') + $remoteStatus
         Update-AgentStateView
     }
 })
 $changePasswordButton.Add_Click({
     try {
         if (Show-ChangePasswordDialog) {
-            $status.Text = 'Пароль изменён. Текущая сессия сохранена, остальные завершены.'
+            $status.Text = (Get-EawUiText -Text 'Пароль изменён. Текущая сессия сохранена, остальные завершены.')
         }
-    } catch { $status.Text = "Не удалось изменить пароль: $($_.Exception.Message)" }
+    } catch { $status.Text = (Get-EawUiText -Text 'Не удалось изменить пароль: {0}' -Values @($($_.Exception.Message))) }
 })
 $startupCheck.Add_CheckedChanged({
-    try { Set-StartupShortcut -Enabled $startupCheck.Checked } catch { $status.Text = "Не удалось изменить автозапуск: $($_.Exception.Message)" }
+    try { Set-StartupShortcut -Enabled $startupCheck.Checked } catch { $status.Text = (Get-EawUiText -Text 'Не удалось изменить автозапуск: {0}' -Values @($($_.Exception.Message))) }
 })
 $trayModeCheck.Add_CheckedChanged({ Save-AgentConfig (Current-Config) })
 $checkStateButton.Add_Click({
     Update-AgentStateView
-    try { Start-ClientUpdateCheck } catch { $status.Text = "Ошибка проверки обновления: $($_.Exception.Message)" }
+    try { Start-ClientUpdateCheck } catch { $status.Text = (Get-EawUiText -Text 'Ошибка проверки обновления: {0}' -Values @($($_.Exception.Message))) }
 })
 $updateClientButton.Add_Click({
     $answer = [System.Windows.Forms.MessageBox]::Show($form,
-        'Скачать и установить новую версию с GitHub Releases? Если обновление найдено, Agent и Review будут закрыты на время установки, затем запущены снова. Windows может запросить права администратора. Без вашего подтверждения клиент не обновляется.',
-        'Обновление EaW Localisation Hub', 'YesNo', 'Question', 'Button2')
+        (Get-EawUiText -Text 'Скачать и установить новую версию с GitHub Releases? Если обновление найдено, Agent и Review будут закрыты на время установки, затем запущены снова. Windows может запросить права администратора. Без вашего подтверждения клиент не обновляется.'),
+        (Get-EawUiText -Text 'Обновление EaW Localisation Hub'), 'YesNo', 'Question', 'Button2')
     if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-    try { Start-ClientUpdateCheck -Install } catch { $status.Text = "Не удалось запустить обновление: $($_.Exception.Message)" }
+    try { Start-ClientUpdateCheck -Install } catch { $status.Text = (Get-EawUiText -Text 'Не удалось запустить обновление: {0}' -Values @($($_.Exception.Message))) }
 })
 
 $showTrayItem.Add_Click({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
@@ -960,7 +974,7 @@ $form.Add_FormClosing({
     if (-not $script:allowExit -and $trayModeCheck.Checked) {
         $eventArgs.Cancel = $true
         $form.Hide()
-        $tray.ShowBalloonTip(2500, 'EaW Hub', 'Desktop Agent продолжает работать в области уведомлений.', 'Info')
+        $tray.ShowBalloonTip(2500, 'EaW Hub', (Get-EawUiText -Text 'Desktop Agent продолжает работать в области уведомлений.'), 'Info')
     } elseif (-not $script:allowExit) {
         $script:allowExit = $true
         try { Stop-AgentProcess } catch {}
@@ -992,7 +1006,7 @@ $timer.Add_Tick({
                     $updateStatus.Stage -in @('checking', 'available', 'current', 'downloading', 'verifying', 'installing', 'switching', 'restarting', 'complete', 'error')) {
                     $status.Text = [string]$updateStatus.Message
                     if ($updateStatus.Stage -eq 'error' -and $updateStatus.InstallRequested) {
-                        $tray.ShowBalloonTip(5000, 'EaW Hub – ошибка обновления', [string]$updateStatus.Message, 'Error')
+                        $tray.ShowBalloonTip(5000, (Get-EawUiText -Text 'EaW Hub – ошибка обновления'), [string]$updateStatus.Message, 'Error')
                     }
                 }
             }
@@ -1001,7 +1015,7 @@ $timer.Add_Tick({
     if ($script:agentProcess -and $script:agentProcess.HasExited) {
         $exitCode = $script:agentProcess.ExitCode
         $script:agentProcess = $null
-        $status.Text = "Desktop Agent завершился с кодом $exitCode. Проверьте журнал: $logDirectory"
+        $status.Text = (Get-EawUiText -Text 'Desktop Agent завершился с кодом {0}. Проверьте журнал: {1}' -Values @($exitCode, $logDirectory))
     }
 })
 $timer.Start()
@@ -1014,14 +1028,14 @@ Update-AgentStateView
 
 $updateTimer = [System.Windows.Forms.Timer]::new()
 $updateTimer.Interval = 15 * 60 * 1000
-$updateTimer.Add_Tick({ try { Start-ClientUpdateCheck } catch { $status.Text = "Ошибка проверки обновления: $($_.Exception.Message)" } })
+$updateTimer.Add_Tick({ try { Start-ClientUpdateCheck } catch { $status.Text = (Get-EawUiText -Text 'Ошибка проверки обновления: {0}' -Values @($($_.Exception.Message))) } })
 $updateTimer.Start()
-$form.Add_Shown({ try { Start-ClientUpdateCheck } catch { $status.Text = "Ошибка проверки обновления: $($_.Exception.Message)" } })
+$form.Add_Shown({ try { Start-ClientUpdateCheck } catch { $status.Text = (Get-EawUiText -Text 'Ошибка проверки обновления: {0}' -Values @($($_.Exception.Message))) } })
 
 if ($StartMinimized) {
     $form.Add_Shown({
         $form.Hide()
-        try { Start-AgentProcess } catch { $tray.ShowBalloonTip(5000, 'EaW Hub – ошибка запуска', $_.Exception.Message, 'Error') }
+        try { Start-AgentProcess } catch { $tray.ShowBalloonTip(5000, (Get-EawUiText -Text 'EaW Hub – ошибка запуска'), $_.Exception.Message, 'Error') }
     })
 }
 [void]$form.ShowDialog()

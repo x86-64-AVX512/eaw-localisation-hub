@@ -6,6 +6,53 @@ import {
   isLineBreakBoundary, singleReplacement, suggestionAction, suggestionProjection,
 } from '../apps/review/src/editing-mode.ts';
 import { suggestionTraceParts } from '../packages/shared/src/suggestion-trace.mts';
+import { createReviewNavigation } from '../apps/review/src/review-navigation.ts';
+
+test('one outside click finishes multiline deletion editing without reopening it on mouse-up', () => {
+  const base = 'header\n first:0 "First"\n last:0 "Last"\n next:0 "Next"\n';
+  const start = base.indexOf('first:');
+  const end = base.indexOf('\n next:');
+  const item = { id: 'existing-delete', authorId: 'user-1', status: 'open',
+    startByte: start, endByte: end, originalBase64: Buffer.from(base.slice(start, end)).toString('base64'), replacementBase64: '' };
+  const h = controllerHarness(base);
+  h.state.suggestions = new Map([[item.id, item]]); h.state.comments = new Map();
+  let mouseDown; let mouseUp; let reopenCount = 0;
+  const navigation = createReviewNavigation({ state: h.state,
+    editor: {
+      getDomNode: () => ({ addEventListener(type, listener, capture) {
+        assert.equal(type, 'mousedown'); assert.equal(capture, true); mouseDown = listener;
+      }, removeEventListener() {} }),
+      onMouseUp(listener) { mouseUp = listener; return { dispose() {} }; },
+    },
+    // The mouse target was computed on the projected model, but the cursor
+    // listener has already restored canonical text before mouse-up arrives.
+    positionByteAt: () => start + 2, focusCard: () => true,
+    onSuggestion: () => { reopenCount++; h.controller.editSuggestion(item); } });
+  assert.equal(h.controller.editSuggestion(item), true);
+  assert.equal(h.editor.getValue(), base.slice(0, start) + base.slice(end));
+  mouseDown();
+  h.editor.moveTo(h.editor.getValue().length);
+  mouseUp({ event: { leftButton: true, browserEvent: { detail: 1 } }, target: { position: { lineNumber: 1, column: 4 } } });
+  assert.equal(reopenCount, 0);
+  assert.equal(h.state.editingSuggestionId, '');
+  assert.equal(h.editor.getValue(), base);
+  assert.deepEqual(h.messages.filter(m => /suggestion(?:Update|Create)/u.test(m.type)), []);
+  navigation.dispose(); h.controller.dispose();
+});
+
+test('outside mouse-down can flush an unchanged deletion without changing its saved proposal', () => {
+  const base = 'header\n first\n last\n next\n'; const start = base.indexOf('first'); const end = base.indexOf('\n next');
+  const item = { id: 'outside-flush', authorId: 'user-1', status: 'open', startByte: start, endByte: end,
+    originalBase64: Buffer.from(base.slice(start, end)).toString('base64'), replacementBase64: '' };
+  const h = controllerHarness(base);
+  try {
+    assert.equal(h.controller.editSuggestion(item), true);
+    assert.equal(h.controller.finishSuggestionAt({ lineNumber: 1, column: start + 1 }), false);
+    assert.equal(h.controller.finishSuggestionAt({ lineNumber: 1, column: h.editor.getValue().length + 1 }), true);
+    assert.equal(h.state.editingSuggestionId, ''); assert.equal(h.editor.getValue(), base);
+    assert.deepEqual(h.messages.filter(message => /suggestion(?:Update|Create)/u.test(message.type)), []);
+  } finally { h.controller.dispose(); }
+});
 
 function controllerHarness(initial = 'abc') {
   const buttons = new Map();

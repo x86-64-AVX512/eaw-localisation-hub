@@ -14,6 +14,7 @@ export const ACCOUNT_ROLES = Object.freeze([
   'translator',
   'trainee-translator',
   'translation-editor',
+  'mod-contributor',
 ]);
 
 export const RECOVERY_STATUSES = Object.freeze([

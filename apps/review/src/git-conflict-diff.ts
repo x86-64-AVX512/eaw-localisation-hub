@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import type * as Monaco from 'monaco-editor';
 import { reviewFontFamily } from './editor-font.ts';
 import { requiredElement } from './dom-elements.ts';
@@ -26,12 +27,12 @@ export function createGitConflictDiff({ monaco, state, send }: {
 
   function open(conflict: ReviewExternalConflict): void {
     selected = conflict;
-    heading.textContent = `Конфликт Git: ${conflict.label}`;
+    heading.textContent = uiText("Конфликт Git: {0}", conflict.label);
     disposeModels();
     originalModel = monaco.editor.createModel(conflict.collaborativeLine || '', 'eaw-yaml');
     modifiedModel = monaco.editor.createModel(conflict.externalLine || '', 'eaw-yaml');
     diffEditor ??= monaco.editor.createDiffEditor(container, {
-      theme: 'vs-dark', automaticLayout: true, readOnly: true, fontFamily: reviewFontFamily(),
+      automaticLayout: true, readOnly: true, fontFamily: reviewFontFamily(),
       renderSideBySide: true, originalEditable: false,
       hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 2 },
       minimap: { enabled: false }, scrollBeyondLastLine: false,
@@ -59,7 +60,7 @@ export function createGitConflictDiff({ monaco, state, send }: {
   const fullscreen = requiredElement<HTMLButtonElement>('#git-conflict-fullscreen');
   fullscreen.addEventListener('click', () => {
     dialog.classList.toggle('fullscreen');
-    fullscreen.textContent = dialog.classList.contains('fullscreen') ? 'Обычный размер' : 'На весь экран';
+    fullscreen.textContent = dialog.classList.contains('fullscreen') ? uiText("Обычный размер") : uiText("На весь экран");
     requestAnimationFrame(() => diffEditor?.layout());
   });
   return { open, dispose() { disposeModels(); diffEditor?.dispose(); } };

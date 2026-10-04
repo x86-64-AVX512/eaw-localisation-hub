@@ -343,6 +343,40 @@ test('server file-outdated status is not a deadlock, but unsent local edits are 
   }
 });
 
+test('auto-pull unblocks Review opened with an outdated file and rebases its initial disk snapshot', async (t) => {
+  const f = await fixture(t); const target = f.publish(); const a = attachedBinding(f);
+  a.binding.gitWritable = false; a.binding.gitState = { status: 'file-outdated' };
+  a.state.initialised = false; a.state.initialReconciled = false;
+  a.state.mirror = 'original\n';
+  await f.service.tick();
+  assert.equal(git(f.repo, 'rev-parse', 'HEAD'), target);
+  assert.equal(f.service.status.stage, 'updated');
+  assert.equal(a.state.diskBase, 'new remote\n');
+  assert.equal(a.state.initialReconciled, true, 'the old initial snapshot must not be imported after checkout');
+  assert.equal(a.binding.reconnected, true);
+});
+
+test('outdated startup only bypasses the UI initialisation wait, never actual safety blockers', async (t) => {
+  for (const kind of ['current', 'offline', 'unsent', 'projection', 'conflict', 'external', 'flush', 'dirty', 'new-input']) {
+    const f = await fixture(t); f.publish(); const a = attachedBinding(f);
+    a.binding.gitWritable = false; a.binding.gitState = { status: 'file-outdated' };
+    a.state.initialised = false; a.state.initialReconciled = false;
+    if (kind === 'current') { a.binding.gitWritable = true; a.binding.gitState.status = 'current'; }
+    if (kind === 'offline') a.binding.synced = false;
+    if (kind === 'unsent') { a.binding.localUpdatePending = true; a.binding.pendingUpdateSent = false; }
+    if (kind === 'projection') a.binding.personalRequestId = 'pending';
+    if (kind === 'conflict') a.binding.personalConflicts = [{ key: 'key' }];
+    if (kind === 'external') a.state.pendingExternal = { conflicts: [] };
+    if (kind === 'flush') a.binding.flushToServer = async () => false;
+    if (kind === 'dirty') fs.writeFileSync(path.join(f.repo, 'file.txt'), 'local change\n');
+    if (kind === 'new-input') a.binding.flushToServer = async () => { f.hub.repositoryEditEpoch++; return true; };
+    await f.service.tick();
+    assert.equal(git(f.repo, 'rev-parse', 'HEAD'), f.head, kind);
+    assert.equal(a.state.initialReconciled, false, kind);
+    assert.equal(f.service.status.stage, 'blocked', kind);
+  }
+});
+
 test('canonical conflicts stay actionable even when the server makes the document read-only', async (t) => {
   const f = await fixture(t); f.publish(); const a = attachedBinding(f);
   a.binding.gitWritable = false; a.binding.gitState = { status: 'conflict' };

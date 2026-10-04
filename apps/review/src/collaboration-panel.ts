@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { byteToUtf16, safeColor, utf16ToByte } from './review-utilities.ts';
 import { avatarElement } from './avatar-view.ts';
 import { requiredElement } from './dom-elements.ts';
@@ -65,20 +66,20 @@ export function createCollaborationPanel({
 
   function renderPresences() {
     presenceList.replaceChildren();
-    presenceList.append(listButton(`${state.user} (вы)`, 'Текущий Review-клиент', state.color,
+    presenceList.append(listButton(uiText("{0} (вы)", state.user), uiText("Текущий Review-клиент"), state.color,
       false, () => editor.focus(), state.avatarBase64));
     const values = [...state.presences.values()].sort((left, right) => left.user.localeCompare(right.user, 'ru'));
     for (const presence of values) {
-      let line = 'позиция обновляется';
+      let line = uiText("позиция обновляется");
       try {
         const model = editor.getModel();
-        if (!model) throw new Error('Редактор ещё не открыл документ.');
+        if (!model) throw new Error(uiText("Редактор ещё не открыл документ."));
         const position = model.getPositionAt(byteToUtf16(editor.getValue(), presence.positionByte));
-        line = `строка ${position.lineNumber}`;
+        line = uiText("строка {0}", position.lineNumber);
       } catch { /* A following presence update will supply positions for the new text. */ }
       presenceList.append(listButton(presence.user, line, presence.color, false, () => {
         try { jumpToBytes(presence.positionByte, presence.anchorByte); }
-        catch { showToast('Позиция участника обновляется.', true); }
+        catch { showToast(uiText("Позиция участника обновляется."), true); }
       }, presence.avatarBase64));
     }
     presenceCount.textContent = String(values.length + 1);
@@ -90,7 +91,7 @@ export function createCollaborationPanel({
     state.reservationTargets.forEach((target, index) => {
       const option = document.createElement('option');
       option.value = String(index);
-      option.textContent = `${target.displayName}${target.isSelf ? ' (вы)' : ''}`;
+      option.textContent = `${target.displayName}${target.isSelf ? uiText(" (вы)") : ''}`;
       reservationTarget.append(option);
     });
     if ([...reservationTarget.options].some((option) => option.value === previous)) reservationTarget.value = previous;
@@ -104,8 +105,8 @@ export function createCollaborationPanel({
     for (const item of values) {
       live.add(item.id);
       const details = [
-        `${item.keyCount} ключ(а/ей)`, item.status === 'orphaned' ? 'границы потеряны' : item.status,
-        item.createdBy && item.createdBy !== item.assignee ? `создал ${item.createdBy}` : '', item.comment,
+        uiText("{0} ключ(а/ей)", item.keyCount), item.status === 'orphaned' ? uiText("границы потеряны") : item.status,
+        item.createdBy && item.createdBy !== item.assignee ? uiText("создал {0}", item.createdBy) : '', item.comment,
       ].filter(Boolean).join(' · ');
       const fingerprint = JSON.stringify([
         item.assignee, details, item.color, state.selectedReservation === item.id,
@@ -122,7 +123,7 @@ export function createCollaborationPanel({
           renderReservations();
           if (current.status !== 'orphaned') {
             try { jumpToBytes(current.startByte, current.endByte); }
-            catch { showToast('Границы брони обновляются.', true); }
+            catch { showToast(uiText("Границы брони обновляются."), true); }
           }
         }, state.reservationTargets.find((target) => target.id === item.assigneeId)?.avatarBase64 ?? '');
         cached = { fingerprint, button };
@@ -133,7 +134,7 @@ export function createCollaborationPanel({
     for (const id of reservationNodes.keys()) if (!live.has(id)) reservationNodes.delete(id);
     if (!nodes.length) {
       if (!reservationList.firstElementChild?.classList.contains('empty-list')) {
-        reservationList.replaceChildren(); emptyList(reservationList, 'Броней нет.');
+        reservationList.replaceChildren(); emptyList(reservationList, uiText("Броней нет."));
       }
     } else {
       nodes.forEach((node, index) => {
@@ -184,9 +185,9 @@ export function createCollaborationPanel({
 
   requiredElement<HTMLButtonElement>('#reservation-create').addEventListener('click', () => {
     const range = selectionBytes();
-    if (range.start === range.end) return showToast('Сначала выделите один или несколько ключей.', true);
+    if (range.start === range.end) return showToast(uiText("Сначала выделите один или несколько ключей."), true);
     const target = state.reservationTargets[Number(reservationTarget.value)];
-    if (!target) return showToast('Не удалось определить владельца брони.', true);
+    if (!target) return showToast(uiText("Не удалось определить владельца брони."), true);
     send({
       type: 'reservationCreate', path: state.path, startByte: range.start, endByte: range.end,
       assigneeId: target.id, assignee: target.displayName, assigneeColor: target.color,

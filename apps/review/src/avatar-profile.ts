@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 const MAX_INPUT_BYTES = 10 * 1024 * 1024;
 const MAX_AVATAR_BYTES = 16 * 1024;
 
@@ -16,7 +17,7 @@ async function canvasBlob(canvas: HTMLCanvasElement, quality: number): Promise<B
 
 export async function prepareAvatar(file: File): Promise<string> {
   if (!file || file.size > MAX_INPUT_BYTES || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-    throw new Error('Выберите PNG, JPEG или WebP размером не более 10 МиБ.');
+    throw new Error(uiText("Выберите PNG, JPEG или WebP размером не более 10 МиБ."));
   }
   const bitmap = await createImageBitmap(file);
   try {
@@ -25,7 +26,7 @@ export async function prepareAvatar(file: File): Promise<string> {
     canvas.width = size;
     canvas.height = size;
     const context = canvas.getContext('2d', { alpha: false });
-    if (!context) throw new Error('Не удалось подготовить изображение аватара.');
+    if (!context) throw new Error(uiText("Не удалось подготовить изображение аватара."));
     const sourceSize = Math.min(bitmap.width, bitmap.height);
     context.drawImage(bitmap,
       (bitmap.width - sourceSize) / 2, (bitmap.height - sourceSize) / 2, sourceSize, sourceSize,
@@ -34,7 +35,7 @@ export async function prepareAvatar(file: File): Promise<string> {
       const blob = await canvasBlob(canvas, quality);
       if (blob && blob.size <= MAX_AVATAR_BYTES) return blobToBase64(blob);
     }
-    throw new Error('Изображение не удалось уложить в безопасный лимит 16 КиБ.');
+    throw new Error(uiText("Изображение не удалось уложить в безопасный лимит 16 КиБ."));
   } finally {
     bitmap.close();
   }
@@ -50,7 +51,7 @@ export function createAvatarProfile({ state, send, showToast }: AvatarProfileOpt
   const input = document.querySelector<HTMLInputElement>('#avatar-file');
   const change = document.querySelector<HTMLButtonElement>('#avatar-change');
   const remove = document.querySelector<HTMLButtonElement>('#avatar-delete');
-  if (!input || !change || !remove) throw new Error('Не найдены элементы управления аватаром.');
+  if (!input || !change || !remove) throw new Error(uiText("Не найдены элементы управления аватаром."));
   change.addEventListener('click', () => input.click());
   remove.addEventListener('click', () => send({ type: 'avatarDelete', path: state.path }));
   input.addEventListener('change', async () => {

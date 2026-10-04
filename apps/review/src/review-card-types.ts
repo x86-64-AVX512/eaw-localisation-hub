@@ -20,6 +20,8 @@ export interface ReviewSuggestion extends ReviewItemBase {
 export type CardItem = (ReviewComment & { kind: 'comment' }) | (ReviewSuggestion & { kind: 'suggestion' });
 
 export interface ReviewCardsState {
+  roles?: string[];
+  relativePath?: string;
   path: string;
   user: string;
   userId: string;

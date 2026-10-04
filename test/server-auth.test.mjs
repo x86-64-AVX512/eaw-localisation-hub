@@ -372,12 +372,17 @@ test('password auth supports multiple roles, private reset, identity enforcement
     assert.equal(avatarUpdate.value.user.avatarBase64, avatarBase64);
     await directoryUpdated;
 
+    const rolesClosed = once(aliceSocket, 'close');
     const changedRoles = await api(port, 'PUT', `/api/admin/users/${aliceRedeem.value.user.id}/roles`, {
       token: adminToken,
       body: { roles: ['senior translator', 'translator', 'translation-editor'] },
     });
     assert.equal(changedRoles.status, 200);
     assert.deepEqual(changedRoles.value.user.roles, ['senior translator', 'translator', 'translation-editor']);
+    assert.equal((await rolesClosed)[0], 1012);
+    aliceSocket = await connectSocket(port, 'general-dev:localisation/russian/auth.yml', aliceLoginToken);
+    const refreshedIdentity = await waitJson(aliceSocket, (message) => message.type === 'synced');
+    assert.deepEqual(refreshedIdentity.identity.roles, changedRoles.value.user.roles);
 
     const seniorAccountInvite = await api(port, 'POST', '/api/management/invites', {
       token: adminToken,
@@ -423,6 +428,15 @@ test('password auth supports multiple roles, private reset, identity enforcement
     assert.equal(listedSeniorInvite.remainingUses, 3);
     assert.equal(listedSeniorInvite.status, 'active');
     assert.equal((await api(port, 'POST', `/api/management/invites/${listedSeniorInvite.id}/revoke`, {
+      token: seniorToken,
+    })).status, 200);
+
+    const contributorInvite = await api(port, 'POST', '/api/management/invites', {
+      token: seniorToken, body: { roles: ['mod-contributor'], maxUses: 1, expiresInHours: 24 },
+    });
+    assert.equal(contributorInvite.status, 201);
+    assert.deepEqual(contributorInvite.value.invite.roles, ['mod-contributor']);
+    assert.equal((await api(port, 'POST', `/api/management/invites/${contributorInvite.value.invite.id}/revoke`, {
       token: seniorToken,
     })).status, 200);
 

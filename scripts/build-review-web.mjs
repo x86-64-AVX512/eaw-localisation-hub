@@ -11,7 +11,7 @@ await fs.rm(outputRoot, { recursive: true, force: true });
 await fs.mkdir(outputRoot, { recursive: true });
 await Promise.all([
   esbuild.build({
-    entryPoints: [path.join(sourceRoot, 'app.ts')],
+    entryPoints: [path.join(sourceRoot, 'bootstrap.ts')],
     bundle: true,
     minify: true,
     sourcemap: false,

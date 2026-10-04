@@ -1,11 +1,11 @@
 #ifndef AppVersion
-  #define AppVersion "0.8.8F7"
+  #define AppVersion "0.8.8F8"
 #endif
 #ifndef PayloadDir
   #define PayloadDir "..\dist\EaW-Hub-Client-" + AppVersion
 #endif
 #ifndef WindowsFileVersion
-  #define WindowsFileVersion "0.8.8.7"
+  #define WindowsFileVersion "0.8.8.8"
 #endif
 
 #define AppGuid "{{B84E4DE8-27A1-4DC2-ACF7-AB7779F76FC8}"
@@ -38,14 +38,31 @@ UninstallDisplayIcon={app}\review\EaWReview.exe
 SetupLogging=yes
 UsedUserAreasWarning=no
 MinVersion=10.0.17763
+LanguageDetectionMethod=uilanguage
 
 [Languages]
-Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
+
+[CustomMessages]
+english.Extras=Additional options:
+russian.Extras=Дополнительно:
+english.Autostart=Start Agent when signing in to Windows
+russian.Autostart=Запускать Agent при входе в Windows
+english.DesktopIcon=Create a Review shortcut on the desktop
+russian.DesktopIcon=Создать ярлык Review на рабочем столе
+english.LaunchAgent=Launch EaW Localisation Hub Agent
+russian.LaunchAgent=Запустить EaW Localisation Hub Agent
+english.WebViewPrompt=Review requires Microsoft Edge WebView2 Runtime. Open the official Microsoft installer?
+russian.WebViewPrompt=Для Review необходим Microsoft Edge WebView2 Runtime. Открыть официальный установщик Microsoft?
+english.WebViewRequired=Install WebView2 Runtime and run EaW Hub Setup again.
+russian.WebViewRequired=Установите WebView2 Runtime и повторите установку EaW Hub.
+english.DeleteSettings=Delete local EaW Hub settings? Saved tokens in Windows Credential Manager will remain; remove them using the Sign out button before uninstalling the application.
+russian.DeleteSettings=Удалить локальные настройки EaW Hub? Сохранённые токены в Windows Credential Manager останутся; их следует удалить кнопкой «Выйти» до удаления программы.
 
 [Tasks]
-Name: "autostart"; Description: "Запускать Agent при входе в Windows"; GroupDescription: "Дополнительно:"; Flags: unchecked
-Name: "desktopicon"; Description: "Создать ярлык Review на рабочем столе"; GroupDescription: "Дополнительно:"; Flags: unchecked
+Name: "autostart"; Description: "{cm:Autostart}"; GroupDescription: "{cm:Extras}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:DesktopIcon}"; GroupDescription: "{cm:Extras}"; Flags: unchecked
 
 [Files]
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -61,7 +78,7 @@ Name: "{autodesktop}\EaW Localisation Hub Review"; Filename: "{app}\Launch EaW H
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "EaWLocalisationHubAgent"; ValueData: "{app}\Launch EaW Hub Agent.cmd"; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
-Filename: "{app}\Launch EaW Hub Agent.cmd"; Description: "Запустить EaW Localisation Hub Agent"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent unchecked
+Filename: "{app}\Launch EaW Hub Agent.cmd"; Description: "{cm:LaunchAgent}"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent unchecked
 
 [Code]
 const
@@ -89,10 +106,10 @@ begin
   if not IsWebView2Installed then
   begin
     if not WizardSilent then
-      if MsgBox('Для Review необходим Microsoft Edge WebView2 Runtime. Открыть официальный установщик Microsoft?',
+      if MsgBox(ExpandConstant('{cm:WebViewPrompt}'),
         mbConfirmation, MB_YESNO) = IDYES then
         ShellExec('open', '{#WebView2DownloadUrl}', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
-    Result := 'Установите WebView2 Runtime и повторите установку EaW Hub.';
+    Result := ExpandConstant('{cm:WebViewRequired}');
   end;
 end;
 
@@ -100,7 +117,7 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
     DeleteUserState := MsgBox(
-      'Удалить локальные настройки EaW Hub? Сохранённые токены в Windows Credential Manager останутся; их следует удалить кнопкой «Выйти» до удаления программы.',
+      ExpandConstant('{cm:DeleteSettings}'),
       mbConfirmation, MB_YESNO) = IDYES;
 
   if (CurUninstallStep = usPostUninstall) and DeleteUserState then

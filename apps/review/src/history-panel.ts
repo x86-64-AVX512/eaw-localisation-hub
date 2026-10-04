@@ -1,3 +1,5 @@
+import { uiText, uiLocale } from '../../../packages/shared/src/ui-language.mts';
+import { canEditDocument } from '../../../packages/shared/src/document-permissions.mts';
 import type * as Monaco from 'monaco-editor';
 import { createStandardDiffView } from './standard-diff-view.ts';
 import { confirmAction } from './confirm-action.ts';
@@ -14,6 +16,8 @@ export interface HistoryEntry {
 }
 interface HistoryState {
   path: string;
+  roles?: string[];
+  relativePath?: string;
   history: HistoryEntry[];
   historyHeadId: string;
   ticket?: { status?: string } | null;
@@ -23,7 +27,7 @@ type HistoryCommand =
   | { type: 'historyRestore'; path: string; id: string; headId: string };
 
 const reasonLabels: Record<string, string> = {
-  baseline: 'Исходное состояние', edit: 'Редактирование', suggestion: 'Принята правка', restore: 'Восстановление',
+  baseline: uiText("Исходное состояние"), edit: uiText("Редактирование"), suggestion: uiText("Принята правка"), restore: uiText("Восстановление"),
 };
 export { createGitHistoryPanel } from './git-history-panel.ts';
 
@@ -33,11 +37,11 @@ export function historyEntryLabels(entry: HistoryEntry): { primary: string; seco
     return { primary: entry.author, secondary: reason, selection: `${entry.author} · ${reason}` };
   }
   const creator = entry.suggestionAuthor ?? entry.author;
-  const accepter = entry.suggestionAuthor ? entry.author : 'не записано';
+  const accepter = entry.suggestionAuthor ? entry.author : uiText("не записано");
   return {
-    primary: `Создал: ${creator}`,
-    secondary: `Принял: ${accepter} · ${reason}`,
-    selection: `Создал: ${creator} · Принял: ${accepter} · ${reason}`,
+    primary: uiText("Создал: {0}", creator),
+    secondary: uiText("Принял: {0} · {1}", accepter, reason),
+    selection: uiText("Создал: {0} · Принял: {1} · {2}", creator, accepter, reason),
   };
 }
 
@@ -89,7 +93,7 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
       secondary.textContent = labels.secondary;
       primary.title = labels.primary;
       secondary.title = labels.secondary;
-      requiredElement<HTMLElement>('small', item).textContent = Number.isNaN(date.valueOf()) ? '' : date.toLocaleString();
+      requiredElement<HTMLElement>('small', item).textContent = Number.isNaN(date.valueOf()) ? '' : date.toLocaleString(uiLocale());
       item.addEventListener('click', () => select(entry));
       list.append(item);
     }
@@ -101,7 +105,7 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
     const index = state.history.findIndex((item) => item.id === entry.id);
     previousId = state.history[index + 1]?.id ?? '';
     diffView.clear();
-    restore.disabled = entry.id === state.historyHeadId || ['applied', 'closed'].includes(state.ticket?.status ?? '');
+    restore.disabled = !canEditDocument(state, state.relativePath ?? '') || entry.id === state.historyHeadId || ['applied', 'closed'].includes(state.ticket?.status ?? '');
     selectionLabel.textContent = labels.selection;
     send({ type: 'historyRequest', path: state.path, id: entry.id });
     if (previousId) send({ type: 'historyRequest', path: state.path, id: previousId });
@@ -122,21 +126,21 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
     selectedId = '';
     previousId = '';
     diffView.clear();
-    selectionLabel.textContent = 'Выберите версию слева';
+    selectionLabel.textContent = uiText("Выберите версию слева");
     restore.disabled = true;
     render();
     dialog.showModal();
     diffView.setActive(true);
   });
   restore.addEventListener('click', async () => {
-    if (!selectedId) return;
+    if (!selectedId || !canEditDocument(state, state.relativePath ?? '')) return;
     const entry = state.history.find((item) => item.id === selectedId);
-    const date = entry ? new Date(entry.updatedAt || entry.createdAt).toLocaleString() : '';
+    const date = entry ? new Date(entry.updatedAt || entry.createdAt).toLocaleString(uiLocale()) : '';
     const id = selectedId, headId = state.historyHeadId;
-    if (!await confirmAction(restore, `Применить версию от ${date}? Текущее состояние останется в истории.`, { label: 'Применить' }) || selectedId !== id) return;
+    if (!await confirmAction(restore, uiText("Применить версию от {0}? Текущее состояние останется в истории.", date), { label: uiText("Применить") }) || selectedId !== id) return;
     send({ type: 'historyRestore', path: state.path, id, headId });
     closeHistory();
-    showToast('Запрошено восстановление версии…');
+    showToast(uiText("Запрошено восстановление версии…"));
   });
   requiredElement<HTMLButtonElement>('#history-close').addEventListener('click', closeHistory);
   dialog.addEventListener('close', suspendHistory);
@@ -148,7 +152,7 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
       if (selectedId && !entries.some((entry) => entry.id === selectedId)) {
         selectedId = '';
         restore.disabled = true;
-        selectionLabel.textContent = 'Документ изменился – выберите версию заново';
+        selectionLabel.textContent = uiText("Документ изменился – выберите версию заново");
       }
       render();
     },

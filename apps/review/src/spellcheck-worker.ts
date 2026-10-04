@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import nspell from 'nspell';
 import type { NSpellChecker } from 'nspell';
 import { spellingIssues } from '../../../packages/shared/src/spelling-issues.mts';
@@ -28,7 +29,7 @@ function decodeBase64Text(value: string): string {
 }
 
 function cachedChecker() {
-  if (!checker || !supplementalBloom) throw new Error('Словарь ещё не загружен');
+  if (!checker || !supplementalBloom) throw new Error(uiText("Словарь ещё не загружен"));
   const dictionary = checker;
   const bloom = supplementalBloom;
   return {
@@ -56,16 +57,16 @@ self.onmessage = ({ data }: MessageEvent<SpellcheckRequest>) => {
       ignoredWords = new Set(data.words ?? []);
       correctness.clear();
       result = { ready: true };
-    } else if (!checker) throw new Error('Словарь ещё не загружен');
+    } else if (!checker) throw new Error(uiText("Словарь ещё не загружен"));
     else if (type === 'check') {
       result = { issues: spellingIssues(data.text, cachedChecker(), ignoredWords, { lineOffset: data.lineOffset }) };
     } else if (type === 'suggest') result = { suggestions: checker.suggest(data.word).slice(0, 6) };
     else if (type === 'words') {
       ignoredWords = new Set(data.words ?? []);
       result = { ready: true };
-    } else throw new Error('Неизвестная команда проверки орфографии');
+    } else throw new Error(uiText("Неизвестная команда проверки орфографии"));
     self.postMessage({ id, result });
   } catch (error) {
-    self.postMessage({ id, error: errorMessage(error) || 'Ошибка проверки орфографии' });
+    self.postMessage({ id, error: errorMessage(error) || uiText("Ошибка проверки орфографии") });
   }
 };

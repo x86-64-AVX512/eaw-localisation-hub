@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { requiredElement } from './dom-elements.ts';
 import { reviewFontFamily } from './editor-font.ts';
 
@@ -124,7 +125,7 @@ export function createEditorSettings({ monaco, editor, showToast }: EditorSettin
       fontSize: settings.fontSize, lineHeight: settings.lineHeight,
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    if (announce) showToast('Настройки редактора сохранены на этом компьютере.');
+    if (announce) showToast(uiText("Настройки редактора сохранены на этом компьютере."));
   }
 
   theme.value = settings.theme; family.value = settings.fontFamily;

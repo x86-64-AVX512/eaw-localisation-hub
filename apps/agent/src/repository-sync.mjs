@@ -93,6 +93,11 @@ export function repositoryReviewReason(hub) {
     // A server's "file-outdated" is exactly why the clean local checkout needs
     // updating. Other read-only states and unsent local buffers remain blockers.
     const gitBlocked = !binding.gitWritable && !['file-outdated', 'branch-outdated'].includes(binding.gitState?.status);
+    // An outdated file cannot initialise its Review view until checkout moves
+    // to the server's Git base. Only this UI wait is circular; retain every
+    // delivery, projection, disk-conflict and worktree guard around it.
+    const waitingForCheckout = !binding.ticketId && !binding.gitWritable
+      && binding.gitState?.status === 'file-outdated';
     if (binding.closing || binding.paused || !binding.synced || gitBlocked
       || (binding.localUpdatePending && !binding.pendingUpdateSent)
       || binding.deliveryFailed || binding.flushWaiter || binding.personalRequestId
@@ -103,7 +108,7 @@ export function repositoryReviewReason(hub) {
       for (const state of client.documents.values()) {
         if (state.binding !== binding) continue;
         if (state.pendingExternal) return state.pendingExternal.conflicts?.length ? 'conflicts' : 'syncing';
-        if (!state.initialised || !state.initialReconciled) return 'syncing';
+        if ((!state.initialised || !state.initialReconciled) && !waitingForCheckout) return 'syncing';
         // A confirmed personal projection can still be waiting for the 500 ms
         // autosave timer. Do not treat its clean-yet-unwritten file as safe.
         if (!binding.ticketId && binding.gitWritable && typeof binding.localFileText === 'function') {
@@ -372,6 +377,10 @@ export class RepositorySync {
                 state.materialisationExpected = null; state.materialisationDeadline = 0;
                 binding.persistBaseSnapshot(state, text);
               } catch (error) { if (error.code !== 'ENOENT') throw error; state.diskBase = ''; }
+              // A clean, guarded checkout supplies the initial disk base. Do
+              // not later reconcile the pre-pull mirror as a user's edit.
+              // Leave initialised untouched: the UI still needs server sync.
+              state.initialReconciled = true;
             }
           }
         }

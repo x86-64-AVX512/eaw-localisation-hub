@@ -1,6 +1,8 @@
 ﻿# Tests use isolated state, no live repository, no sound/flash and no network.
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'repository-sync-ui.ps1')
+# Keep label assertions independent of Windows culture and live user settings.
+function Get-EawUiLanguageSettings { [pscustomobject]@{ language = 'ru'; preference = 'ru' } }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $taskRoot = Join-Path ([IO.Path]::GetTempPath()) ('EaWHubGitSync-' + [Guid]::NewGuid().ToString('N'))

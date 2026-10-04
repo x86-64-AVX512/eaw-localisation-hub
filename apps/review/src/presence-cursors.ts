@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { safeColor } from './review-utilities.ts';
 import type * as Monaco from 'monaco-editor';
 
@@ -59,7 +60,7 @@ export function createPresenceCursorLayer({ monaco, editor }: {
         const color = safeColor(presence.color);
         entry.node.style.setProperty('--presence-color', color);
         entry.node.title = presence.user;
-        entry.node.setAttribute('aria-label', `Курсор: ${presence.user}`);
+        entry.node.setAttribute('aria-label', uiText("Курсор: {0}", presence.user));
         entry.widget.position = position;
         editor.layoutContentWidget(entry.widget);
       }

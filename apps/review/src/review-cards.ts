@@ -1,4 +1,6 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { decodeBase64, encodeBase64, safeColor } from './review-utilities.ts';
+import { canEditDocument, canDecideSuggestions } from '../../../packages/shared/src/document-permissions.mts';
 import { cardButton, cardHeader, renderMessages } from './review-card-elements.ts';
 import type { ReviewCardMessage } from './review-card-elements.ts';
 import { suggestionTraceParts } from '../../../packages/shared/src/suggestion-trace.mts';
@@ -11,7 +13,7 @@ export function visibleComparisonText(text: unknown): string {
   const value = String(text ?? '');
   if (!/^(?:\r\n|\r|\n)+$/u.test(value)) return value;
   const count = (value.match(/\r\n|\r|\n/gu) ?? []).length;
-  return count === 1 ? '[перенос строки]' : `[переносы строк: ${count}]`;
+  return count === 1 ? uiText("[перенос строки]") : uiText("[переносы строк: {0}]", count);
 }
 
 export function reviewCardFingerprint(item: { id: string; startByte: number; endByte: number },
@@ -35,7 +37,7 @@ export function createReviewCards({
   let focusTimer: ReturnType<typeof setTimeout> | undefined;
 
   async function reply(type: CardItem['kind'], item: CardItem): Promise<void> {
-    const body = await askText('Ответить', 'Сообщение');
+    const body = await askText(uiText("Ответить"), uiText("Сообщение"));
     const command = type === 'comment' ? 'commentReply' : 'suggestionReply';
     if (body?.trim()) send({ type: command, path: state.path, id: item.id, bodyBase64: encodeBase64(body.trim()) });
   }
@@ -63,10 +65,10 @@ export function createReviewCards({
         }
       } else {
         const oldText = document.createElement('del');
-        oldText.textContent = original || '[вставка]';
+        oldText.textContent = original || uiText("[вставка]");
         if (!original) oldText.classList.add('empty-marker');
         const newText = document.createElement('ins');
-        newText.textContent = replacement || '[удалить]';
+        newText.textContent = replacement || uiText("[удалить]");
         if (!replacement) newText.classList.add('empty-marker');
         comparison.append(oldText, newText);
       }
@@ -75,29 +77,29 @@ export function createReviewCards({
     renderMessages(card, item, messages, showToast);
     const actions = document.createElement('div');
     actions.className = 'card-actions';
-    actions.append(cardButton('Ответить', (value) => reply(item.kind, value), item));
+    actions.append(cardButton(uiText("Ответить"), (value) => reply(item.kind, value), item));
     if (item.kind === 'suggestion' && item.status === 'open') {
       const ownSuggestion = item.authorId ? item.authorId === state.userId : item.author === state.user;
-      if (ownSuggestion) actions.append(cardButton(
-        item.id === state.editingSuggestionId ? 'Редактируется' : 'Редактировать',
+      if (ownSuggestion && canEditDocument(state, state.relativePath ?? '')) actions.append(cardButton(
+        item.id === state.editingSuggestionId ? uiText("Редактируется") : uiText("Редактировать"),
         (value) => onEditSuggestion(value), item,
       ));
-      actions.append(
-        cardButton('Принять', onAcceptSuggestion, item),
-        cardButton('Отклонить', (value) => send({ type: 'suggestionReject', path: state.path, id: value.id }), item),
+      if (canDecideSuggestions(state)) actions.append(
+        cardButton(uiText("Принять"), onAcceptSuggestion, item),
+        cardButton(uiText("Отклонить"), (value) => send({ type: 'suggestionReject', path: state.path, id: value.id }), item),
       );
     }
-    if (item.kind === 'suggestion' && item.status === 'accepted') {
-      actions.append(cardButton('Отменить принятие', onRevertSuggestion, item));
+    if (item.kind === 'suggestion' && item.status === 'accepted' && canDecideSuggestions(state)) {
+      actions.append(cardButton(uiText("Отменить принятие"), onRevertSuggestion, item));
     }
-    if (item.kind === 'comment') {
+    if (item.kind === 'comment' && canEditDocument(state, state.relativePath ?? '')) {
       const nextStatus = item.status === 'resolved' ? 'open' : 'resolved';
-      actions.append(cardButton(item.status === 'resolved' ? 'Вернуть' : 'Закрыть',
+      actions.append(cardButton(item.status === 'resolved' ? uiText("Вернуть") : uiText("Закрыть"),
         (value) => send({ type: 'commentStatus', path: state.path, id: value.id, status: nextStatus }), item));
     }
     const deleteType = item.kind === 'comment' ? 'commentDelete' : 'suggestionDelete';
-    actions.append(cardButton('Удалить', async (value, button) => {
-      if (await confirmAction(button, item.kind === 'comment' ? 'Удалить комментарий и ответы?' : 'Удалить правку и ответы?', { label: 'Удалить', danger: true })) {
+    if (canEditDocument(state, state.relativePath ?? '')) actions.append(cardButton(uiText("Удалить"), async (value, button) => {
+      if (await confirmAction(button, item.kind === 'comment' ? uiText("Удалить комментарий и ответы?") : uiText("Удалить правку и ответы?"), { label: uiText("Удалить"), danger: true })) {
         button.disabled = true;
         send({ type: deleteType, path: state.path, id: value.id });
         setTimeout(() => { if (button.isConnected) button.disabled = false; }, 5000);
@@ -129,7 +131,8 @@ export function createReviewCards({
       const key = `${item.kind}:${item.id}`;
       const messages = item.kind === 'suggestion'
         ? state.suggestionMessages.get(item.id) : state.commentMessages.get(item.id);
-      const fingerprint = reviewCardFingerprint(item, messages, state.editingSuggestionId, state.userId);
+      const fingerprint = reviewCardFingerprint(item, messages, state.editingSuggestionId, state.userId)
+        + JSON.stringify(state.roles ?? []);
       liveKeys.add(key);
       const cached = cardCache.get(key);
       if (cached?.fingerprint === fingerprint) {

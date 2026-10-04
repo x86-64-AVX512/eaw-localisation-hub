@@ -1,4 +1,6 @@
+import { uiText, uiLocale } from '../../../packages/shared/src/ui-language.mts';
 import { requiredElement } from './dom-elements.ts';
+import { isWorkspaceVisible } from './workspace-runtime.ts';
 
 const STORAGE_KEY = 'eaw-hub-notification-state-v1';
 const DIGEST_MS = 10 * 60 * 1000;
@@ -67,15 +69,15 @@ function settings(): { enabled: boolean; sound: boolean } {
 }
 function describe(event: NotificationEvent): string {
   const details = event.details ?? {};
-  if (event.type === 'comment-reply') return `${event.actor} ответил(а) в вашем обсуждении.`;
-  if (event.type === 'suggestion-decision') return `${event.actor}: ваша правка ${details.decision === 'accepted' ? 'принята' : 'отклонена'}.`;
-  if (event.type === 'ticket-state') return `${event.actor} изменил(а) тикет «${details.ticketTitle || details.ticketId}» (${details.action}).`;
-  if (event.type === 'ticket-edited') return `${event.actor} редактировал(а) тикет «${details.ticketTitle || details.ticketId}».`;
+  if (event.type === 'comment-reply') return uiText("{0} ответил(а) в вашем обсуждении.", event.actor);
+  if (event.type === 'suggestion-decision') return uiText("{0}: ваша правка {1}.", event.actor, details.decision === 'accepted' ? uiText("принята") : uiText("отклонена"));
+  if (event.type === 'ticket-state') return uiText("{0} изменил(а) тикет «{1}» ({2}).", event.actor, details.ticketTitle || details.ticketId, details.action);
+  if (event.type === 'ticket-edited') return uiText("{0} редактировал(а) тикет «{1}».", event.actor, details.ticketTitle || details.ticketId);
   return `${event.actor}: ${event.type}`;
 }
 
 export function createNotificationCenter({ token, showToast }: NotificationCenterOptions) {
-  const state = load();
+  let state = load();
   const dialog = requiredElement<HTMLDialogElement>('#notifications-dialog');
   const list = requiredElement<HTMLElement>('#notifications-list');
   const count = requiredElement<HTMLElement>('#notifications-count');
@@ -98,11 +100,11 @@ export function createNotificationCenter({ token, showToast }: NotificationCente
     const unread = state.inbox.filter((item) => !item.read).length;
     count.textContent = String(unread);
     list.replaceChildren();
-    if (!state.inbox.length) { list.textContent = 'Новых уведомлений нет.'; return; }
+    if (!state.inbox.length) { list.textContent = uiText("Новых уведомлений нет."); return; }
     for (const item of state.inbox) {
       const row = document.createElement('article'); row.className = `notification${item.read ? '' : ' unread'}`;
       const body = document.createElement('div'); body.textContent = item.text;
-      const time = document.createElement('time'); time.textContent = new Date(item.at).toLocaleString();
+      const time = document.createElement('time'); time.textContent = new Date(item.at).toLocaleString(uiLocale());
       row.append(body, time); list.append(row);
     }
   }
@@ -118,15 +120,15 @@ export function createNotificationCenter({ token, showToast }: NotificationCente
       const actors = [...new Set(bucket.events.map(({ actor }) => actor))].join(', ');
       if (key.startsWith('suggestion-decision')) {
         const accepted = bucket.events.filter(({ details }) => details?.decision === 'accepted').length;
-        push(`Решения по вашим правкам за 10 минут: принято ${accepted}, отклонено ${bucket.events.length - accepted}.`);
+        push(uiText("Решения по вашим правкам за 10 минут: принято {0}, отклонено {1}.", accepted, bucket.events.length - accepted));
       } else if (key.startsWith('ticket-state')) {
-        push(`Действия с вашим тикетом за 10 минут: ${bucket.events.length}. Участники: ${actors}.`);
+        push(uiText("Действия с вашим тикетом за 10 минут: {0}. Участники: {1}.", bucket.events.length, actors));
       } else {
         const totals = bucket.events.reduce((sum, event) => ({
           lines: sum.lines + Number(event.details?.lines ?? 0), words: sum.words + Number(event.details?.words ?? 0),
           characters: sum.characters + Number(event.details?.characters ?? 0),
         }), { lines: 0, words: 0, characters: 0 });
-        push(`Ваш тикет редактировали: ${actors}. Изменено: строк ${totals.lines}, слов ${totals.words}, символов ${totals.characters}.`);
+        push(uiText("Ваш тикет редактировали: {0}. Изменено: строк {1}, слов {2}, символов {3}.", actors, totals.lines, totals.words, totals.characters));
       }
       delete state.buckets[key];
     }
@@ -140,12 +142,15 @@ export function createNotificationCenter({ token, showToast }: NotificationCente
     if (!state.buckets[key].events.some(({ id }) => id === event.id)) state.buckets[key].events.push(event);
   }
   async function poll() {
+    if (!isWorkspaceVisible()) return;
+    state = load(); render();
     try {
       const response = await fetch(`/api/events?after=${encodeURIComponent(state.cursor)}`, {
         headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
       });
       if (response.ok) {
         const payload = asRecord(await response.json() as unknown);
+        if (!isWorkspaceVisible()) return;
         for (const value of Array.isArray(payload.events) ? payload.events : []) {
           const event = notificationEvent(value);
           if (event) ingest(event);

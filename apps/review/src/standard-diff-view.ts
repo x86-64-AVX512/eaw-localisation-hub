@@ -64,7 +64,7 @@ export function createStandardDiffView({
   const originalModel = monaco.editor.createModel('', language);
   const modifiedModel = monaco.editor.createModel('', language);
   const diff = monaco.editor.createDiffEditor(container, {
-    theme: 'vs-dark', readOnly: true, automaticLayout: !preserveOnDeactivate,
+    readOnly: true, automaticLayout: !preserveOnDeactivate,
     minimap: { enabled: false }, fontFamily: reviewFontFamily(),
     renderSideBySide: true, originalEditable: false, hideUnchangedRegions: { enabled: false },
     wordWrap: 'on', diffWordWrap: 'on', wordWrapOverride1: 'on', wordWrapOverride2: 'on',

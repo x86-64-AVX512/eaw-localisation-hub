@@ -7,6 +7,8 @@ import { Buffer } from 'node:buffer';
 import {
   DISPLAY_VERSION,
   PROTOCOL_VERSION,
+  PROTOCOL_NAME,
+  PROTOCOL_ABBREVIATION,
 } from '../../../packages/shared/src/constants.mts';
 import { normaliseTrackedPath, withoutUtf8Bom } from '../../../packages/shared/src/text.mts';
 import { DocumentBinding } from './document-binding.mjs';
@@ -18,6 +20,7 @@ import { serverHttpUrl } from './server-http-url.mts';
 import { transitionWorkspace } from './workspace-transition.mjs';
 import { runGitAsync, runGitSync } from './git-executable.mts';
 import { DiffCache } from './diff-cache.mjs';
+import { documentControlAllowed } from '../../../packages/shared/src/document-permissions.mts';
 
 function gitPath(repository, relative) {
   const result = runGitSync(['rev-parse', '--git-path', relative], {
@@ -133,6 +136,8 @@ export class AgentHub {
       type: 'agentHello',
       version: DISPLAY_VERSION,
       protocol: PROTOCOL_VERSION,
+      protocolName: PROTOCOL_NAME,
+      protocolAbbreviation: PROTOCOL_ABBREVIATION,
       user: this.options.user,
       color: this.options.color,
       workspace: this.options.workspace,
@@ -588,6 +593,14 @@ export class AgentHub {
       'externalConflictResolve', 'personalFileMaterialize', 'personalConflictResolve',
       'personalFileSelectionSet', 'documentVariantRequest',
     ]);
+    if (gitMutations.has(message.type) && message.type !== 'documentVariantRequest') {
+      const control = message.type.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
+      if (!documentControlAllowed(this.identity, state.binding.relativePath, control)) {
+        client.send({ type: 'notice', path: absolutePath,
+          message: 'Контрибьюторы мода могут изменять только английские файлы и обсуждать любые документы. Для решений по правкам нужна переводческая роль.' });
+        return;
+      }
+    }
     // Heartbeats and cursor motion must not cancel an otherwise safe update.
     if (gitMutations.has(message.type)) this.repositoryEditEpoch += 1;
     if (!state.binding.gitWritable && gitMutations.has(message.type)
@@ -774,7 +787,8 @@ export class AgentHub {
   }
 
   attachAuthenticatedClient(client) {
-    if (this.clients.size >= 8 || !client?.authenticated) return false;
+    const connections = new Set([...this.clients].map(item => item.connectionId ?? item.clientId));
+    if (!client?.authenticated || (connections.size >= 8 && !connections.has(client.connectionId ?? client.clientId))) return false;
     this.clients.add(client);
     this.clientsById.set(client.clientId, client);
     this.sendAgentHello(client);

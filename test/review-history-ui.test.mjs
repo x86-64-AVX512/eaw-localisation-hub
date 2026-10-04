@@ -16,7 +16,7 @@ test('Review exposes version comparison and non-destructive restoration', () => 
   assert.match(panel, /createStandardDiffView/u);
   assert.match(panel, /Текущее состояние останется в истории/u);
   assert.match(panel, /type: 'historyRestore'/u);
-  assert.match(panel, /toLocaleString\(\)/u);
+  assert.match(panel, /toLocaleString\(uiLocale\(\)\)/u);
   assert.match(panel, /Создал:/u);
   assert.match(panel, /Принял:/u);
   assert.match(panel, /suggestionAuthor/u);

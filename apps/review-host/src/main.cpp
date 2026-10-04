@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
+#include <regex>
 #include <string>
 #include <utility>
 
@@ -15,8 +17,9 @@ using Microsoft::WRL::ComPtr;
 namespace {
 
 constexpr wchar_t kWindowClass[] = L"EaWLocalisationHubReviewWindow";
-constexpr wchar_t kWindowTitle[] = L"EaW Localisation Hub – Рецензирование";
-constexpr wchar_t kEnglishWindowTitle[] = L"EaW Localisation Hub – Английский оригинал";
+const wchar_t* kWindowTitle = L"EaW Localisation Hub – Review";
+const wchar_t* kEnglishWindowTitle = L"EaW Localisation Hub – English original";
+bool g_russian = false;
 constexpr wchar_t kEnglishMutexName[] = L"Local\\EaWLocalisationHubEnglishOriginal";
 constexpr ULONG_PTR kNavigateCopyData = 0x45415745;
 
@@ -48,6 +51,30 @@ std::wstring LocalDataDirectory() {
     std::wstring result = (std::filesystem::path(value) / L"EaWLocalisationHub" / L"WebView2").wstring();
     free(value);
     return result;
+}
+
+void InitialiseLanguage() {
+    g_russian = PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN;
+    const auto path = std::filesystem::path(LocalDataDirectory()).parent_path() / L"ui-language.json";
+    std::ifstream stream(path, std::ios::binary);
+    char buffer[4096]{};
+    stream.read(buffer, sizeof(buffer));
+    if (!stream.bad() && stream.gcount() < sizeof(buffer)) {
+        const std::string saved(buffer, static_cast<size_t>(stream.gcount()));
+        std::smatch match;
+        if (std::regex_search(saved, match, std::regex(R"re("preference"\s*:\s*"(ru|en|auto)")re"))) {
+            if (match[1] == "ru") g_russian = true;
+            else if (match[1] == "en") g_russian = false;
+        }
+    }
+    if (g_russian) {
+        kWindowTitle = L"EaW Localisation Hub – Рецензирование";
+        kEnglishWindowTitle = L"EaW Localisation Hub – Английский оригинал";
+    }
+}
+
+const wchar_t* UiText(const wchar_t* russian, const wchar_t* english) {
+    return g_russian ? russian : english;
 }
 
 std::wstring OriginFromUrl(const std::wstring& url) {
@@ -222,7 +249,7 @@ class ControllerCompletedHandler final
 public:
     HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Controller* controller) override {
         if (FAILED(result) || !controller) {
-            Fatal(L"Не удалось создать окно WebView2.");
+            Fatal(UiText(L"Не удалось создать окно WebView2.", L"Could not create the WebView2 window."));
             return result;
         }
         ConfigureWebView(controller);
@@ -235,7 +262,7 @@ class EnvironmentCompletedHandler final
 public:
     HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Environment* environment) override {
         if (FAILED(result) || !environment) {
-            Fatal(L"Microsoft Edge WebView2 Runtime недоступен или повреждён.");
+            Fatal(UiText(L"Microsoft Edge WebView2 Runtime недоступен или повреждён.", L"Microsoft Edge WebView2 Runtime is unavailable or damaged."));
             return result;
         }
         ComPtr<ControllerCompletedHandler> handler;
@@ -248,13 +275,13 @@ void CreateWebView() {
     const std::filesystem::path loaderPath = std::filesystem::path(ExecutableDirectory()) / L"WebView2Loader.dll";
     HMODULE loader = LoadLibraryExW(loaderPath.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!loader) {
-        Fatal(L"Не найден WebView2Loader.dll рядом с EaWReview.exe.");
+        Fatal(UiText(L"Не найден WebView2Loader.dll рядом с EaWReview.exe.", L"WebView2Loader.dll was not found next to EaWReview.exe."));
         return;
     }
     auto createEnvironment = reinterpret_cast<CreateEnvironmentFunction>(
         GetProcAddress(loader, "CreateCoreWebView2EnvironmentWithOptions"));
     if (!createEnvironment) {
-        Fatal(L"WebView2Loader.dll не содержит требуемую функцию.");
+        Fatal(UiText(L"WebView2Loader.dll не содержит требуемую функцию.", L"WebView2Loader.dll does not contain the required function."));
         return;
     }
     const std::wstring userData = LocalDataDirectory();
@@ -265,7 +292,7 @@ void CreateWebView() {
         userData.c_str(),
         nullptr,
         handler.Get());
-    if (FAILED(started)) Fatal(L"Не удалось запустить Microsoft Edge WebView2 Runtime.");
+    if (FAILED(started)) Fatal(UiText(L"Не удалось запустить Microsoft Edge WebView2 Runtime.", L"Could not start Microsoft Edge WebView2 Runtime."));
 }
 
 LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -311,12 +338,13 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
+    InitialiseLanguage();
     SetProcessDPIAware();
     if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 1;
     int argumentCount = 0;
     wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &argumentCount);
     if (!arguments || argumentCount != 2) {
-        MessageBoxW(nullptr, L"Запускайте Review через EaW Hub Agent или Launch EaW Hub Review.cmd.", kWindowTitle, MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(nullptr, UiText(L"Запускайте Review через EaW Hub Agent или Launch EaW Hub Review.cmd.", L"Launch Review through EaW Hub Agent or Launch EaW Hub Review.cmd."), kWindowTitle, MB_OK | MB_ICONINFORMATION);
         if (arguments) LocalFree(arguments);
         CoUninitialize();
         return 2;
@@ -325,7 +353,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     LocalFree(arguments);
     g_origin = OriginFromUrl(g_url);
     if (!g_origin.starts_with(L"http://127.0.0.1:")) {
-        MessageBoxW(nullptr, L"Review отказывается открывать нелокальный адрес.", kWindowTitle, MB_OK | MB_ICONERROR);
+        MessageBoxW(nullptr, UiText(L"Review отказывается открывать нелокальный адрес.", L"Review refuses to open a non-local address."), kWindowTitle, MB_OK | MB_ICONERROR);
         CoUninitialize();
         return 3;
     }
@@ -345,6 +373,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
             // HWND. Give it a brief chance to publish the reusable window.
             for (int attempt = 0; attempt < 60; ++attempt) {
                 HWND existing = FindWindowW(kWindowClass, kEnglishWindowTitle);
+                if (!existing) existing = FindWindowW(kWindowClass, UiText(L"EaW Localisation Hub – English original", L"EaW Localisation Hub – Английский оригинал"));
                 if (existing && NavigateExistingEnglishWindow(existing, g_url)) {
                     CloseHandle(englishMutex);
                     CoUninitialize();

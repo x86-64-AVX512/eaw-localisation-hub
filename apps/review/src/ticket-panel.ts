@@ -1,3 +1,5 @@
+import { uiText, uiLocale } from '../../../packages/shared/src/ui-language.mts';
+import { isModContributorOnly, canEditDocument } from '../../../packages/shared/src/document-permissions.mts';
 import { decodeBase64 } from './review-utilities.ts';
 import { reviewFontFamily } from './editor-font.ts';
 import { createTicketCatalogWatch } from './ticket-catalog-watch.ts';
@@ -6,6 +8,7 @@ import {
   requiredButton, requiredDialog, requiredElement, requiredInput, requiredSelect, requiredTextArea,
 } from './dom-elements.ts';
 import type * as Monaco from 'monaco-editor';
+import { embeddedSessionId, postWorkspace } from './workspace-bridge.ts';
 
 interface TicketEvent { type: string; actor: string; at: string }
 
@@ -19,12 +22,15 @@ export interface Ticket {
   baseBranch: string;
   baseCommit: string;
   creator: string;
+  creatorId?: string;
   events: TicketEvent[];
   archivedAt?: string | null;
   deleted?: boolean;
 }
 
 interface TicketPanelState {
+  userId?: string;
+  roles?: string[];
   relativePath: string;
   workspace: string;
   ticket: Ticket | null;
@@ -47,15 +53,15 @@ function errorMessage(error: unknown): string {
 }
 
 const STATUS_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  draft: 'Черновик', in_progress: 'В работе', review: 'На проверке',
-  needs_changes: 'Нужны исправления', ready: 'Готов к применению',
-  git_conflict: 'Конфликт Git', applied: 'Применён', closed: 'Закрыт',
+  draft: uiText("Черновик"), in_progress: uiText("В работе"), review: uiText("На проверке"),
+  needs_changes: uiText("Нужны исправления"), ready: uiText("Готов к применению"),
+  git_conflict: uiText("Конфликт Git"), applied: uiText("Применён"), closed: uiText("Закрыт"),
 });
 
 const EVENT_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  created: 'Тикет создан', status_changed: 'Изменён статус', metadata_changed: 'Изменены данные',
-  files_changed: 'Изменён список файлов', rebased: 'Обновлена база Git',
-  git_conflict: 'Обнаружен конфликт Git', applied: 'Применён к основной версии', archived: 'Архивирован',
+  created: uiText("Тикет создан"), status_changed: uiText("Изменён статус"), metadata_changed: uiText("Изменены данные"),
+  files_changed: uiText("Изменён список файлов"), rebased: uiText("Обновлена база Git"),
+  git_conflict: uiText("Обнаружен конфликт Git"), applied: uiText("Применён к основной версии"), archived: uiText("Архивирован"),
 });
 
 function fileLines(value: unknown): string[] {
@@ -64,7 +70,7 @@ function fileLines(value: unknown): string[] {
 
 function localDate(value: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
+  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString(uiLocale());
 }
 
 export function createTicketPanel(options: TicketPanelOptions) {
@@ -136,24 +142,24 @@ export function createTicketPanel(options: TicketPanelOptions) {
     const requestId = ++diffRequest;
     disposeDiff();
     for (const candidate of diffFiles.children) candidate.classList.toggle('active', candidate === button);
-    diffContainer.textContent = 'Загрузка diff…';
+    diffContainer.textContent = uiText("Загрузка diff…");
     let payload: { files: DiffFile[] };
     try { payload = await api<{ files: DiffFile[] }>(`/api/tickets/${ticket.id}/diff?file=${encodeURIComponent(file.path)}`); }
     catch (error) {
       if (catalog.open && ticket.id === selectedId && requestId === diffRequest) {
-        diffContainer.textContent = `Diff недоступен: ${errorMessage(error)}`;
+        diffContainer.textContent = uiText("Diff недоступен: {0}", errorMessage(error));
       }
       return;
     }
     if (!catalog.open || ticket.id !== selectedId || requestId !== diffRequest) return;
     const snapshot = payload.files[0];
-    if (!snapshot) { diffContainer.textContent = 'Файл отсутствует в diff.'; return; }
+    if (!snapshot) { diffContainer.textContent = uiText("Файл отсутствует в diff."); return; }
     diffContainer.replaceChildren();
     const original = monaco.editor.createModel(decodeBase64(snapshot.baseTextBase64), 'eaw-yaml');
     const modified = monaco.editor.createModel(decodeBase64(snapshot.ticketTextBase64), 'eaw-yaml');
     diffModels = [original, modified];
     diffEditor = monaco.editor.createDiffEditor(diffContainer, {
-      theme: 'vs-dark', readOnly: true, automaticLayout: true, minimap: { enabled: false }, fontFamily: reviewFontFamily(),
+      readOnly: true, automaticLayout: true, minimap: { enabled: false }, fontFamily: reviewFontFamily(),
       renderSideBySide: true, originalEditable: false,
       hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 4, revealLineCount: 10 },
       wordWrap: 'on', diffWordWrap: 'on', wrappingStrategy: 'advanced',
@@ -166,9 +172,9 @@ export function createTicketPanel(options: TicketPanelOptions) {
     selector.disabled = !available;
     createButton.disabled = !available;
     catalogButton.disabled = !available;
-    const explanation = available ? '' : `Тикеты временно недоступны: ${error ? errorMessage(error) : 'нет связи'}. Повторная проверка выполняется автоматически.`;
+    const explanation = available ? '' : uiText("Тикеты временно недоступны: {0}. Повторная проверка выполняется автоматически.", error ? errorMessage(error) : uiText("нет связи"));
     selector.title = explanation;
-    createButton.title = explanation || 'Создать совместный черновик от текущего Git-коммита';
+    createButton.title = explanation || uiText("Создать совместный черновик от текущего Git-коммита");
     catalogButton.title = explanation;
   }
 
@@ -186,12 +192,12 @@ export function createTicketPanel(options: TicketPanelOptions) {
       await reload();
       setAvailability(true);
       retryDelay = 2_000;
-      if (unavailable) showToast('Доступ к тикетам восстановлен.');
+      if (unavailable) showToast(uiText("Доступ к тикетам восстановлен."));
       unavailable = false;
       return true;
     } catch (error) {
       setAvailability(false, error);
-      if (!unavailable) showToast(`Тикеты временно недоступны: ${errorMessage(error)}. Повторю запрос автоматически.`, true);
+      if (!unavailable) showToast(uiText("Тикеты временно недоступны: {0}. Повторю запрос автоматически.", errorMessage(error)), true);
       unavailable = true;
       scheduleRetry();
       return false;
@@ -209,10 +215,11 @@ export function createTicketPanel(options: TicketPanelOptions) {
     return payload;
   }
 
-  async function navigate(ticket: Ticket | null | undefined): Promise<void> {
+  async function navigate(ticket: Ticket | null | undefined, replaceCurrent = false): Promise<void> {
     if (navigating) return;
     navigating = true;
     const path = ticket && !ticket.files.includes(state.relativePath) ? ticket.files[0] ?? requestedPath : requestedPath;
+    if (embeddedSessionId()) { postWorkspace('navigate',{path,ticket:ticket?.id ?? '',replaceCurrent}); navigating = false; return; }
     const hash = new URLSearchParams({ token, path });
     if (ticket) hash.set('ticket', ticket.id);
     await options.beforeNavigate?.();
@@ -227,15 +234,15 @@ export function createTicketPanel(options: TicketPanelOptions) {
   function leaveUnavailable(reason = 'deleted'): void {
     if (navigating || !state.ticket) return;
     showToast(reason === 'file-removed'
-      ? 'Файл удалён из открытого тикета. Переход к основной версии…'
-      : 'Открытый тикет удалён. Переход к основной версии…');
-    void navigate(null);
+      ? uiText("Файл удалён из открытого тикета. Переход к основной версии…")
+      : uiText("Открытый тикет удалён. Переход к основной версии…"));
+    void navigate(null,true);
   }
 
   function renderSwitcher() {
     const activeTicket = state.ticket;
     const current = activeTicket?.id ?? '';
-    selector.replaceChildren(new Option(`Основная версия · ${state.workspace}`, '', false, !current));
+    selector.replaceChildren(new Option(uiText("Основная версия · {0}", state.workspace), '', false, !current));
     for (const ticket of tickets.filter((item) => !item.archivedAt && item.files.includes(state.relativePath))) {
       selector.add(new Option(`${ticket.title} · ${STATUS_LABELS[ticket.status] ?? ticket.status}`, ticket.id, false, ticket.id === current));
     }
@@ -245,7 +252,10 @@ export function createTicketPanel(options: TicketPanelOptions) {
         status.add(new Option(STATUS_LABELS[activeTicket.status] ?? activeTicket.status, activeTicket.status));
       }
       status.value = activeTicket.status;
-      status.disabled = ['applied', 'git_conflict'].includes(activeTicket.status) || Boolean(activeTicket.archivedAt);
+      const restricted = isModContributorOnly(state);
+      status.disabled = (restricted && activeTicket.creatorId !== state.userId)
+        || ['applied', 'git_conflict'].includes(activeTicket.status) || Boolean(activeTicket.archivedAt);
+      for (const option of status.options) option.disabled = restricted && ['ready', 'needs_changes'].includes(option.value);
     }
   }
 
@@ -264,7 +274,7 @@ export function createTicketPanel(options: TicketPanelOptions) {
       const title = document.createElement('strong');
       title.textContent = ticket.title;
       const meta = document.createElement('span');
-      meta.textContent = `${STATUS_LABELS[ticket.status] ?? ticket.status} · ${ticket.files.length} файл(а/ов) · ${localDate(ticket.updatedAt)}`;
+      meta.textContent = uiText("{0} · {1} файл(а/ов) · {2}", STATUS_LABELS[ticket.status] ?? ticket.status, ticket.files.length, localDate(ticket.updatedAt));
       button.append(title, meta);
       button.addEventListener('click', () => { selectedId = ticket.id; dirtyDetails = false; renderList(); renderDetails(); });
       list.append(button);
@@ -274,12 +284,12 @@ export function createTicketPanel(options: TicketPanelOptions) {
   async function renderSummary(ticket: Ticket): Promise<void> {
     const requestId = ++summaryRequest;
     diffRequest += 1;
-    diff.textContent = 'Подсчёт изменений…';
+    diff.textContent = uiText("Подсчёт изменений…");
     diffFiles.replaceChildren(); disposeDiff();
     try {
       const summary = await api<{ files: Array<{ path: string }> }>(`/api/tickets/${ticket.id}/diff`);
       if (!catalog.open || ticket.id !== selectedId || requestId !== summaryRequest) return;
-      diff.textContent = `Файлов в тикете: ${summary.files.length}. Diff загружается только для выбранного файла.`;
+      diff.textContent = uiText("Файлов в тикете: {0}. Diff загружается только для выбранного файла.", summary.files.length);
       for (const file of summary.files) {
         const button = document.createElement('button');
         button.textContent = file.path;
@@ -290,7 +300,7 @@ export function createTicketPanel(options: TicketPanelOptions) {
       if (summary.files[0] && firstButton) void showFileDiff(ticket, summary.files[0], firstButton);
     } catch (error) {
       if (catalog.open && ticket.id === selectedId && requestId === summaryRequest) {
-        diff.textContent = `Diff недоступен: ${errorMessage(error)}`;
+        diff.textContent = uiText("Diff недоступен: {0}", errorMessage(error));
       }
     }
   }
@@ -301,7 +311,7 @@ export function createTicketPanel(options: TicketPanelOptions) {
     detailsEmpty.hidden = Boolean(ticket);
     if (!ticket) return;
     detailsTitle.textContent = ticket.title;
-    detailsMeta.textContent = `${STATUS_LABELS[ticket.status] ?? ticket.status} · ${ticket.baseBranch} @ ${ticket.baseCommit.slice(0, 12)} · автор ${ticket.creator}`;
+    detailsMeta.textContent = uiText("{0} · {1} @ {2} · автор {3}", STATUS_LABELS[ticket.status] ?? ticket.status, ticket.baseBranch, ticket.baseCommit.slice(0, 12), ticket.creator);
     editTitle.value = ticket.title;
     editDescription.value = ticket.description;
     editFiles.value = ticket.files.join('\n');
@@ -316,15 +326,18 @@ export function createTicketPanel(options: TicketPanelOptions) {
       item.append(text, time);
       events.append(item);
     }
-    const readOnly = Boolean(ticket.archivedAt) || ['applied', 'closed'].includes(ticket.status);
+    const restricted = isModContributorOnly(state);
+    const managedByOther = restricted && ticket.creatorId !== state.userId;
+    const readOnly = managedByOther || Boolean(ticket.archivedAt) || ['applied', 'closed'].includes(ticket.status);
     editTitle.disabled = readOnly;
     editDescription.disabled = readOnly;
     editFiles.disabled = readOnly;
     requiredButton('#ticket-save-metadata').disabled = readOnly;
     requiredButton('#ticket-save-files').disabled = readOnly;
-    requiredButton('#ticket-rebase').disabled = readOnly;
-    requiredButton('#ticket-apply').disabled = readOnly;
-    requiredButton('#ticket-archive').disabled = Boolean(ticket.archivedAt);
+    requiredButton('#ticket-rebase').disabled = readOnly || ticket.files.some((file) => !canEditDocument(state, file));
+    requiredButton('#ticket-apply').disabled = readOnly || restricted;
+    requiredButton('#ticket-archive').disabled = managedByOther || Boolean(ticket.archivedAt);
+    requiredButton('#ticket-delete').disabled = managedByOther;
     if (catalog.open) void renderSummary(ticket);
   }
 
@@ -362,7 +375,7 @@ export function createTicketPanel(options: TicketPanelOptions) {
       );
       if (payload.conflicts?.length) {
         const description = payload.conflicts.map((item) => `${item.path}: ${item.keys.join(', ')}`).join('\n');
-        showToast(`Операция остановлена из-за конфликтов:\n${description}`, true);
+        showToast(uiText("Операция остановлена из-за конфликтов:\n{0}", description), true);
       } else {
         showToast(name);
         await reload();
@@ -372,7 +385,7 @@ export function createTicketPanel(options: TicketPanelOptions) {
         }
       }
     } catch (error) {
-      showToast(`${name} не выполнено: ${errorMessage(error)}`, true);
+      showToast(uiText("{0} не выполнено: {1}", name, errorMessage(error)), true);
     } finally {
       renderDetails();
     }
@@ -397,7 +410,7 @@ export function createTicketPanel(options: TicketPanelOptions) {
       createDialog.close();
       navigate(payload.ticket);
     } catch (error) {
-      showToast(`Не удалось создать тикет: ${errorMessage(error)}`, true);
+      showToast(uiText("Не удалось создать тикет: {0}", errorMessage(error)), true);
     } finally { createSubmit.disabled = false; }
   });
   status.addEventListener('change', async () => {
@@ -408,10 +421,10 @@ export function createTicketPanel(options: TicketPanelOptions) {
       });
       state.ticket = payload.ticket;
       await reload();
-      showToast('Статус тикета обновлён.');
+      showToast(uiText("Статус тикета обновлён."));
     } catch (error) {
       status.value = state.ticket.status;
-      showToast(`Не удалось обновить тикет: ${errorMessage(error)}`, true);
+      showToast(uiText("Не удалось обновить тикет: {0}", errorMessage(error)), true);
     }
   });
   catalogButton.addEventListener('click', () => {
@@ -430,8 +443,8 @@ export function createTicketPanel(options: TicketPanelOptions) {
     if (!ticket) return;
     try {
       await api(`/api/tickets/${ticket.id}`, { method: 'PATCH', body: JSON.stringify({ title: editTitle.value, description: editDescription.value }) });
-      dirtyDetails = false; await reload(); showToast('Название и описание сохранены.');
-    } catch (error) { showToast(`Не удалось сохранить: ${errorMessage(error)}`, true); }
+      dirtyDetails = false; await reload(); showToast(uiText("Название и описание сохранены."));
+    } catch (error) { showToast(uiText("Не удалось сохранить: {0}", errorMessage(error)), true); }
   });
   requiredButton('#ticket-save-files').addEventListener('click', async () => {
     const ticket = currentTicket();
@@ -440,17 +453,17 @@ export function createTicketPanel(options: TicketPanelOptions) {
       const payload = await api<{ ticket: Ticket }>(`/api/tickets/${ticket.id}/files`, {
         method: 'PUT', body: JSON.stringify({ files: fileLines(editFiles.value) }),
       });
-      dirtyDetails = false; await reload(); showToast('Список файлов сохранён.');
+      dirtyDetails = false; await reload(); showToast(uiText("Список файлов сохранён."));
       if (state.ticket?.id === ticket.id && !payload.ticket.files.includes(state.relativePath)) navigate(payload.ticket);
-    } catch (error) { showToast(`Не удалось изменить файлы: ${errorMessage(error)}`, true); }
+    } catch (error) { showToast(uiText("Не удалось изменить файлы: {0}", errorMessage(error)), true); }
   });
-  requiredButton('#ticket-rebase').addEventListener('click', () => operation('База тикета обновлена.', 'rebase', 'Обновить тикет относительно текущего Git-коммита?'));
-  requiredButton('#ticket-apply').addEventListener('click', () => operation('Тикет применён к основной версии.', 'apply', 'Применить все файлы тикета к основной совместной версии и локальным файлам?'));
-  requiredButton('#ticket-archive').addEventListener('click', () => operation('Тикет архивирован.', 'archive', 'Архивировать тикет?'));
+  requiredButton('#ticket-rebase').addEventListener('click', () => operation(uiText("База тикета обновлена."), 'rebase', uiText("Обновить тикет относительно текущего Git-коммита?")));
+  requiredButton('#ticket-apply').addEventListener('click', () => operation(uiText("Тикет применён к основной версии."), 'apply', uiText("Применить все файлы тикета к основной совместной версии и локальным файлам?")));
+  requiredButton('#ticket-archive').addEventListener('click', () => operation(uiText("Тикет архивирован."), 'archive', uiText("Архивировать тикет?")));
   requiredButton('#ticket-delete').addEventListener('click', async () => {
     const ticket = currentTicket();
     const button = requiredButton('#ticket-delete');
-    if (!ticket || !await confirmAction(button, `Удалить тикет «${ticket.title}» вместе с документами и историей?`, { label: 'Удалить', danger: true })) return;
+    if (!ticket || !await confirmAction(button, uiText("Удалить тикет «{0}» вместе с документами и историей?", ticket.title), { label: uiText("Удалить"), danger: true })) return;
     button.disabled = true;
     closeCatalog();
     try {
@@ -458,9 +471,9 @@ export function createTicketPanel(options: TicketPanelOptions) {
       const wasCurrent = state.ticket?.id === ticket.id;
       selectedId = '';
       await reload();
-      showToast('Тикет удалён.');
+      showToast(uiText("Тикет удалён."));
       if (wasCurrent) navigate(null);
-    } catch (error) { showToast(`Не удалось удалить тикет: ${errorMessage(error)}`, true); }
+    } catch (error) { showToast(uiText("Не удалось удалить тикет: {0}", errorMessage(error)), true); }
     finally { button.disabled = false; }
   });
 

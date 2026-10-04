@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const COORDINATE_STEP = 4096;
@@ -85,7 +86,7 @@ export function createDialogController(): (heading: string, description: string,
   const title = document.querySelector<HTMLElement>('#dialog-title');
   const label = document.querySelector<HTMLElement>('#dialog-label');
   const value = document.querySelector<HTMLInputElement>('#dialog-value');
-  if (!dialog || !title || !label || !value) throw new Error('Не найдены элементы текстового диалога.');
+  if (!dialog || !title || !label || !value) throw new Error(uiText("Не найдены элементы текстового диалога."));
   return async (heading: string, description: string, initial = ''): Promise<string | null> => {
     title.textContent = heading;
     label.textContent = description;

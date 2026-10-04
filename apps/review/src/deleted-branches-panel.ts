@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import type * as Monaco from 'monaco-editor';
 import { reviewFontFamily } from './editor-font.ts';
 import { requiredButton, requiredDialog, requiredElement, requiredInput } from './dom-elements.ts';
@@ -75,7 +76,7 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
     editorElement.replaceChildren();
     commentsElement.replaceChildren();
     selectedFile = '';
-    selectionElement.textContent = 'Выберите ветку и файл';
+    selectionElement.textContent = uiText("Выберите ветку и файл");
   }
 
   function renderDiscussionGroup(title: string, items: ArchivedDiscussion[]) {
@@ -87,13 +88,13 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
       const card = document.createElement('article');
       card.className = 'deleted-branch-comment';
       const location = document.createElement('button');
-      location.textContent = item.line ? `Строка ${item.line}` : 'Позиция утрачена';
+      location.textContent = item.line ? uiText("Строка {0}", item.line) : uiText("Позиция утрачена");
       location.disabled = !item.line;
       location.addEventListener('click', () => {
         if (item.line) preview?.revealLineInCenter(item.line);
       });
       const meta = document.createElement('strong');
-      meta.textContent = `${item.author || 'Участник'} · ${item.status || 'открыто'}`;
+      meta.textContent = `${item.author || uiText("Участник")} · ${item.status || uiText("открыто")}`;
       card.append(location, meta);
       if (item.originalText || item.replacementText) {
         const change = document.createElement('p');
@@ -102,7 +103,7 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
       }
       for (const message of item.messages) {
         const body = document.createElement('p');
-        body.textContent = `${message.author || 'Участник'}: ${message.body}`;
+        body.textContent = `${message.author || uiText("Участник")}: ${message.body}`;
         card.append(body);
       }
       commentsElement.append(card);
@@ -112,7 +113,7 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
   async function openFile(relativePath: string) {
     if (!selectedBranch || !relativePath) return;
     const sequence = ++requestSequence;
-    selectionElement.textContent = `Загрузка ${relativePath}…`;
+    selectionElement.textContent = uiText("Загрузка {0}…", relativePath);
     try {
       const query = new URLSearchParams({ branch: selectedBranch, path: relativePath });
       const payload = await api<ArchivedDocument>(`/api/deleted-branches/document?${query}`);
@@ -127,19 +128,19 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
       });
       selectedFile = relativePath;
       selectionElement.textContent = `${payload.branch}:${relativePath}`;
-      noticeElement.textContent = `Серверная копия · исходный коммит ${payload.commit.slice(0, 12)}. Только чтение. Для продолжения работы администратор должен восстановить ветку либо перенести её в новую.`;
+      noticeElement.textContent = uiText("Серверная копия · исходный коммит {0}. Только чтение. Для продолжения работы администратор должен восстановить ветку либо перенести её в новую.", payload.commit.slice(0, 12));
       commentsElement.replaceChildren();
-      renderDiscussionGroup('Комментарии', payload.comments);
-      renderDiscussionGroup('Правки', payload.suggestions);
+      renderDiscussionGroup(uiText("Комментарии"), payload.comments);
+      renderDiscussionGroup(uiText("Правки"), payload.suggestions);
       if (!payload.comments.length && !payload.suggestions.length) {
-        commentsElement.textContent = 'Обсуждений и правок в сохранённой комнате нет.';
+        commentsElement.textContent = uiText("Обсуждений и правок в сохранённой комнате нет.");
       }
       for (const button of filesElement.querySelectorAll('button')) {
         button.classList.toggle('active', button.textContent === selectedFile);
       }
     } catch (error) {
       if (sequence !== requestSequence) return;
-      selectionElement.textContent = 'Не удалось открыть сохранённый файл';
+      selectionElement.textContent = uiText("Не удалось открыть сохранённый файл");
       showToast(errorMessage(error), true);
     }
   }
@@ -155,7 +156,7 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
     if (branch.unknownCount) {
       const hint = document.createElement('p');
       hint.className = 'dialog-hint';
-      hint.textContent = `Ещё ${branch.unknownCount} старых комнат без восстановленного пути. Если путь известен, введите его ниже.`;
+      hint.textContent = uiText("Ещё {0} старых комнат без восстановленного пути. Если путь известен, введите его ниже.", branch.unknownCount);
       filesElement.append(hint);
     }
   }
@@ -164,7 +165,7 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
     selectedBranch = branch.branch;
     clearPreview();
     renderFiles(branch);
-    noticeElement.textContent = `Последний известный коммит: ${branch.commit.slice(0, 12)}. Тикетов: ${branch.tickets}. Ветка не будет создана автоматически.`;
+    noticeElement.textContent = uiText("Последний известный коммит: {0}. Тикетов: {1}. Ветка не будет создана автоматически.", branch.commit.slice(0, 12), branch.tickets);
     for (const button of branchesElement.querySelectorAll('button')) {
       button.classList.toggle('active', button.textContent?.startsWith(`${branch.branch} ·`) ?? false);
     }
@@ -173,14 +174,14 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
   function renderBranches() {
     branchesElement.replaceChildren();
     if (!branches.length) {
-      branchesElement.textContent = 'Удалённых веток с сохранёнными документами нет.';
+      branchesElement.textContent = uiText("Удалённых веток с сохранёнными документами нет.");
       filesElement.replaceChildren();
       clearPreview();
       return;
     }
     for (const branch of branches) {
       const button = document.createElement('button');
-      button.textContent = `${branch.branch} · ${branch.files.length + branch.unknownCount} файлов`;
+      button.textContent = uiText("{0} · {1} файлов", branch.branch, branch.files.length + branch.unknownCount);
       button.addEventListener('click', () => selectBranch(branch));
       branchesElement.append(button);
     }
@@ -189,7 +190,7 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
 
   async function reload() {
     const sequence = ++listSequence;
-    branchesElement.textContent = 'Проверка удалённых веток…';
+    branchesElement.textContent = uiText("Проверка удалённых веток…");
     refreshButton.disabled = true;
     try {
       const payload = await api<{ branches: ArchivedBranch[] }>('/api/deleted-branches');
@@ -198,7 +199,7 @@ export function createDeletedBranchesPanel({ monaco, token, showToast }: {
       renderBranches();
     } catch (error) {
       if (dialog.open && sequence === listSequence) {
-        branchesElement.textContent = `Не удалось получить список: ${errorMessage(error)}`;
+        branchesElement.textContent = uiText("Не удалось получить список: {0}", errorMessage(error));
       }
     } finally {
       if (sequence === listSequence) refreshButton.disabled = false;

@@ -1,5 +1,12 @@
 import crypto from 'node:crypto';
 import { AuthError } from './auth.mjs';
+import { isModContributorOnly, canEditDocument } from '../../../packages/shared/src/document-permissions.mts';
+import { assertCanManageTicket } from './ticket-store.mjs';
+import { currentDocumentActor } from './document-actor.mjs';
+
+function requireDocumentEdit(actor, file) {
+  if (!canEditDocument(actor, file)) throw new AuthError('Mod contributors may edit English localisation files only', 403, 'document_edit_forbidden');
+}
 
 function digest(text) {
   return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
@@ -87,7 +94,9 @@ export class TicketService {
   }
 
   async apply(actor, id, body) {
+    actor = currentDocumentActor(this.roomRegistry.authStore, actor);
     const ticket = this.ticketStore.get(id);
+    if (isModContributorOnly(actor)) throw new AuthError('A translation role is required to apply tickets', 403, 'ticket_apply_forbidden');
     if (ticket.archivedAt || ['applied', 'closed'].includes(ticket.status)) {
       throw new AuthError('Ticket cannot be applied now', 409, 'ticket_read_only');
     }
@@ -101,6 +110,8 @@ export class TicketService {
     let prepared;
     let applied;
     await this.withRoomsLocked(roomPairs.flatMap(({ ticketRoom, mainRoom }) => [ticketRoom, mainRoom]), async () => {
+      actor = currentDocumentActor(this.roomRegistry.authStore, actor);
+      if (isModContributorOnly(actor)) throw new AuthError('A translation role is required to apply tickets', 403, 'ticket_apply_forbidden');
       assertSameMutableTicket(this.ticketStore, ticket);
       prepared = roomPairs.map(({ file, ticketRoom, mainRoom }) => {
         const item = supplied.get(file);
@@ -127,7 +138,10 @@ export class TicketService {
   }
 
   async rebase(actor, id, body) {
+    actor = currentDocumentActor(this.roomRegistry.authStore, actor);
     const ticket = this.ticketStore.get(id);
+    assertCanManageTicket(actor, ticket);
+    for (const file of ticket.files) requireDocumentEdit(actor, file);
     if (ticket.archivedAt || ['applied', 'closed'].includes(ticket.status)) {
       throw new AuthError('Ticket cannot be rebased now', 409, 'ticket_read_only');
     }
@@ -143,8 +157,10 @@ export class TicketService {
     let prepared;
     let rebased;
     await this.withRoomsLocked(rooms.map(({ room }) => room), async () => {
-      assertSameMutableTicket(this.ticketStore, ticket);
+      actor = currentDocumentActor(this.roomRegistry.authStore, actor);
+      assertCanManageTicket(actor, assertSameMutableTicket(this.ticketStore, ticket));
       prepared = rooms.map(({ file, room }) => {
+        requireDocumentEdit(actor, file);
         const item = supplied.get(file);
         if (digest(room.currentText()) !== String(item.ticketHash)) {
           throw new AuthError('Ticket changed during rebase', 409, 'ticket_revision_changed');
@@ -167,12 +183,15 @@ export class TicketService {
   }
 
   async setConflict(actor, id, operation, files) {
+    actor = currentDocumentActor(this.roomRegistry.authStore, actor);
+    assertCanManageTicket(actor, this.ticketStore.get(id));
     return this.ticketStore.systemStatus(actor, id, 'git_conflict', 'git_conflict', {
       operation: String(operation).slice(0, 32), files: files.slice(0, 50),
     });
   }
 
   async setFiles(actor, id, files) {
+    actor = currentDocumentActor(this.roomRegistry.authStore, actor);
     const before = this.ticketStore.get(id);
     const changed = await this.ticketStore.setFiles(actor, id, files);
     if (changed.removed.length) {
@@ -185,7 +204,9 @@ export class TicketService {
   }
 
   async delete(actor, id) {
+    actor = currentDocumentActor(this.roomRegistry.authStore, actor);
     const ticket = this.ticketStore.get(id);
+    assertCanManageTicket(actor, ticket);
     await this.roomRegistry.deleteDocuments(ticket.files.map((file) => this.ticketDocument(ticket, file)));
     return this.ticketStore.remove(actor, id);
   }

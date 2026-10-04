@@ -16,11 +16,11 @@ test('fresh Agent setup leaves the participant name empty', () => {
 test('Agent exposes a full colour picker and an explicit tray close action', () => {
   assert.match(agentUi, /\[System\.Windows\.Forms\.ColorDialog\]::new\(\)/u);
   assert.match(agentUi, /\$dialog\.FullOpen = \$true/u);
-  assert.match(agentUi, /\$exitTrayItem = \$trayMenu\.Items\.Add\('Закрыть Agent'\)/u);
+  assert.match(agentUi, /\$exitTrayItem = \$trayMenu\.Items\.Add\(\(Get-EawUiText -Text 'Закрыть Agent'\)\)/u);
 });
 
 test('Agent can launch Review from its main window', () => {
-  assert.match(agentUi, /\$reviewButton\.Text = 'Запустить Review'/u);
+  assert.match(agentUi, /\$reviewButton\.Text = \(Get-EawUiText -Text 'Запустить Review'\)/u);
   assert.match(agentUi, /\$reviewButton\.Enabled = \$false/u);
   assert.match(agentUi, /\$reviewButton\.Add_Click\([\s\S]*start-hub\.ps1/u,
     'the Agent button must use the same remembered-workspace launcher as the desktop shortcut');
@@ -34,7 +34,7 @@ test('Russian client UI does not use the hybrid recovery-code wording', () => {
 });
 
 test('only the confirmed Agent update button requests installation', () => {
-  assert.match(agentUi, /\$updateClientButton\.Text = 'Обновить клиент…'/u);
+  assert.match(agentUi, /\$updateClientButton\.Text = \(Get-EawUiText -Text 'Обновить клиент…'\)/u);
   const handler = agentUi.slice(agentUi.indexOf('$updateClientButton.Add_Click({'), agentUi.indexOf('$showTrayItem.Add_Click'));
   assert.match(handler, /MessageBox\]::Show\(\$form/u);
   assert.match(handler, /'YesNo', 'Question', 'Button2'/u, 'No is the default confirmation choice');

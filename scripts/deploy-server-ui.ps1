@@ -1,4 +1,6 @@
 ﻿param()
+. (Join-Path $PSScriptRoot 'ui-language.ps1')
+
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
@@ -52,14 +54,14 @@ $form.MinimumSize = [Drawing.Size]::new(670, 690)
 $form.Font = [Drawing.Font]::new('Segoe UI', 9)
 
 $title = [Windows.Forms.Label]::new()
-$title.Text = 'Развёртывание серверной части EaW Hub'
+$title.Text = (Get-EawUiText -Text 'Развёртывание серверной части EaW Hub')
 $title.Font = [Drawing.Font]::new('Segoe UI Semibold', 15)
 $title.Location = [Drawing.Point]::new(18, 15)
 $title.AutoSize = $true
 $form.Controls.Add($title)
 
 $subtitle = [Windows.Forms.Label]::new()
-$subtitle.Text = "Локальная версия: $version. Пароль и парольная фраза SSH-ключа не сохраняются."
+$subtitle.Text = (Get-EawUiText -Text 'Локальная версия: {0}. Пароль и парольная фраза SSH-ключа не сохраняются.' -Values @($version))
 $subtitle.Location = [Drawing.Point]::new(20, 50)
 $subtitle.Size = [Drawing.Size]::new(610, 35)
 $form.Controls.Add($subtitle)
@@ -73,12 +75,12 @@ $passwordBox = [Windows.Forms.TextBox]::new(); $passwordBox.UseSystemPasswordCha
 $keyBox = [Windows.Forms.TextBox]::new()
 $keyPassphraseBox = [Windows.Forms.TextBox]::new(); $keyPassphraseBox.UseSystemPasswordChar = $true
 Add-Field $form 'VPS / IP:' 88 $hostBox
-Add-Field $form 'SSH-порт:' 123 $portBox
-Add-Field $form 'Пользователь:' 158 $userBox
-Add-Field $form 'Каталог на VPS:' 193 $rootBox
-Add-Field $form 'Пароль:' 228 $passwordBox
-Add-Field $form 'SSH-ключ (необяз.):' 263 $keyBox
-Add-Field $form 'Пароль ключа:' 298 $keyPassphraseBox
+Add-Field $form (Get-EawUiText -Text 'SSH-порт:') 123 $portBox
+Add-Field $form (Get-EawUiText -Text 'Пользователь:') 158 $userBox
+Add-Field $form (Get-EawUiText -Text 'Каталог на VPS:') 193 $rootBox
+Add-Field $form (Get-EawUiText -Text 'Пароль:') 228 $passwordBox
+Add-Field $form (Get-EawUiText -Text 'SSH-ключ (необяз.):') 263 $keyBox
+Add-Field $form (Get-EawUiText -Text 'Пароль ключа:') 298 $keyPassphraseBox
 
 $browseButton = [Windows.Forms.Button]::new()
 $browseButton.Text = '…'
@@ -86,7 +88,7 @@ $browseButton.Location = [Drawing.Point]::new(635, 263)
 $browseButton.Size = [Drawing.Size]::new(27, 27)
 $browseButton.Add_Click({
     $dialog = [Windows.Forms.OpenFileDialog]::new()
-    $dialog.Title = 'Выберите приватный SSH-ключ'
+    $dialog.Title = (Get-EawUiText -Text 'Выберите приватный SSH-ключ')
     if ($dialog.ShowDialog() -eq 'OK') { $keyBox.Text = $dialog.FileName }
 })
 $form.Controls.Add($browseButton)
@@ -94,24 +96,24 @@ $form.Controls.Add($browseButton)
 $fingerprintLabel = [Windows.Forms.Label]::new()
 $fingerprintLabel.Location = [Drawing.Point]::new(18, 337)
 $fingerprintLabel.Size = [Drawing.Size]::new(620, 42)
-$fingerprintLabel.Text = 'SSH-отпечаток ещё не проверен.'
+$fingerprintLabel.Text = (Get-EawUiText -Text 'SSH-отпечаток ещё не проверен.')
 $form.Controls.Add($fingerprintLabel)
 
 $inspectButton = [Windows.Forms.Button]::new()
-$inspectButton.Text = 'Проверить VPS'
+$inspectButton.Text = (Get-EawUiText -Text 'Проверить VPS')
 $inspectButton.Location = [Drawing.Point]::new(18, 382)
 $inspectButton.Size = [Drawing.Size]::new(180, 34)
 $form.Controls.Add($inspectButton)
 
 $deployButton = [Windows.Forms.Button]::new()
-$deployButton.Text = "Развернуть $version"
+$deployButton.Text = (Get-EawUiText -Text 'Развернуть {0}' -Values @($version))
 $deployButton.Location = [Drawing.Point]::new(208, 382)
 $deployButton.Size = [Drawing.Size]::new(180, 34)
 $deployButton.Enabled = $false
 $form.Controls.Add($deployButton)
 
 $statusLabel = [Windows.Forms.Label]::new()
-$statusLabel.Text = 'Готово к проверке подключения.'
+$statusLabel.Text = (Get-EawUiText -Text 'Готово к проверке подключения.')
 $statusLabel.Location = [Drawing.Point]::new(18, 426)
 $statusLabel.Size = [Drawing.Size]::new(620, 24)
 $form.Controls.Add($statusLabel)
@@ -158,7 +160,7 @@ function Build-Request([bool]$acceptNewHostKey) {
 function Invoke-Deployer([string]$action, [bool]$acceptNewHostKey) {
     if ($script:running) { return }
     Set-Running $true
-    $statusLabel.Text = if ($action -eq 'inspect') { 'Проверка VPS…' } else { 'Развёртывание…' }
+    $statusLabel.Text = if ($action -eq 'inspect') { (Get-EawUiText -Text 'Проверка VPS…') } else { (Get-EawUiText -Text 'Развёртывание…') }
     Append-Log "[$([DateTime]::Now.ToString('HH:mm:ss'))] $($statusLabel.Text)"
     try {
         $start = [Diagnostics.ProcessStartInfo]::new()
@@ -184,17 +186,20 @@ function Invoke-Deployer([string]$action, [bool]$acceptNewHostKey) {
                     if ($event.event -eq 'progress') { Append-Log $event.message }
                     elseif ($event.event -eq 'remote') { Append-Log "VPS: $($event.line)" }
                     elseif ($event.event -eq 'inspection') {
-                        $message = "VPS сообщает версию $($event.remoteVersion).`nSSH-отпечаток: $($event.fingerprint)`n`nДоверять этому серверу?"
-                        if ([Windows.Forms.MessageBox]::Show($message, 'Проверка VPS', 'YesNo', 'Question') -eq 'Yes') {
+                        $message = (Get-EawUiText -Text 'VPS сообщает версию {0}.
+SSH-отпечаток: {1}
+
+Доверять этому серверу?' -Values @($($event.remoteVersion), $($event.fingerprint)))
+                        if ([Windows.Forms.MessageBox]::Show($message, (Get-EawUiText -Text 'Проверка VPS'), 'YesNo', 'Question') -eq 'Yes') {
                             $script:trustedFingerprint = $event.fingerprint
-                            $fingerprintLabel.Text = "Проверен: $($event.fingerprint) | сервер: $($event.remoteVersion)"
+                            $fingerprintLabel.Text = (Get-EawUiText -Text 'Проверен: {0} | сервер: {1}' -Values @($($event.fingerprint), $($event.remoteVersion)))
                             Save-Configuration $script:trustedFingerprint
-                            Append-Log "VPS подтверждён. Сервер: $($event.remoteVersion); локально: $($event.localVersion)."
+                            Append-Log (Get-EawUiText -Text 'VPS подтверждён. Сервер: {0}; локально: {1}.' -Values @($($event.remoteVersion), $($event.localVersion)))
                         }
                     } elseif ($event.event -eq 'deployed') {
-                        Append-Log "Развёрнута версия $($event.version). Проверка здоровья пройдена."
-                        $statusLabel.Text = "Сервер обновлён до $($event.version)."
-                    } elseif ($event.event -eq 'error') { Append-Log "ОШИБКА: $($event.message)" }
+                        Append-Log (Get-EawUiText -Text 'Развёрнута версия {0}. Проверка здоровья пройдена.' -Values @($($event.version)))
+                        $statusLabel.Text = (Get-EawUiText -Text 'Сервер обновлён до {0}.' -Values @($($event.version)))
+                    } elseif ($event.event -eq 'error') { Append-Log (Get-EawUiText -Text 'ОШИБКА: {0}' -Values @($($event.message))) }
                 } catch { Append-Log $line }
                 [Windows.Forms.Application]::DoEvents()
             }
@@ -205,13 +210,13 @@ function Invoke-Deployer([string]$action, [bool]$acceptNewHostKey) {
         $stderr = $process.StandardError.ReadToEnd()
         if ($stderr) { Append-Log $stderr.Trim() }
         if ($process.ExitCode -ne 0) {
-            $statusLabel.Text = 'Операция завершилась с ошибкой.'
+            $statusLabel.Text = (Get-EawUiText -Text 'Операция завершилась с ошибкой.')
         } elseif ($action -eq 'inspect') {
-            $statusLabel.Text = 'Проверка VPS завершена.'
+            $statusLabel.Text = (Get-EawUiText -Text 'Проверка VPS завершена.')
         }
     } catch {
-        Append-Log "ОШИБКА: $($_.Exception.Message)"
-        $statusLabel.Text = 'Операция завершилась с ошибкой.'
+        Append-Log (Get-EawUiText -Text 'ОШИБКА: {0}' -Values @($($_.Exception.Message)))
+        $statusLabel.Text = (Get-EawUiText -Text 'Операция завершилась с ошибкой.')
     } finally {
         Set-Running $false
     }
@@ -220,8 +225,10 @@ function Invoke-Deployer([string]$action, [bool]$acceptNewHostKey) {
 $inspectButton.Add_Click({ Invoke-Deployer 'inspect' $true })
 $deployButton.Add_Click({
     $answer = [Windows.Forms.MessageBox]::Show(
-        "Обновить сервер до $version?`n`nDeployer создаст резервную копию кода, проверит SHA-256 и откатится при неудачной проверке /health.",
-        'Подтверждение развёртывания', 'YesNo', 'Warning')
+        (Get-EawUiText -Text 'Обновить сервер до {0}
+
+Deployer создаст резервную копию кода, проверит SHA-256 и откатится при неудачной проверке /health.' -Values @($version?)),
+        (Get-EawUiText -Text 'Подтверждение развёртывания'), 'YesNo', 'Warning')
     if ($answer -eq 'Yes') { Invoke-Deployer 'deploy' $false }
 })
 
@@ -233,7 +240,7 @@ if ($configuration.Port) { $portBox.Value = [int]$configuration.Port }
 if ($configuration.PrivateKeyPath) { $keyBox.Text = $configuration.PrivateKeyPath }
 if ($configuration.HostFingerprint) {
     $script:trustedFingerprint = $configuration.HostFingerprint
-    $fingerprintLabel.Text = "Сохранённый отпечаток: $($configuration.HostFingerprint). Нажмите «Проверить VPS»."
+    $fingerprintLabel.Text = (Get-EawUiText -Text 'Сохранённый отпечаток: {0}. Нажмите «Проверить VPS».' -Values @($($configuration.HostFingerprint)))
     $deployButton.Enabled = $true
 }
 

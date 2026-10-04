@@ -8,48 +8,69 @@
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <header class="appbar">
-    <div class="brand">
-      <strong>EaW Localisation Hub</strong>
-      <span id="document-name">Режим рецензирования</span>
+  <header class="appbar review-workbench">
+    <div class="workbench-topline">
+      <div class="workbench-brand"><span aria-hidden="true">EaW</span><strong>Localisation Hub</strong></div>
+      <nav class="workbench-menus" aria-label="Главное меню">
+        <details class="review-menu"><summary>Файл</summary><div class="menu-popover">
+          <button id="file-open-menu">Открыть файл… <kbd>Ctrl+O</kbd></button>
+          <button id="file-close-menu">Закрыть вкладку <kbd>Ctrl+W</kbd></button>
+          <hr><button id="ticket-create" title="Создать совместный черновик от текущего Git-коммита">Новый тикет</button>
+          <button id="ticket-catalog">Все тикеты</button>
+          <button id="deleted-branches-open" title="Сохранённые документы веток, удалённых без слияния">Удалённые ветки</button>
+        </div></details>
+        <details class="review-menu"><summary data-ui-message="Меню «Правка»">Правка</summary><div class="menu-popover">
+          <button data-review-command="undo">Отменить <kbd>Ctrl+Z</kbd></button>
+          <button data-review-command="redo">Повторить <kbd>Ctrl+Y</kbd></button>
+          <hr><button data-review-command="comment-create">Комментарий</button>
+          <button id="key-replace-open">Изменить по ключам</button>
+        </div></details>
+        <details class="review-menu"><summary>Вид</summary><div class="menu-popover">
+          <button data-review-command="toggle-collaboration">Участники и брони</button>
+          <button data-review-command="toggle-discussions">Обсуждения и правки</button>
+          <hr><button id="english-original" title="Показать английскую строку для ключа под курсором">Английский оригинал</button>
+          <button id="localisation-audit-open" title="Сравнить ключи, физические строки и их порядок в русском и английском файлах">Сверка</button>
+          <button id="help-open" title="Настройки уведомлений и повторное обучение">Настройки</button>
+        </div></details>
+        <details class="review-menu"><summary>Git</summary><div class="menu-popover">
+          <button id="repository-update" title="Безопасно обновить текущую Git-ветку из upstream (только fast-forward)">Обновить репозиторий</button>
+          <button id="git-history-open" disabled>Git diff</button>
+          <button id="history-open" disabled>История</button>
+        </div></details>
+      </nav>
       <div class="ticket-switcher">
         <select id="ticket-select" aria-label="Рабочая версия"><option>Основная версия</option></select>
         <select id="ticket-status" aria-label="Статус тикета" hidden>
-          <option value="draft">Черновик</option>
-          <option value="in_progress">В работе</option>
-          <option value="review">На проверке</option>
-          <option value="needs_changes">Нужны исправления</option>
-          <option value="ready">Готов к применению</option>
-          <option value="closed">Закрыт</option>
+          <option value="draft">Черновик</option><option value="in_progress">В работе</option>
+          <option value="review">На проверке</option><option value="needs_changes">Нужны исправления</option>
+          <option value="ready">Готов к применению</option><option value="closed">Закрыт</option>
         </select>
-        <button id="ticket-catalog">Все тикеты</button>
-        <button id="deleted-branches-open" title="Сохранённые документы веток, удалённых без слияния">Удалённые ветки</button>
-        <button id="ticket-create" title="Создать совместный черновик от текущего Git-коммита">Новый тикет</button>
       </div>
     </div>
-    <div id="status" class="status">Подключение к Desktop Agent…</div>
+    <div class="brand">
+      <span id="document-name">Режим рецензирования</span>
+    </div>
     <div class="actions">
       <div class="mode-switch" aria-label="Режим редактирования">
         <button id="mode-edit" aria-pressed="true">Редактирование</button>
         <button id="mode-suggest" aria-pressed="false">Правки</button>
       </div>
-      <button id="undo" title="Совместная отмена">↶ Отменить</button>
-      <button id="redo" title="Совместный повтор">↷ Повторить</button>
+      <div class="toolbar-group undo-group">
+        <button id="undo" class="icon-button" title="Совместная отмена" aria-label="Отменить"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4 3 8l4 4M3 8h8a5 5 0 0 1 0 10"/></svg></button>
+        <button id="redo" class="icon-button" title="Совместный повтор" aria-label="Повторить"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m13 4 4 4-4 4m4-4H9a5 5 0 0 0 0 10"/></svg></button>
+      </div>
       <button id="comment-create">Комментарий</button>
-      <button id="key-replace-open">Изменить по ключам</button>
       <select id="document-view" aria-label="Представление документа" disabled>
         <option value="shared">Совместная версия</option>
         <option value="mine">Git + мои изменения</option>
         <option value="git">Git HEAD</option>
       </select>
       <button id="personal-file-open" disabled>Локальный файл</button>
-      <button id="english-original" title="Показать английскую строку для ключа под курсором">Английский оригинал</button>
-      <button id="history-open" disabled>История</button>
-      <button id="git-history-open" disabled>Git diff</button>
-      <button id="repository-update" title="Безопасно обновить текущую Git-ветку из upstream (только fast-forward)">Обновить репозиторий</button>
-      <button id="localisation-audit-open" title="Сравнить ключи, физические строки и их порядок в русском и английском файлах">Сверка</button>
-      <button id="help-open" title="Настройки уведомлений и повторное обучение">Настройки</button>
-      <button id="notifications-open" title="Локальные уведомления">Уведомления <span id="notifications-count">0</span></button>
+      <div class="toolbar-spacer"></div>
+      <div class="toolbar-group pane-switches">
+        <button id="toggle-collaboration" class="icon-button" title="Участники и брони" aria-label="Участники и брони" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="1"/><path d="M7 3v14"/></svg></button>
+        <button id="toggle-discussions" class="icon-button" title="Обсуждения и правки" aria-label="Обсуждения и правки" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="1"/><path d="M13 3v14"/></svg></button>
+      </div>
       <label id="scroll-sync-control" class="scroll-sync-control" hidden><input id="scroll-sync-enabled" type="checkbox" checked> Синхронизация прокрутки</label>
     </div>
   </header>
@@ -71,7 +92,7 @@
   <main id="workspace" class="workspace">
     <aside id="collaboration-lane" aria-label="Совместная работа">
       <section class="side-section">
-        <div class="section-heading"><strong>Участники</strong><span id="presence-count">1</span></div>
+        <div class="section-heading"><strong>Участники</strong><span id="presence-count">1</span><button class="pane-close" data-review-command="toggle-collaboration" aria-label="Скрыть панель участников">×</button></div>
         <div id="presence-list" class="item-list"></div>
         <div class="profile-actions">
           <button id="avatar-change">Сменить аватар</button>
@@ -107,12 +128,18 @@
         <strong>Обсуждения и правки</strong>
         <label class="accepted-filter"><input id="show-accepted-suggestions" type="checkbox"> Принятые</label>
         <span id="review-count">0</span>
+        <button class="pane-close" data-review-command="toggle-discussions" aria-label="Скрыть панель обсуждений">×</button>
       </div>
       <div id="cards"></div>
       <div id="empty-review" class="empty-review">Для этого участка пока нет обсуждений.</div>
     </aside>
     <svg id="connectors" aria-hidden="true"></svg>
   </main>
+  <footer class="review-statusbar">
+    <div id="status" class="status" role="status">Подключение к Desktop Agent…</div>
+    <span id="editor-position"></span><span class="status-format">YAML</span>
+    <button id="notifications-open" title="Локальные уведомления">Уведомления <span id="notifications-count">0</span></button>
+  </footer>
   <div id="toast" role="status" aria-live="polite"></div>
   <dialog id="repository-sync-dialog" class="repository-sync-dialog" aria-labelledby="repository-sync-title">
     <form method="dialog">
@@ -281,6 +308,7 @@
           <button id="history-close">Закрыть</button>
         </div>
         <div id="history-diff"></div>
+        <div class="history-placeholder">Выберите версию слева</div>
       </section>
     </div>
   </dialog>
@@ -342,6 +370,7 @@
       <div class="history-toolbar"><h2>Настройки</h2><button id="help-close">Закрыть</button></div>
       <label><input id="notifications-enabled" type="checkbox" checked> Показывать уведомления</label>
       <label><input id="notification-sound" type="checkbox" checked> Звуковые уведомления</label>
+      <label>Language / Язык <select id="ui-language"><option value="auto">Windows (automatic)</option><option value="ru">Русский</option><option value="en">English</option></select></label>
       <hr>
       <section class="editor-settings-grid" aria-label="Внешний вид редактора">
         <strong>Внешний вид редактора</strong>
@@ -352,6 +381,14 @@
         <label class="settings-wide"><input id="spellcheck-enabled" type="checkbox" checked> Подчёркивать возможные ошибки в русском тексте</label>
         <p class="dialog-hint settings-wide">Проверяется локально и в фоне только видимая область; сервер отдаёт расширенный словарь и хранит общий список слов команды, но не получает текст файла. Любой участник может пополнить общий словарь через меню быстрых исправлений; замены применяются только по вашему выбору. Автоматической замены нет.</p>
         <p class="dialog-hint settings-wide">Локальный линтер постоянно проверяет кавычки, escape-последовательности, повторные ключи, ссылки $KEY$, цветовые теги §Y…§!, иконки £name и выражения [Get…]. Индекс ключей строит Desktop Agent из локальных файлов мода; текст документа не отправляется на сервер. Для отсутствующих в моде ссылок выдаются только осторожные подсказки: ключ может принадлежать базовой игре или вычисляться во время выполнения. Это не полный валидатор HoI4.</p>
+      </section>
+      <hr>
+      <section class="editor-settings-grid" aria-label="Неактивные вкладки">
+        <strong>Неактивные вкладки</strong>
+        <label class="settings-wide"><input id="workspace-sleep-enabled" type="checkbox" checked> Усыплять неактивные вкладки</label>
+        <label>Простой до усыпления<select id="workspace-sleep-minutes"><option value="1">1 мин.</option><option value="5" selected>5 мин.</option><option value="10">10 мин.</option><option value="15">15 мин.</option><option value="30">30 мин.</option></select></label>
+        <label>Вкладок в памяти<select id="workspace-warm-limit"><option value="4" selected>4</option><option value="8">8</option><option value="12">12</option><option value="20">20</option></select></label>
+        <p class="dialog-hint settings-wide">При превышении лимита вкладки без изменений засыпают после минуты простоя. Черновики, локальная история отмены и незавершённая синхронизация защищены от выгрузки. Спящая вкладка подключается заново при открытии.</p>
       </section>
       <hr>
       <div class="settings-cache-row">

@@ -1,6 +1,10 @@
-export const DISPLAY_VERSION = '0.8.8F7';
-export const SEMVER_VERSION = '0.8.8-beta.7';
+export const DISPLAY_VERSION = '0.8.8F8';
+export const SEMVER_VERSION = '0.8.8-beta.8';
 export const PROTOCOL_VERSION = 21;
+export const PROTOCOL_NAME = 'EaW Hub Sync Protocol';
+export const PROTOCOL_ABBREVIATION = 'EHSP';
+export const PROTOCOL_METADATA = Object.freeze({ protocol: PROTOCOL_VERSION,
+  protocolName: PROTOCOL_NAME, protocolAbbreviation: PROTOCOL_ABBREVIATION });
 
 // Transport and CRDT budgets are intentionally separate. A full localisation
 // seed is larger than an ordinary edit, while the in-memory Yjs state must stay

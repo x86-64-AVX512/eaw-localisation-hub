@@ -1,4 +1,6 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { byteToUtf16, decodeBase64, encodeBase64, utf16ToByte } from './review-utilities.ts';
+import { canEditDocument, canDecideSuggestions } from '../../../packages/shared/src/document-permissions.mts';
 import { createSuggestionHistory } from './suggestion-history.ts';
 import {
   createSuggestionTrace, suggestionTraceOrigins,
@@ -43,6 +45,8 @@ interface ActiveSuggestion extends SuggestionDraftAction {
 }
 
 interface EditingState {
+  roles?: string[];
+  relativePath?: string;
   path: string;
   user: string;
   userId: string;
@@ -261,12 +265,12 @@ export function createEditingModeController({
   const suggestButton = requiredButton('#mode-suggest');
   function requireModel(): Monaco.editor.ITextModel {
     const model = editor.getModel();
-    if (!model) throw new Error('Редактор не содержит документа.');
+    if (!model) throw new Error(uiText("Редактор не содержит документа."));
     return model;
   }
   function requirePosition(): Monaco.Position {
     const position = editor.getPosition();
-    if (!position) throw new Error('В редакторе нет активного курсора.');
+    if (!position) throw new Error(uiText("В редакторе нет активного курсора."));
     return position;
   }
   let mode: 'edit' | 'suggest' = 'edit';
@@ -315,7 +319,7 @@ export function createEditingModeController({
   function sendSnapshot(changes: readonly ReviewTextEdit[] | null = null): void {
     clearTimeout(snapshotTimer);
     snapshotTimer = undefined;
-    if (!state.ready || mode !== 'edit') return;
+    if (!state.ready || !canEditDocument(state, state.relativePath ?? '') || mode !== 'edit') return;
     if (state.reviewDocument?.commit(editor.getValue(), changes)) return;
     send({ type: 'snapshot', path: state.path, textBase64: encodeBase64(editor.getValue()) });
   }
@@ -340,6 +344,7 @@ export function createEditingModeController({
   }
 
   function syncSuggestion() {
+    if (!canEditDocument(state, state.relativePath ?? '')) return false;
     if (!state.ready || mode !== 'suggest') return false;
     const current = editor.getValue();
     if (activeSuggestion?.projectedText === current) return true;
@@ -401,12 +406,13 @@ export function createEditingModeController({
     resetDraftOrigins();
     renderMode();
     showToast(mode === 'suggest'
-      ? 'Режим правок: изменения создают предложения и не меняют документ напрямую.'
-      : 'Обычный режим редактирования.');
+      ? uiText("Режим правок: изменения создают предложения и не меняют документ напрямую.")
+      : uiText("Обычный режим редактирования."));
     editor.focus();
   }
 
   function editSuggestion(item: ReviewSuggestion): boolean {
+    if (!canEditDocument(state, state.relativePath ?? '')) return false;
     if (!item || item.status !== 'open') return false;
     const ownSuggestion = item.authorId
       ? item.authorId === state.userId
@@ -427,12 +433,12 @@ export function createEditingModeController({
       start = byteToUtf16(baseText, Number(item.startByte));
       end = byteToUtf16(baseText, Number(item.endByte));
     } catch {
-      showToast('\u041f\u0440\u0430\u0432\u043a\u0430 \u0443\u0441\u0442\u0430\u0440\u0435\u043b\u0430: \u0435\u0451 \u043f\u043e\u0437\u0438\u0446\u0438\u044f \u0431\u043e\u043b\u044c\u0448\u0435 \u043d\u0435 \u0441\u043e\u0432\u043f\u0430\u0434\u0430\u0435\u0442 \u0441 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u043e\u043c.', true);
+      showToast(uiText("Правка устарела: её позиция больше не совпадает с документом."), true);
       return false;
     }
     const original = decodeBase64(item.originalBase64);
     if (baseText.slice(start, end) !== original) {
-      showToast('\u041f\u0440\u0430\u0432\u043a\u0430 \u0443\u0441\u0442\u0430\u0440\u0435\u043b\u0430: \u0438\u0441\u0445\u043e\u0434\u043d\u044b\u0439 \u0442\u0435\u043a\u0441\u0442 \u0443\u0436\u0435 \u0438\u0437\u043c\u0435\u043d\u0438\u043b\u0441\u044f.', true);
+      showToast(uiText("Правка устарела: исходный текст уже изменился."), true);
       return false;
     }
 
@@ -466,7 +472,7 @@ export function createEditingModeController({
     editor.setPosition(model.getPositionAt(start + replacement.length));
     state.applyingRemote = false;
     onDraftStateChange();
-    showToast('\u041f\u0440\u0430\u0432\u043a\u0430 \u043e\u0442\u043a\u0440\u044b\u0442\u0430 \u0434\u043b\u044f \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f.');
+    showToast(uiText("Правка открыта для редактирования."));
     editor.focus();
     return true;
   }
@@ -519,7 +525,7 @@ export function createEditingModeController({
         state.applyingRemote = false;
         localRedoAvailable = false;
         onDraftStateChange();
-        showToast(`Создано правок: ${actions.length}.`);
+        showToast(uiText("Создано правок: {0}.", actions.length));
         return;
       }
       if (editor.getValue() !== draftBase) localRedoAvailable = false;
@@ -545,16 +551,25 @@ export function createEditingModeController({
 
   return {
     isSuggesting: () => mode === 'suggest',
+    hasDraft: () => Boolean(snapshotTimer || activeSuggestion || (mode === 'suggest' && editor.getValue() !== draftBase)),
     editSuggestion,
     flushSuggestion,
+    finishSuggestionAt(position: Monaco.IPosition): boolean {
+      if (!activeSuggestion || !state.suggestionProjection || state.applyingRemote) return false;
+      const offset = requireModel().getOffsetAt(position);
+      const bounds = projectedEditingBounds(state.suggestionProjection);
+      if (offset >= bounds.start && offset <= bounds.end) return false;
+      return flushSuggestion(offset);
+    },
     insertLineBreak() {
+      if (!state.ready || !canEditDocument(state, state.relativePath ?? '')) return false;
       const model = editor.getModel();
       const selection = editor.getSelection();
       if (!model || !selection) return false;
       const start = model.getOffsetAt(selection.getStartPosition());
       const end = model.getOffsetAt(selection.getEndPosition());
       if (!isLineBreakBoundary(model.getValue(), start, end)) {
-        showToast('Перенос строки разрешён только перед словом или после него.', true);
+        showToast(uiText("Перенос строки разрешён только перед словом или после него."), true);
         return false;
       }
       if (mode === 'suggest' && activeSuggestion && state.suggestionProjection) {
@@ -571,11 +586,13 @@ export function createEditingModeController({
       return true;
     },
     acceptSuggestion(item: ReviewSuggestion) {
+      if (!canDecideSuggestions(state)) return;
       if (!item?.id) return;
       send({ type: 'suggestionAccept', path: state.path, id: item.id });
       recordAccepted(item.id);
     },
     revertSuggestion(item: ReviewSuggestion) {
+      if (!canDecideSuggestions(state)) return;
       if (!item?.id) return;
       send({ type: 'suggestionRevert', path: state.path, id: item.id });
       const index = acceptedUndo.lastIndexOf(item.id);
@@ -594,12 +611,13 @@ export function createEditingModeController({
       }
     },
     undo() {
+      if (!canEditDocument(state, state.relativePath ?? '')) return;
       if (acceptedUndo.length) {
         const id = acceptedUndo.pop();
         if (!id) return;
         acceptedRedo.push(id);
         send({ type: 'suggestionRevert', path: state.path, id });
-        showToast('Принятие правки отменено.');
+        showToast(uiText("Принятие правки отменено."));
         return;
       }
       if (mode !== 'suggest') {
@@ -612,16 +630,17 @@ export function createEditingModeController({
         return;
       }
       if (suggestionHistory.undo(state.path)) {
-        showToast('Последняя предложенная правка отменена.');
+        showToast(uiText("Последняя предложенная правка отменена."));
       }
     },
     redo() {
+      if (!canEditDocument(state, state.relativePath ?? '')) return;
       if (acceptedRedo.length) {
         const id = acceptedRedo.pop();
         if (!id) return;
         acceptedUndo.push(id);
         send({ type: 'suggestionAccept', path: state.path, id });
-        showToast('Правка принята повторно.');
+        showToast(uiText("Правка принята повторно."));
         return;
       }
       if (mode !== 'suggest') {
@@ -638,7 +657,7 @@ export function createEditingModeController({
         localRedoAvailable = false;
       }
       if (suggestionHistory.redo()) {
-        showToast('Предложенная правка восстановлена.');
+        showToast(uiText("Предложенная правка восстановлена."));
       }
     },
     dispose() {

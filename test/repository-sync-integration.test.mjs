@@ -41,7 +41,10 @@ async function stop(child) {
   const closed = once(child, 'exit'); child.kill(); await closed;
 }
 
-test('real Agent update reconnects Review to canonical Git without reverting checkout or importing it as an edit',
+for (const startup of [false, true]) {
+test(startup
+  ? 'real auto-pull initialises Review opened on an outdated file without importing its old snapshot'
+  : 'real Agent update reconnects Review to canonical Git without reverting checkout or importing it as an edit',
   { timeout: 45_000 }, async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-repository-sync-transport-'));
     const publisher = path.join(root, 'publisher'), remote = path.join(root, 'remote.git'), repo = path.join(root, 'client');
@@ -74,6 +77,20 @@ test('real Agent update reconnects Review to canonical Git without reverting che
         EAW_HUB_GIT_REFRESH_MILLISECONDS: '1000',
       });
       await waitUntil(() => server.output.includes('listening on'), 'server ready');
+      const publishUpdate = async () => {
+        await fs.writeFile(path.join(publisher, relative), `\uFEFF${updated}`);
+        git(publisher, 'add', '.'); git(publisher, 'commit', '-m', 'remote change'); git(publisher, 'push', 'fork', 'general-dev');
+      };
+      const waitCanonical = async () => {
+        const target = git(publisher, 'rev-parse', 'HEAD');
+        await waitUntil(async () => {
+          const result = await fetch(`http://127.0.0.1:${port}/api/git/head?branch=general-dev`);
+          return (await result.json()).commit === target;
+        }, 'canonical server remote HEAD');
+      };
+      // Auto-Git is enabled only after Review attaches, so startup reliably
+      // exercises the previously circular initialisation/checkout wait.
+      if (startup) { await publishUpdate(); await waitCanonical(); }
       agent = node(['apps/agent/src/main.mjs', '--repo', repo, '--user', 'Alice', '--state', state,
         '--server', `ws://127.0.0.1:${port}`]);
       await waitUntil(() => agent.output.includes('review application: ready'), 'Agent ready');
@@ -103,11 +120,13 @@ test('real Agent update reconnects Review to canonical Git without reverting che
       });
       await once(socket, 'open');
       socket.send(JSON.stringify({ type: 'open', path: file, crdt: 'yjs-v1', textBase64: Buffer.from(original).toString('base64') }));
-      await waitUntil(() => messages.some((m) => m.type === 'documentVariants'), 'initial projection');
+      if (startup) {
+        await waitUntil(() => messages.some((m) => m.type === 'documentStatus' && m.status === 'git-file-outdated'), 'outdated initial view');
+        assert.equal(messages.some((m) => m.type === 'documentReady'), false);
+      } else await waitUntil(() => messages.some((m) => m.type === 'documentVariants'), 'initial projection');
       await new Promise((resolve) => setTimeout(resolve, 900));
       assert.equal(git(repo, 'status', '--porcelain'), '');
-      await fs.writeFile(path.join(publisher, relative), `\uFEFF${updated}`);
-      git(publisher, 'add', '.'); git(publisher, 'commit', '-m', 'remote change'); git(publisher, 'push', 'fork', 'general-dev');
+      if (!startup) await publishUpdate();
       const target = git(publisher, 'rev-parse', 'HEAD');
       const directory = repositorySyncDirectory(state, repo);
       await fs.mkdir(directory, { recursive: true });
@@ -118,11 +137,9 @@ test('real Agent update reconnects Review to canonical Git without reverting che
         assert.equal(response.status, 202, await response.text());
       };
       // Force canonical refresh so the client is already read-only/outdated.
-      await waitUntil(async () => {
-        const result = await fetch(`http://127.0.0.1:${port}/api/git/head?branch=general-dev`);
-        return (await result.json()).commit === target;
-      }, 'canonical server remote HEAD');
-      await requestUpdate();
+      await waitCanonical();
+      if (startup) await fs.writeFile(path.join(directory, 'settings.json'), JSON.stringify({ autoPull: true }));
+      else await requestUpdate();
       await waitUntil(() => git(repo, 'rev-parse', 'HEAD') === target, 'fast-forward');
       await waitUntil(() => normaliseLineEndings(document.text()) === updated, 'Review new canonical text');
       const readDisk = async () => normaliseLineEndings(withoutUtf8Bom(await fs.readFile(file, 'utf8')));
@@ -156,3 +173,4 @@ test('real Agent update reconnects Review to canonical Git without reverting che
       await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   });
+}

@@ -314,3 +314,86 @@ test('a local-only change to one duplicate occurrence can be reset independently
   assert.equal(changes.entries[0].state, 'custom');
   assert.equal(setLocalisationSelection(git, git, local, 'occ:2:repeated', true), git);
 });
+
+test('excluding a partly deleted BAR key restores it in place without a raw key fragment', () => {
+  for (const eol of ['\n', '\r\n']) for (const tail of [':', ':0']) {
+    const git = ['l_russian:', ' before:0 "Before"', '',
+      ' BAR_friend_white_star_is_helping_tooltip:0 "White Star is here to help her brother."',
+      ' BAR_fix_the_climate_tooltip:0 "Effects of Barrad climate will be less severe."', '', '',
+      ' after:0 "After"', ' sp_bar_magical_reactor:0 "One"', ' sp_bar_magical_reactor:0 "Two"', ''].join(eol);
+    const shared = git.replace(
+      ` BAR_friend_white_star_is_helping_tooltip:0 "White Star is here to help her brother."${eol} BAR_fix_the_climate_tooltip:0 "Effects of Barrad climate will be less severe."`,
+      ` BAR_friend_white_star_is_helping_tooltip${tail}`);
+    const changes = localisationSelectionChanges(git, shared, shared);
+    assert.equal(changes.entries.find(({ key }) => key === 'BAR_friend_white_star_is_helping_tooltip')?.kind, 'modified');
+    assert.equal(changes.blockedReason, '');
+    const variant = captureLocalisationVariant(git, shared);
+    assert.equal(variant.get('BAR_friend_white_star_is_helping_tooltip'), ` BAR_friend_white_star_is_helping_tooltip${tail}`);
+    assert.equal(projectLocalisationVariant(git, variant), shared);
+    for (const order of [
+      ['BAR_friend_white_star_is_helping_tooltip', 'BAR_fix_the_climate_tooltip'],
+      ['BAR_fix_the_climate_tooltip', 'BAR_friend_white_star_is_helping_tooltip'],
+    ]) {
+      let local = shared;
+      for (const key of order) local = setLocalisationSelection(git, shared, local, `key:${key}`, false);
+      assert.equal(local, git, `${eol === '\n' ? 'LF' : 'CRLF'} ${tail}: no orphan fragment or extra line`);
+      for (const key of order) local = setLocalisationSelection(git, shared, local, `key:${key}`, true);
+      assert.equal(local, shared);
+    }
+  }
+});
+
+test('a locale header stays structure while an unfinished declaration remains a keyed edit', () => {
+  const git = 'l_russian:\n target:0 "Value"\n';
+  const shared = 'l_russian:\n target:\n';
+  assert.deepEqual([...captureLocalisationVariant(git, shared)], [['target', ' target:']]);
+  assert.deepEqual(localisationSelectionChanges(git, shared, git).entries.map(({ id }) => id), ['key:target']);
+});
+
+test('legacy stored structure plus restored key choices no longer materialises a duplicate fragment', () => {
+  const git = 'l_russian:\n before:0 "Before"\n\n target:0 "Target"\n next:0 "Next"\n\n\n after:0 "After"\n repeated:0 "One"\n repeated:0 "Two"\n';
+  const shared = git.replace(' target:0 "Target"\n next:0 "Next"', ' target:');
+  // Before the parser fix, removing the value classified target as deleted
+  // and its residual colon line as structure. Unchecking persisted this map.
+  const restored = new Map([
+    ['__file_structure__', shared], ['target', ' target:0 "Target"'], ['next', ' next:0 "Next"'],
+  ]);
+  assert.equal(projectLocalisationVariant(git, restored), git);
+  const legacyLocal = shared.replace('\n\n\n after:', '\n\n\n target:0 "Target"\n next:0 "Next"\n after:');
+  const persisted = new Map([...restored, ['__file_structure__', legacyLocal]]);
+  const recovered = projectLocalisationVariant(git, persisted);
+  assert.equal((recovered.match(/ target:/gu) ?? []).length, 1, 'an already persisted raw fragment is not kept as a second declaration');
+  assert.doesNotMatch(recovered, / target:\r?\n/u);
+  assert.equal(recovered.split('\n').length, git.split('\n').length, 'the phantom declaration no longer adds a model row');
+  assert.match(recovered, / next:0 "Next"/u);
+  const otherLocalEdit = new Map([...restored, ['after', ' after:0 "Personal"']]);
+  assert.equal(projectLocalisationVariant(git, otherLocalEdit), git.replace('"After"', '"Personal"'));
+});
+
+test('restoring a deleted group with an internal blank keeps it above the following comment block', () => {
+  for (const eol of ['\n', '\r\n']) {
+    const block = [' company:0 "Company"', ' description:0 "Description"', '',
+      ' progress: "Progress"', ' pending: "Pending"'].join(eol) + eol;
+    const git = ['l_russian:', ' before:0 "Before"', block + '', '',
+      ' # ASCII heading', ' # #### ###', '', '', ' after:0 "After"',
+      ' repeated:0 "One"', ' repeated:0 "Two"', ''].join(eol);
+    for (const placeholder of ['', ` ${eol}`]) {
+      const shared = git.replace(block, placeholder);
+      const orders = (items) => items.length ? items.flatMap((key, index) =>
+        orders(items.filter((_, other) => other !== index)).map((tail) => [key, ...tail])) : [[]];
+      for (const order of orders(['company', 'description', 'progress', 'pending'])) {
+        let local = shared;
+        for (const key of order) local = setLocalisationSelection(git, shared, local, `key:${key}`, false);
+        assert.equal(local, git, `restored order ${order.join(',')} with ${JSON.stringify(eol)}`);
+        const variant = captureLocalisationVariant(git, local);
+        assert.equal(projectLocalisationVariant(git, variant), git);
+        for (const key of order) local = setLocalisationSelection(git, shared, local, `key:${key}`, true);
+        assert.equal(local, git.replace(block, ''),
+          'including the whole deletion again must remove its internal blank and editor placeholder');
+      }
+      const misplaced = shared.replace(' after:0', block.replace(`${eol}${eol}`, eol) + ' after:0');
+      assert.equal(setLocalisationSelection(git, shared, misplaced, 'key:company', false), git,
+        'explicit exclusion also repairs a group already restored below its comments');
+    }
+  }
+});

@@ -1,4 +1,14 @@
+import { uiText, uiMessage } from '../../../packages/shared/src/ui-language.mts';
+import { createTextStatisticsAction } from './text-statistics.ts';
+import { createSuggestionContextMenu } from './suggestion-context-menu.ts';
+import { createThemedSelects } from './themed-select.ts';
+import { createWorkspaceRuntime, isWorkspaceVisible } from './workspace-runtime.ts';
+import { createDocumentCloser } from './document-close.ts';
 import * as monaco from 'monaco-editor'; import './style.css';
+import { initialiseUiLanguage, createLanguageSelector } from './ui-language.ts';
+import { canEditDocument } from '../../../packages/shared/src/document-permissions.mts';
+import { applyDocumentPermissions } from './document-permissions.ts';
+import { applyAgentIdentity } from './agent-identity.ts';
 import { loadReviewDashFont, reviewFontFamily } from './editor-font.ts';
 import { createAvatarProfile } from './avatar-profile.ts'; import { createCollaborationPanel } from './collaboration-panel.ts';
 import { createDecorationRenderer } from './editor-decorations.ts'; import { applyDocumentStatus } from './document-status.ts';
@@ -24,16 +34,18 @@ import { parseAgentMessage } from './agent-message.ts';
 import type { BootstrapPayload } from './app-state.ts';
 import { createAppbarLayout } from './appbar-layout.ts'; import { createEditorSettings } from './editor-settings.ts'; import { createSpellcheck } from './spellcheck.ts'; import { createWorkspaceTabs } from './workspace-tabs.ts';
 import {
-  createDialogController, decodeBase64, encodeBase64, utf16ToByte,
+  createDialogController, decodeBase64, encodeBase64,
 } from './review-utilities.ts';
 (self as typeof self & { MonacoEnvironment?: { getWorker: () => Worker } }).MonacoEnvironment = { getWorker: () => new Worker('/editor.worker.js', { type: 'module' }) };
 const hash = new URLSearchParams(location.hash.slice(1)), token = hash.get('token') ?? '';
+const languageSettings = await initialiseUiLanguage(token);
+const themedSelects = createThemedSelects();
 const requestedPath = hash.get('path') ?? '', requestedTicket = hash.get('ticket') ?? '', readOnlyMode = hash.get('readOnly') ?? '', requestedPair = hash.get('pair') ?? '', requestedCommit = hash.get('commit') ?? '', requestedLine = Number(hash.get('line') ?? 0);
 const state = createAppState(), statusElement = requiredElement('#status'), toastElement = requiredElement('#toast');
 const appbarLayout = createAppbarLayout(requiredElement('.appbar'));
 const askText = createDialogController(); let toastTimer: ReturnType<typeof setTimeout> | undefined;
 function setStatus(text: string, error = false): void { statusElement.textContent = text; statusElement.classList.toggle('error', error); }
-function showToast(text: string, error = false): void { clearTimeout(toastTimer); toastElement.textContent = text;
+function showToast(text: string, error = false): void { clearTimeout(toastTimer); toastElement.textContent = uiMessage(text);
   toastElement.classList.toggle('error', error); toastElement.classList.add('visible');
   toastTimer = setTimeout(() => toastElement.classList.remove('visible'), 4200);
 }
@@ -50,12 +62,14 @@ const editor = monaco.editor.create(requiredElement('#editor'), {
   wordWrap: 'on', wrappingStrategy: 'advanced', glyphMargin: true, padding: { top: 12, bottom: 40 }, scrollBeyondLastLine: false,
   renderWhitespace: 'selection', roundedSelection: false, unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
 }); let agentConnection: ReturnType<typeof createAgentConnection> | undefined;
+appbarLayout.connectEditor(editor);
 createEditorSettings({ monaco, editor, showToast });
 const spellcheck = createSpellcheck({ monaco, editor, token, showToast }); const syntaxDiagnostics = createSyntaxDiagnostics({ monaco, editor, token, showToast, getFilePath: () => state.relativePath });
 function send(message: { type: string; [field: string]: unknown }): void {
+  if (!isWorkspaceVisible() && ['activate','cursor'].includes(message.type)) return;
   agentConnection?.send(message.reviewAnchors ? message : state.reviewDocument?.anchor(message) ?? message);
 }
-const { rangeFromBytes, selectionBytes, jumpToBytes } = createEditorCoordinates({ monaco, state, editor });
+const { rangeFromBytes, selectionBytes, jumpToBytes, positionByteAt } = createEditorCoordinates({ monaco, state, editor });
 let editingMode!: ReturnType<typeof createEditingModeController>;
 const reviewCards = createReviewCards({
   state, editor, rangeFromBytes, send, askText, showToast,
@@ -69,7 +83,7 @@ const collaborationPanel = createCollaborationPanel({
   openConflictDiff: gitConflictDiff.open,
 });
 const refreshDecorations = createDecorationRenderer({
-  monaco, state, editor, rangeFromBytes, onLayout: reviewCards.layout,
+  monaco, state, editor, rangeFromBytes, onLayout: () => { reviewCards.layout(); appbarLayout.updatePosition(); },
 });
 const reviewRefresh = createReviewRefresh(() => {
   refreshDecorations();
@@ -82,18 +96,8 @@ editingMode = createEditingModeController({
 });
 const avatarProfile = createAvatarProfile({ state, send, showToast });
 const recoveryBanner = createRecoveryBanner({ state, send, showToast });
-let documentClosing = false;
-async function closeActiveDocument({ flush = true } = {}) {
-  if (documentClosing || !state.path) return;
-  documentClosing = true;
-  editingMode?.flushSuggestion();
-  state.ready = false;
-  state.presences.clear();
-  collaborationRefresh.refreshAll();
-  agentConnection?.send({ type: 'deactivate', path: state.path });
-  agentConnection?.send({ type: 'close', path: state.path });
-  if (flush) await agentConnection?.flush();
-}
+const closeActiveDocument = createDocumentCloser({ state,editingMode,refresh:() => collaborationRefresh.refreshAll(),connection:() => agentConnection });
+createLanguageSelector(token, languageSettings, closeActiveDocument, showToast);
 const ticketPanel = createTicketPanel({
   monaco, state, editor, token, requestedPath, showToast, beforeNavigate: closeActiveDocument,
 });
@@ -124,22 +128,14 @@ function handleMessage(raw: unknown): void {
   if (message.path && message.path.toLowerCase() !== state.path.toLowerCase()) return;
   if (reviewRefresh.handleBatch(message.type)) return;
   if (message.type === 'agentHello') {
-    Object.assign(state, {
-      user: message.user, userId: message.userId, color: message.color,
-      avatarBase64: message.avatarBase64 ?? '',
-      // Keep the banner hidden until Agent relays an explicit status received from the server.
-      recoveryStatus: message.recoveryStatus ?? '',
-      temporaryPassword: message.temporaryPassword === true,
-      workspace: message.workspace || state.workspace,
-      version: message.version || state.version, serverVersion: message.serverVersion || state.serverVersion,
-      trainingProgress: message.trainingProgress ?? state.trainingProgress,
-      trainingProgressConfirmed: message.trainingProgressConfirmed === true,
-    });
+    applyAgentIdentity(state, message);
     setStatus(`${message.user} · ${message.workspace}`);
     collaborationPanel.refresh();
     avatarProfile.refresh();
     recoveryBanner.refresh();
     helpPanel.refresh();
+    applyDocumentPermissions(state, editor);
+    reviewRefresh.schedule(); commentActions.refresh();
   } else if (message.type === 'documentStatus') {
     applyDocumentStatus(message, state, editor, setStatus);
   } else if (message.type === 'documentReady') {
@@ -147,10 +143,10 @@ function handleMessage(raw: unknown): void {
     state.reviewDocument?.replay();
     send({ type: 'activate', path: state.path, positionByte: 0, anchorByte: 0 });
     ticketPanel.refresh();
-    editor.updateOptions({ readOnly: state.documentView !== 'shared'
+    editor.updateOptions({ readOnly: !canEditDocument(state, state.relativePath) || state.documentView !== 'shared'
       || ['applied', 'closed'].includes(state.ticket?.status ?? '') });
-    setStatus('Совместный документ подключён');
-    presenceController.publish();
+    setStatus(uiText("Совместный документ подключён"));
+    presenceController.publish(); workspaceRuntime.ready();
   } else if (message.type === 'documentSync') state.reviewDocument?.receive(message);
   else if (message.type === 'replace') applyRemoteReplace(message);
   else if (message.type === 'documentVariants') documentVariants.update(message);
@@ -183,7 +179,7 @@ function handleMessage(raw: unknown): void {
   else if (message.type === 'suggestionMessage') {
     const messages = state.suggestionMessages.get(message.id) ?? [];
     messages.push(message); state.suggestionMessages.set(message.id, messages);
-  } else if (message.type === 'notice') showToast(message.message);
+  } else if (message.type === 'notice') showToast(uiMessage(message.message));
   else if (message.type === 'history') historyPanel.update(message.entries ?? [], message.headId ?? '');
   else if (message.type === 'historyVersion') historyPanel.receiveVersion(message);
   else if (message.type === 'recoveryCode') recoveryBanner.save(message.recoveryCode);
@@ -197,11 +193,11 @@ function handleMessage(raw: unknown): void {
       editor.updateOptions({ readOnly: true });
       collaborationPanel.refresh();
     }
-    setStatus(message.message, !ready);
-    showToast(message.message, !ready);
+    setStatus(uiMessage(message.message), !ready);
+    showToast(uiMessage(message.message), !ready);
   } else if (message.type === 'error') {
-    setStatus(message.message, true);
-    showToast(message.message, true);
+    setStatus(uiMessage(message.message), true);
+    showToast(uiMessage(message.message), true);
   }
   if (/^(presence|reservation|externalConflict)/.test(message.type)) collaborationRefresh.schedule(message.type);
   if (/^(comment|suggestion)/.test(message.type)) reviewRefresh.schedule();
@@ -216,12 +212,9 @@ editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.K
 editor.addCommand(monaco.KeyCode.Enter, () => state.ready && editingMode.insertLineBreak());
 const reviewNavigation = createReviewNavigation({
   state, editor,
-  positionByteAt: (position) => {
-    const model = editor.getModel();
-    if (!model) throw new Error('Редактор не содержит документа.');
-    return utf16ToByte(model.getValue(), model.getOffsetAt(position));
-  },
+  positionByteAt,
   focusCard: reviewCards.focusCard,
+  finishSuggestionAt: editingMode.finishSuggestionAt,
   onSuggestion: (suggestion) => {
     const own = suggestion.authorId ? suggestion.authorId === state.userId : suggestion.author === state.user;
     if (state.editingSuggestionId || !editingMode.isSuggesting() || !own) return;
@@ -236,9 +229,14 @@ const commentActions = createCommentActions({ monaco, editor, state,
   button: requiredButton('#comment-create'), selectionBytes, askText, send, showToast,
   anchor: (message) => state.reviewDocument?.anchor(message) ?? message,
 });
+const textStatistics = createTextStatisticsAction({ editor, showToast });
+const suggestionContextMenu = createSuggestionContextMenu(editor);
+const workspaceRuntime = createWorkspaceRuntime({ state, editor, hasDraft:editingMode.hasDraft, send, close:closeActiveDocument,
+  onVisible:() => { presenceController.publish(); syntaxDiagnostics.refresh(); reviewRefresh.schedule(); } });
 async function start() {
-  if (!token || !requestedPath) throw new Error('Review-приложение запущено без локальной сессии или файла.');
+  if (!token || !requestedPath) throw new Error(uiText("Review-приложение запущено без локальной сессии или файла."));
   const bootstrapQuery = new URLSearchParams({ path: requestedPath });
+  if (hash.has('session')) bootstrapQuery.set('workspace','1');
   if (requestedTicket) bootstrapQuery.set('ticket', requestedTicket);
   if (readOnlyMode) bootstrapQuery.set('readonly', readOnlyMode);
   if (requestedCommit) bootstrapQuery.set('commit', requestedCommit);
@@ -246,7 +244,7 @@ async function start() {
     headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
   });
   const data = await bootstrap.json() as BootstrapPayload;
-  if (!bootstrap.ok) throw new Error(data.error || 'Не удалось открыть файл.');
+  if (!bootstrap.ok) throw new Error(data.error || uiText("Не удалось открыть файл."));
   Object.assign(state, {
     path: data.path, relativePath: data.relativePath, workspace: data.workspace,
     ticket: data.ticket, user: data.user, color: data.color,
@@ -259,7 +257,7 @@ async function start() {
   ]) {
     requiredButton(`#${id}`).disabled = ticketReadOnly;
   }
-  const contextName = data.ticket ? `тикет «${data.ticket.title}»` : data.workspace;
+  const contextName = data.ticket ? uiText("тикет «{0}»", data.ticket.title) : data.workspace;
   requiredElement('#document-name').textContent = `${data.relativePath} · ${contextName}`;
   editor.setValue(decodeBase64(data.textBase64)); syntaxDiagnostics.refresh();
   if (!requestedLine) workspaceTabs.restore(editor, data.path);
@@ -281,7 +279,7 @@ async function start() {
     onWaiting: (_delay, error = '') => {
       state.ready = false;
       editor.updateOptions({ readOnly: true });
-      setStatus(error || 'Desktop Agent отключён – ожидается автоматическое переподключение…', true);
+      setStatus(error || uiText("Desktop Agent отключён – ожидается автоматическое переподключение…"), true);
     },
   });
 }
@@ -293,6 +291,6 @@ window.addEventListener('beforeunload', () => {
   notificationCenter.dispose(); repositorySyncPanel.dispose(); editingMode.flushSuggestion(); editingMode.dispose();
   state.reviewDocument?.dispose(); presenceController.dispose();
   historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();
-  scrollSync.dispose(); reviewRefresh.dispose(); collaborationRefresh.dispose(); spellcheck.dispose(); syntaxDiagnostics.dispose();
-  reviewNavigation.dispose(); commentActions.dispose(); appbarLayout.dispose(); agentConnection?.dispose(); gitConflictDiff.dispose();
+  scrollSync.dispose(); reviewRefresh.dispose(); refreshDecorations.dispose(); themedSelects.dispose(); collaborationRefresh.dispose(); spellcheck.dispose(); syntaxDiagnostics.dispose();
+  workspaceRuntime.dispose(); reviewNavigation.dispose(); commentActions.dispose(); textStatistics.dispose(); suggestionContextMenu.dispose(); appbarLayout.dispose(); agentConnection?.dispose(); gitConflictDiff.dispose();
 });

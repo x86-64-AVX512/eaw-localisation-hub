@@ -1,4 +1,6 @@
-﻿function Get-EawHubClientStatusMetadata {
+﻿
+. (Join-Path $PSScriptRoot 'ui-language.ps1')
+function Get-EawHubClientStatusMetadata {
     param([Parameter(Mandatory = $true)][string]$ProjectRoot)
     $versionPath = Join-Path $ProjectRoot 'VERSION'
     $constantsPath = Join-Path $ProjectRoot 'packages\shared\src\constants.mts'
@@ -6,7 +8,7 @@
     $constants = Get-Content -LiteralPath $constantsPath -Raw -Encoding utf8
     $protocolMatch = [regex]::Match($constants, 'PROTOCOL_VERSION\s*=\s*(\d+)')
     if ($version -notmatch '^\d+\.\d+\.\d+F\d+$' -or -not $protocolMatch.Success) {
-        throw 'Не удалось определить локальную версию клиента или протокола.'
+        throw (Get-EawUiText -Text 'Не удалось определить локальную версию клиента или протокола.')
     }
     [pscustomobject]@{
         Version = $version

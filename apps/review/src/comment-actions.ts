@@ -1,4 +1,6 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import type * as Monaco from 'monaco-editor';
+import { canEditDocument } from '../../../packages/shared/src/document-permissions.mts';
 import { encodeBase64 } from './review-utilities.ts';
 
 interface CommentCommand { type: string; path: string; startByte: number; endByte: number;
@@ -9,7 +11,7 @@ export function createCommentActions({ monaco, editor, button, state, selectionB
   monaco: typeof Monaco;
   editor: Monaco.editor.IStandaloneCodeEditor;
   button: HTMLButtonElement;
-  state: { path: string; ready: boolean; documentView: string };
+  state: { path: string; ready: boolean; documentView: string; roles?: string[]; relativePath?: string };
   selectionBytes: () => { start: number; end: number };
   askText: (title: string, description: string) => Promise<string | null | undefined>;
   send: (message: CommentCommand) => void;
@@ -18,7 +20,8 @@ export function createCommentActions({ monaco, editor, button, state, selectionB
 }) {
   let creating = false;
   const available = () => Boolean(state.path && state.ready && state.documentView === 'shared'
-    && !button.disabled && !button.hidden && !editor.getOption(monaco.editor.EditorOption.readOnly));
+    && !button.disabled && !button.hidden && (!editor.getOption(monaco.editor.EditorOption.readOnly)
+      || !canEditDocument(state, state.relativePath ?? '')));
   const context = editor.createContextKey<boolean>('eawCanCreateComment', false);
   const refresh = () => context.set(available() && !creating);
 
@@ -33,11 +36,11 @@ export function createCommentActions({ monaco, editor, button, state, selectionB
     creating = true;
     refresh();
     try {
-      const body = await askText('Новый комментарий', 'Комментарий к выделению или позиции курсора');
+      const body = await askText(uiText("Новый комментарий"), uiText("Комментарий к выделению или позиции курсора"));
       if (!body?.trim()) return;
       if (!available() || state.path !== request.path || model !== editor.getModel()
         || (!request.reviewAnchors && model.getVersionId() !== version)) {
-        showToast('Документ изменился. Повторите создание комментария на актуальном выделении.', true);
+        showToast(uiText("Документ изменился. Повторите создание комментария на актуальном выделении."), true);
         return;
       }
       send({ ...request, bodyBase64: encodeBase64(body.trim()) });
@@ -46,7 +49,7 @@ export function createCommentActions({ monaco, editor, button, state, selectionB
     } finally { creating = false; refresh(); }
   }
 
-  const action = editor.addAction({ id: 'eaw.review.createComment', label: 'Создать комментарий',
+  const action = editor.addAction({ id: 'eaw.review.createComment', label: uiText("Создать комментарий"),
     precondition: 'eawCanCreateComment', contextMenuGroupId: '1_modification', contextMenuOrder: 3,
     run: create });
   const click = () => { void create(); };

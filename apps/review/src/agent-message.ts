@@ -9,7 +9,7 @@ type AgentMessageBody =
   | { type: 'ticketCatalogChanged'; revision?: string }
   | { type: 'ticketUnavailable'; ticketId: string; reason?: string }
   | { type: 'agentHello'; user: string; userId?: string; color?: string; avatarBase64?: string;
-      recoveryStatus?: string; temporaryPassword?: boolean; workspace: string; version?: string;
+      recoveryStatus?: string; temporaryPassword?: boolean; workspace: string; version?: string; roles?: string[];
       serverVersion?: string; trainingProgress?: Record<string, number>; trainingProgressConfirmed?: boolean }
   | { type: 'documentStatus'; status: string; reason?: string; branch?: string; changedFiles?: string[]; message?: string }
   | { type: 'documentReady' }
@@ -69,7 +69,7 @@ const requiredFields: Readonly<Record<AgentMessage['type'], Shape>> = {
 const optionalFields: Partial<Readonly<Record<AgentMessage['type'], Shape>>> = {
   ticketCatalogChanged: { revision: 'string' }, ticketUnavailable: { reason: 'string' },
   agentHello: { userId: 'string', color: 'string', avatarBase64: 'string', recoveryStatus: 'string',
-    temporaryPassword: 'boolean', version: 'string', serverVersion: 'string', trainingProgressConfirmed: 'boolean' },
+    temporaryPassword: 'boolean', version: 'string', serverVersion: 'string', trainingProgressConfirmed: 'boolean', roles: 'array' },
   documentStatus: { reason: 'string', branch: 'string', changedFiles: 'array', message: 'string' },
   documentVariants: { sharedBase64: 'string', mineBase64: 'string', gitBase64: 'string',
     mineFromGit: 'boolean', mineBaseRevision: 'string', mineRevision: 'string', contributors: 'array', conflicts: 'array',
@@ -109,6 +109,8 @@ export function parseAgentMessage(value: unknown): AgentMessage | null {
     && (!isRecord(value.trainingProgress) || !Object.values(value.trainingProgress).every((revision) => typeof revision === 'number'))) return null;
   if (value.type === 'documentStatus' && value.changedFiles !== undefined
     && !(value.changedFiles as unknown[]).every((file) => typeof file === 'string')) return null;
+  if (value.type === 'agentHello' && value.roles !== undefined
+    && !(value.roles as unknown[]).every((role) => typeof role === 'string')) return null;
   if (value.type === 'presenceSnapshot' && !optionalArray(value, 'presences', requiredFields.presence)) return null;
   if (value.type === 'reservationSnapshot' && !optionalArray(value, 'reservations', requiredFields.reservation)) return null;
   if (value.type === 'reservationTargetSnapshot' && !optionalArray(value, 'targets', requiredFields.reservationTarget)) return null;

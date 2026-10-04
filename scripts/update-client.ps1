@@ -4,6 +4,8 @@
     [Parameter(Mandatory = $true)][long]$OwnerStartedAtTicks,
     [switch]$Install
 )
+. (Join-Path $PSScriptRoot 'ui-language.ps1')
+
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'agent-status.ps1')
@@ -117,7 +119,7 @@ function Stop-CurrentClient {
                 [string]::Equals($agent.Path, $expectedNode, [System.StringComparison]::OrdinalIgnoreCase)) {
                 Stop-Process -Id $agent.Id -ErrorAction Stop
             }
-        } catch { Write-UpdateStatus -Stage 'switching' -Message "Не удалось остановить старый Agent: $($_.Exception.Message)" }
+        } catch { Write-UpdateStatus -Stage 'switching' -Message (Get-EawUiText -Text 'Не удалось остановить старый Agent: {0}' -Values @($($_.Exception.Message))) }
     }
     $reviewPath = Join-Path $projectRoot 'review\EaWReview.exe'
     Get-Process -Name 'EaWReview' -ErrorAction SilentlyContinue | ForEach-Object {
@@ -126,7 +128,7 @@ function Stop-CurrentClient {
                 if (-not $_.CloseMainWindow()) { Stop-Process -Id $_.Id -ErrorAction Stop }
                 elseif (-not $_.WaitForExit(3000)) { Stop-Process -Id $_.Id -ErrorAction Stop }
             }
-        } catch { Write-UpdateStatus -Stage 'switching' -Message "Не удалось закрыть Review: $($_.Exception.Message)" }
+        } catch { Write-UpdateStatus -Stage 'switching' -Message (Get-EawUiText -Text 'Не удалось закрыть Review: {0}' -Values @($($_.Exception.Message))) }
     }
     $owner = Get-OwnerProcess
     if ($owner) {
@@ -182,18 +184,18 @@ try {
     $installed = Get-EawHubClientStatusMetadata -ProjectRoot $projectRoot
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     if ($Install) {
-        Write-UpdateStatus -Stage 'checking' -Message 'Проверяется наличие новой версии на GitHub Releases…' -Version $installed.Version
+        Write-UpdateStatus -Stage 'checking' -Message (Get-EawUiText -Text 'Проверяется наличие новой версии на GitHub Releases…') -Version $installed.Version
     }
     $release = Find-NewClientRelease -InstalledVersion $installed.Version
     if (-not $release) {
-        Write-UpdateStatus -Stage 'current' -Message "Опубликованной версии новее $($installed.Version) нет; клиент не менялся." -Version $installed.Version
+        Write-UpdateStatus -Stage 'current' -Message (Get-EawUiText -Text 'Опубликованной версии новее {0} нет; клиент не менялся.' -Values @($($installed.Version))) -Version $installed.Version
         return
     }
 
     # Startup, periodic and compatibility checks are read-only. Only an explicit
     # button action may request downloads, stop the client or run an installer.
     if (-not $Install) {
-        Write-UpdateStatus -Stage 'available' -Message "Доступна версия $($release.Version). Нажмите «Обновить клиент…», чтобы скачать и установить её." -Version $release.Version
+        Write-UpdateStatus -Stage 'available' -Message (Get-EawUiText -Text 'Доступна версия {0}. Нажмите «Обновить клиент…», чтобы скачать и установить её.' -Values @($($release.Version))) -Version $release.Version
         return
     }
 
@@ -203,15 +205,15 @@ try {
     $installerPath = Join-Path $workRoot $release.InstallerName
     $checksumPath = "$installerPath.sha256"
     Show-ClientUpdateWindow -Version $release.Version
-    Write-UpdateStatus -Stage 'downloading' -Message "Скачивается установщик $($release.Version) с GitHub Releases…" -Version $release.Version
+    Write-UpdateStatus -Stage 'downloading' -Message (Get-EawUiText -Text 'Скачивается установщик {0} с GitHub Releases…' -Values @($($release.Version))) -Version $release.Version
     Save-ClientReleaseAsset -Url $release.Installer.browser_download_url -Destination $installerPath `
         -ExpectedBytes ([long]$release.Installer.size) -Version $release.Version -ReportProgress
-    Write-UpdateStatus -Stage 'verifying' -Message 'Проверяется целостность установщика (SHA-256)…' -Version $release.Version
+    Write-UpdateStatus -Stage 'verifying' -Message (Get-EawUiText -Text 'Проверяется целостность установщика (SHA-256)…') -Version $release.Version
     Save-ClientReleaseAsset -Url $release.Checksum.browser_download_url -Destination $checksumPath `
         -ExpectedBytes ([long]$release.Checksum.size) -Version $release.Version -TimeoutSeconds 30
     Assert-ClientReleaseInstaller -Release $release -InstallerPath $installerPath -ChecksumPath $checksumPath
     if (-not (Get-OwnerProcess)) { return }
-    Write-UpdateStatus -Stage 'installing' -Message "Устанавливается клиент $($release.Version); Windows может запросить права администратора…" -Version $release.Version
+    Write-UpdateStatus -Stage 'installing' -Message (Get-EawUiText -Text 'Устанавливается клиент {0}; Windows может запросить права администратора…' -Values @($($release.Version))) -Version $release.Version
     $oldReviewPath = Join-Path $projectRoot 'review\EaWReview.exe'
     $reviewWasOpen = $false
     foreach ($candidate in @(Get-Process -Name 'EaWReview' -ErrorAction SilentlyContinue)) {
@@ -230,9 +232,9 @@ try {
     }
     Restart-UpdatedClient -InstallRoot $projectRoot -Version $release.Version -ReopenReview $reviewWasOpen | Out-Null
     $clientStopped = $false
-    Write-UpdateStatus -Stage 'complete' -Message "Клиент обновлён до $($release.Version). Agent перезапущен." -Version $release.Version -ProgressPercent 100
+    Write-UpdateStatus -Stage 'complete' -Message (Get-EawUiText -Text 'Клиент обновлён до {0}. Agent перезапущен.' -Values @($($release.Version))) -Version $release.Version -ProgressPercent 100
 } catch {
-    Write-UpdateStatus -Stage 'error' -Message "Обновление не удалось: $($_.Exception.Message)"
+    Write-UpdateStatus -Stage 'error' -Message (Get-EawUiText -Text 'Обновление не удалось: {0}' -Values @($($_.Exception.Message)))
     if ($clientStopped -and -not $script:clientRestartLaunched -and
         (Test-Path -LiteralPath (Join-Path $projectRoot 'scripts\start-agent-ui.ps1') -PathType Leaf)) {
         try {

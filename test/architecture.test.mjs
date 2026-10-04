@@ -143,8 +143,10 @@ test('Review owns the complete collaboration UI without a native editor plugin',
     assert.match(reviewSources, new RegExp(`['\"]${command}['\"]`, 'u'), `${command} is absent from Review`);
   }
   assert.match(source('apps/review/src/presence-controller.ts'), /setInterval\(publish, HEARTBEAT_MILLISECONDS\)/u);
-  assert.match(source('apps/review/src/app.ts'), /encodeBase64, utf16ToByte/u,
-    'Review selection commands must import their UTF-8 offset converter');
+  assert.match(source('apps/review/src/editor-coordinates.ts'), /byteToUtf16, utf16ToByte/u,
+    'Review coordinate commands must import their UTF-8 offset converters');
+  assert.match(source('apps/review/src/app.ts'), /positionByteAt,/u,
+    'Review navigation must use the dedicated coordinate converter');
   const cursorLayer = source('apps/review/src/presence-cursors.ts');
   assert.match(cursorLayer, /addContentWidget/u,
     'Review caret must use a non-layout-shifting Monaco content widget');
@@ -320,14 +322,27 @@ test('Review collaboration sections scroll instead of overlapping at short windo
   assert.match(styles, /#reservation-list \{[^}]*overflow-y: auto/u);
 });
 
-test('Review header grows when its actions wrap instead of clipping the ticket switcher', () => {
+test('Review workbench keeps menus, a wrapping toolbar and shared tabs aligned above the editor', () => {
   const styles = source('apps/review/src/style.css');
   const layout = source('apps/review/src/appbar-layout.ts');
-  assert.match(styles, /\.appbar\.appbar-stacked[\s\S]*grid-template-areas: "brand" "actions" "status"/u);
-  assert.match(styles, /\.ticket-switcher \{[^}]*flex-wrap: wrap/u);
-  assert.match(styles, /\.appbar \{[\s\S]*align-items: start/u);
-  assert.match(styles, /\.appbar \{[\s\S]*flex: 0 0 auto/u);
-  assert.match(layout, /brandWidth \+ columnGap \+ actionsWidth > availableWidth/u);
+  const markup = source('apps/review/src/index.html');
+  const shell = source('apps/review/src/workspace-window.ts');
+  assert.match(styles, /\.review-workbench \.actions \{[^}]*flex-wrap:wrap/u);
+  assert.match(styles, /\.embedded-document-tools \{ flex:0 0 35px/u);
+  assert.match(styles, /\.workspace-window > \.document-tabs \{[^}]*position:absolute/u);
+  assert.ok(markup.indexOf('class="actions"') < markup.indexOf('id="document-tabs"'));
+  assert.match(markup, /<footer class="review-statusbar">/u);
+  assert.match(layout, /postWorkspace\('layout',layout\)/u);
+  assert.match(layout, /target && !target.disabled && !target.hidden/u,
+    'menu proxies must never bypass disabled collaboration actions');
+  assert.match(layout, /signature !== lastLayout/u, 'unchanged layout must not flood the workspace bridge');
+  assert.match(layout, /document.querySelector\('dialog\[open\]'\)/u);
+  assert.match(shell, /if \(picker.open\) return/u, 'file shortcuts must not close a document behind a modal');
+  assert.match(shell, /document.addEventListener\('keydown',shortcuts\)/u,
+    'file shortcuts must also work when the shared tab strip owns keyboard focus');
+  assert.match(shell, /data.operation === 'layout' && s === active/u);
+  assert.match(shell, /bar.classList.toggle\('occluded',Boolean\(data.overlay\)\)/u,
+    'child menus and modals must paint above the cross-document tab bar');
   assert.match(layout, /new ResizeObserver\(refresh\)/u);
 });
 

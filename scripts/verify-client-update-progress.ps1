@@ -3,6 +3,9 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'update-client.ps1') -ProjectRoot $projectRoot -OwnerProcessId 2147483647 -OwnerStartedAtTicks 0
+# Assertions below use Russian labels; never depend on the user's saved UI
+# preference or change it while verifying the updater.
+function Get-EawUiLanguageSettings { [pscustomobject]@{ language = 'ru'; preference = 'ru' } }
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('EaWHubUpdateProgress-' + [Guid]::NewGuid().ToString('N'))
 $tempPrefix = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\') + '\'
 if (-not [System.IO.Path]::GetFullPath($testRoot).StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase)) {

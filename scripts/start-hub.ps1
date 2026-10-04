@@ -1,4 +1,6 @@
-param([string]$FilePath)
+﻿param([string]$FilePath)
+. (Join-Path $PSScriptRoot 'ui-language.ps1')
+
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot

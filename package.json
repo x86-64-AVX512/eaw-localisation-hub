@@ -1,7 +1,7 @@
 {
   "name": "eaw-localisation-hub",
   "private": true,
-  "version": "0.8.8-beta.7",
+  "version": "0.8.8-beta.8",
   "description": "EaW collaborative localisation early beta",
   "license": "GPL-2.0-only",
   "author": "EaW Localisation Hub contributors",
@@ -30,6 +30,7 @@
     "test:source": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-source-package.ps1",
     "test:credentials": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-credential-store.ps1",
     "test:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-agent-status.ps1",
+    "test:language": "node --test test/ui-language.test.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-ui-language.ps1",
     "test:repository-sync": "node --test test/repository-sync.test.mjs test/repository-sync-ui.test.mjs test/repository-sync-integration.test.mjs test/review-repository-sync.test.mjs",
     "test:updater": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-updater.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-update-progress.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-update-consent.ps1",
     "test:update-flow": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-updater.ps1 -Integration",
@@ -56,8 +57,8 @@
     "yjs": "^13.6.27"
   },
   "eawHub": {
-    "displayVersion": "0.8.8F7",
-    "windowsFileVersion": "0.8.8.7"
+    "displayVersion": "0.8.8F8",
+    "windowsFileVersion": "0.8.8.8"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",

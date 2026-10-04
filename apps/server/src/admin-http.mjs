@@ -120,8 +120,10 @@ export async function handleAdminHttp(context) {
     const actor = await authenticatedAdmin(request, { fresh: true });
     const body = await readJsonBody(request);
     const id = decodeURIComponent(match[1]);
-    sendJson(response, 200, { user: await audited(actor, 'roles', id, () => authStore.updateRoles(actor, id, body.roles),
-      { roles: Array.isArray(body.roles) ? body.roles.slice(0, 8).map((role) => String(role).slice(0, 64)) : [] }) });
+    const user = await audited(actor, 'roles', id, () => authStore.updateRoles(actor, id, body.roles),
+      { roles: Array.isArray(body.roles) ? body.roles.slice(0, 8).map((role) => String(role).slice(0, 64)) : [] });
+    await disconnectAuthenticatedSockets((identity) => identity?.id === id, 'Account roles changed', 1012);
+    sendJson(response, 200, { user });
     return true;
   }
   match = /^\/users\/([^/]+)\/recovery-authorize$/.exec(managementPath);

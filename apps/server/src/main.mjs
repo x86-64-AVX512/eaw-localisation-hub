@@ -29,7 +29,7 @@ import {
   MAX_CONNECTIONS_PER_USER,
   MAX_CONNECTIONS_TOTAL,
   MAX_MESSAGE_BYTES,
-  PROTOCOL_VERSION,
+  PROTOCOL_METADATA,
 } from '../../../packages/shared/src/constants.mts';
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(sourceDirectory, '../../..');
@@ -190,11 +190,11 @@ async function flushRooms() {
   await auditLog.flush();
 }
 
-async function disconnectAuthenticatedSockets(predicate, reason) {
+async function disconnectAuthenticatedSockets(predicate, reason, closeCode = 1008) {
   for (const room of await Promise.all([...rooms.values()])) {
     for (const socket of room.clients) {
       if (predicate(socket.identity) && socket.readyState === WebSocket.OPEN) {
-        socket.close(1008, reason);
+        socket.close(closeCode, reason);
       }
     }
   }
@@ -206,7 +206,7 @@ async function handleHttp(request, response) {
     sendJson(response, 200, {
       ok: true,
       version: DISPLAY_VERSION,
-      protocol: PROTOCOL_VERSION,
+      ...PROTOCOL_METADATA,
       auth: options.auth,
       rooms: rooms.size,
     });

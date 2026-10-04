@@ -1,7 +1,8 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 let active: { cancel(): void } | null = null;
 
 export function confirmAction(anchor: EventTarget | null, message: string,
-  { label = 'Подтвердить', danger = false }: { label?: string; danger?: boolean } = {}): Promise<boolean> {
+  { label = uiText("Подтвердить"), danger = false }: { label?: string; danger?: boolean } = {}): Promise<boolean> {
   active?.cancel();
   if (!(anchor instanceof HTMLElement) || !anchor.isConnected || ('disabled' in anchor && anchor.disabled)) {
     return Promise.resolve(false);
@@ -17,7 +18,7 @@ export function confirmAction(anchor: EventTarget | null, message: string,
     const actions = document.createElement('div'); actions.className = 'confirm-action-buttons';
     const accept = document.createElement('button'); accept.type = 'button'; accept.textContent = label;
     accept.className = danger ? 'danger' : 'primary';
-    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Отмена';
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = uiText("Отмена");
     actions.append(accept, cancel); panel.append(text, actions);
     // A confirmation inside an existing modal must remain in its active subtree.
     const parent = trigger.closest('dialog') ?? document.body;

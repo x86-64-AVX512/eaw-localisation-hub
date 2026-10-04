@@ -1,4 +1,6 @@
 ﻿param([switch]$TeamManagement)
+. (Join-Path $PSScriptRoot 'ui-language.ps1')
+
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -28,12 +30,12 @@ function Convert-HubServerToHttp([string]$Server) {
     $uri = [Uri]$Server
     $loopback = $uri.Host -in @('localhost', '127.0.0.1', '::1')
     if ($uri.Scheme -in @('ws', 'http') -and -not $loopback) {
-        throw 'Передача токена по незашифрованному соединению запрещена. Для удалённого сервера используйте wss:// или https://.'
+        throw (Get-EawUiText -Text 'Передача токена по незашифрованному соединению запрещена. Для удалённого сервера используйте wss:// или https://.')
     }
     $builder = [UriBuilder]::new($uri)
     if ($builder.Scheme -eq 'ws') { $builder.Scheme = 'http' }
     elseif ($builder.Scheme -eq 'wss') { $builder.Scheme = 'https' }
-    elseif ($builder.Scheme -notin @('http', 'https')) { throw 'Адрес должен начинаться с ws://, wss://, http:// или https://.' }
+    elseif ($builder.Scheme -notin @('http', 'https')) { throw (Get-EawUiText -Text 'Адрес должен начинаться с ws://, wss://, http:// или https://.') }
     $builder.Path = ''
     $builder.Query = ''
     $builder.Uri.AbsoluteUri.TrimEnd('/')
@@ -55,14 +57,14 @@ function Invoke-HubApiWithToken {
 
 function Read-AdminPassword([string]$DisplayName) {
     $dialog = [System.Windows.Forms.Form]::new()
-    $dialog.Text = 'Подтверждение управления командой'
+    $dialog.Text = (Get-EawUiText -Text 'Подтверждение управления командой')
     $dialog.Size = [System.Drawing.Size]::new(455, 205)
     $dialog.FormBorderStyle = 'FixedDialog'
     $dialog.MaximizeBox = $false
     $dialog.MinimizeBox = $false
     $dialog.StartPosition = 'CenterParent'
     $label = [System.Windows.Forms.Label]::new()
-    $label.Text = "Повторно введите пароль учётной записи «$DisplayName»."
+    $label.Text = (Get-EawUiText -Text 'Повторно введите пароль учётной записи «{0}».' -Values @($DisplayName))
     $label.Location = [System.Drawing.Point]::new(20, 18)
     $label.Size = [System.Drawing.Size]::new(400, 32)
     $dialog.Controls.Add($label)
@@ -72,12 +74,12 @@ function Read-AdminPassword([string]$DisplayName) {
     $password.Size = [System.Drawing.Size]::new(400, 24)
     $dialog.Controls.Add($password)
     $ok = [System.Windows.Forms.Button]::new()
-    $ok.Text = 'Войти'
+    $ok.Text = (Get-EawUiText -Text 'Войти')
     $ok.Location = [System.Drawing.Point]::new(220, 105)
     $ok.Size = [System.Drawing.Size]::new(95, 31)
     $dialog.Controls.Add($ok)
     $cancel = [System.Windows.Forms.Button]::new()
-    $cancel.Text = 'Отмена'
+    $cancel.Text = (Get-EawUiText -Text 'Отмена')
     $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $cancel.Location = [System.Drawing.Point]::new(325, 105)
     $cancel.Size = [System.Drawing.Size]::new(95, 31)
@@ -113,7 +115,7 @@ function Open-AdminSession {
     $credentialTarget = Get-EawHubCredentialTarget -Server $serverBox.Text.Trim() -Kind 'AgentToken'
     $credential = Get-EawHubCredential -Target $credentialTarget
     if (-not $credential -or [string]::IsNullOrWhiteSpace($credential.Secret)) {
-        throw 'Сначала зарегистрируйтесь или войдите в окне Desktop Agent.'
+        throw (Get-EawUiText -Text 'Сначала зарегистрируйтесь или войдите в окне Desktop Agent.')
     }
     $me = Invoke-HubApiWithToken -Method Get -Route '/api/auth/me' -Token $credential.Secret
     $roles = @($me.user.roles)
@@ -122,9 +124,9 @@ function Open-AdminSession {
     } else {
         $roles -contains 'admin'
     }
-    if (-not $allowed) { throw 'У сохранённой учётной записи нет роли для управления командой.' }
+    if (-not $allowed) { throw (Get-EawUiText -Text 'У сохранённой учётной записи нет роли для управления командой.') }
     $password = Read-AdminPassword ([string]$me.user.displayName)
-    if ($null -eq $password) { throw 'Вход администратора отменён.' }
+    if ($null -eq $password) { throw (Get-EawUiText -Text 'Вход администратора отменён.') }
     try {
         $session = Invoke-HubApiWithToken -Method Post -Route '/api/management/session' `
             -Token $credential.Secret -Body @{ password = $password }
@@ -136,9 +138,9 @@ function Open-AdminSession {
     $script:adminIssuedAt = [DateTime]::UtcNow
     $script:managerUser = $session.user
     $form.Text = if ($TeamManagement) {
-        'EaW Localisation Hub 0.8.8F7 – Управление командой'
+        (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F8 – Управление командой')
     } else {
-        'EaW Localisation Hub 0.8.8F7 – Администратор'
+        (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F8 – Администратор')
     }
 }
 
@@ -172,7 +174,7 @@ function Set-Status([string]$Text) {
 function Refresh-BackupCredential {
     $issued = Invoke-HubAdminApi -Method Post -Route '/api/admin/backup-token' -Fresh
     $token = [string]$issued.token
-    if ($token -notmatch '^eaw_backup_') { throw 'Сервер не вернул токен резервного копирования.' }
+    if ($token -notmatch '^eaw_backup_') { throw (Get-EawUiText -Text 'Сервер не вернул токен резервного копирования.') }
     $target = Get-EawHubCredentialTarget -Server $serverBox.Text.Trim() -Kind 'BackupToken'
     Set-EawHubCredential -Target $target -UserName 'EaW Hub scheduled backup' -Secret $token
     $target
@@ -180,14 +182,14 @@ function Refresh-BackupCredential {
 
 function Save-BackupPassphrase {
     $dialog = [System.Windows.Forms.Form]::new()
-    $dialog.Text = 'Пароль резервных копий'
+    $dialog.Text = (Get-EawUiText -Text 'Пароль резервных копий')
     $dialog.Size = [System.Drawing.Size]::new(470, 225)
     $dialog.FormBorderStyle = 'FixedDialog'
     $dialog.MaximizeBox = $false
     $dialog.MinimizeBox = $false
     $dialog.StartPosition = 'CenterParent'
     $description = [System.Windows.Forms.Label]::new()
-    $description.Text = 'Минимум 12 символов. Потерянный пароль восстановить нельзя.'
+    $description.Text = (Get-EawUiText -Text 'Минимум 12 символов. Потерянный пароль восстановить нельзя.')
     $description.AutoSize = $true
     $description.Location = [System.Drawing.Point]::new(20, 18)
     $dialog.Controls.Add($description)
@@ -202,12 +204,12 @@ function Save-BackupPassphrase {
     $second.Size = [System.Drawing.Size]::new(410, 24)
     $dialog.Controls.Add($second)
     $ok = [System.Windows.Forms.Button]::new()
-    $ok.Text = 'Сохранить'
+    $ok.Text = (Get-EawUiText -Text 'Сохранить')
     $ok.Location = [System.Drawing.Point]::new(238, 135)
     $ok.Size = [System.Drawing.Size]::new(92, 31)
     $dialog.Controls.Add($ok)
     $cancel = [System.Windows.Forms.Button]::new()
-    $cancel.Text = 'Отмена'
+    $cancel.Text = (Get-EawUiText -Text 'Отмена')
     $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $cancel.Location = [System.Drawing.Point]::new(338, 135)
     $cancel.Size = [System.Drawing.Size]::new(92, 31)
@@ -215,11 +217,11 @@ function Save-BackupPassphrase {
     $dialog.CancelButton = $cancel
     $ok.Add_Click({
         if ($first.Text.Length -lt 12) {
-            [void][System.Windows.Forms.MessageBox]::Show('Пароль должен содержать минимум 12 символов.', 'EaW Hub', 'OK', 'Warning')
+            [void][System.Windows.Forms.MessageBox]::Show((Get-EawUiText -Text 'Пароль должен содержать минимум 12 символов.'), 'EaW Hub', 'OK', 'Warning')
             return
         }
         if ($first.Text -cne $second.Text) {
-            [void][System.Windows.Forms.MessageBox]::Show('Пароли не совпадают.', 'EaW Hub', 'OK', 'Warning')
+            [void][System.Windows.Forms.MessageBox]::Show((Get-EawUiText -Text 'Пароли не совпадают.'), 'EaW Hub', 'OK', 'Warning')
             return
         }
         Set-EawHubCredential -Target $passphraseTarget -UserName 'EaW Hub backup encryption' -Secret $first.Text
@@ -235,14 +237,14 @@ function Save-BackupPassphrase {
 
 function Show-TemporaryPasswordDialog([string]$DisplayName) {
     $dialog = [System.Windows.Forms.Form]::new()
-    $dialog.Text = "Временный пароль: $DisplayName"
+    $dialog.Text = (Get-EawUiText -Text 'Временный пароль: {0}' -Values @($DisplayName))
     $dialog.Size = [System.Drawing.Size]::new(520, 300)
     $dialog.FormBorderStyle = 'FixedDialog'
     $dialog.MaximizeBox = $false
     $dialog.MinimizeBox = $false
     $dialog.StartPosition = 'CenterParent'
     $notice = [System.Windows.Forms.Label]::new()
-    $notice.Text = 'Пароль будет виден только сейчас. Передайте его доверенным каналом. После первого входа пользователь обязан заменить его.'
+    $notice.Text = (Get-EawUiText -Text 'Пароль будет виден только сейчас. Передайте его доверенным каналом. После первого входа пользователь обязан заменить его.')
     $notice.ForeColor = [System.Drawing.Color]::DarkRed
     $notice.Location = [System.Drawing.Point]::new(20, 18)
     $notice.Size = [System.Drawing.Size]::new(465, 48)
@@ -253,7 +255,7 @@ function Show-TemporaryPasswordDialog([string]$DisplayName) {
     $first.Size = [System.Drawing.Size]::new(355, 24)
     $dialog.Controls.Add($first)
     $generate = [System.Windows.Forms.Button]::new()
-    $generate.Text = 'Сгенерировать'
+    $generate.Text = (Get-EawUiText -Text 'Сгенерировать')
     $generate.Location = [System.Drawing.Point]::new(385, 79)
     $generate.Size = [System.Drawing.Size]::new(105, 30)
     $dialog.Controls.Add($generate)
@@ -263,17 +265,17 @@ function Show-TemporaryPasswordDialog([string]$DisplayName) {
     $second.Size = [System.Drawing.Size]::new(470, 24)
     $dialog.Controls.Add($second)
     $show = [System.Windows.Forms.CheckBox]::new()
-    $show.Text = 'Показать пароль'
+    $show.Text = (Get-EawUiText -Text 'Показать пароль')
     $show.AutoSize = $true
     $show.Location = [System.Drawing.Point]::new(20, 158)
     $dialog.Controls.Add($show)
     $save = [System.Windows.Forms.Button]::new()
-    $save.Text = 'Установить'
+    $save.Text = (Get-EawUiText -Text 'Установить')
     $save.Location = [System.Drawing.Point]::new(286, 200)
     $save.Size = [System.Drawing.Size]::new(98, 32)
     $dialog.Controls.Add($save)
     $cancel = [System.Windows.Forms.Button]::new()
-    $cancel.Text = 'Отмена'
+    $cancel.Text = (Get-EawUiText -Text 'Отмена')
     $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $cancel.Location = [System.Drawing.Point]::new(392, 200)
     $cancel.Size = [System.Drawing.Size]::new(98, 32)
@@ -294,11 +296,11 @@ function Show-TemporaryPasswordDialog([string]$DisplayName) {
     $script:temporaryPasswordResult = $null
     $save.Add_Click({
         if ($first.Text.Length -lt 12) {
-            [void][System.Windows.Forms.MessageBox]::Show('Пароль должен содержать минимум 12 символов.', 'EaW Hub', 'OK', 'Warning')
+            [void][System.Windows.Forms.MessageBox]::Show((Get-EawUiText -Text 'Пароль должен содержать минимум 12 символов.'), 'EaW Hub', 'OK', 'Warning')
             return
         }
         if ($first.Text -cne $second.Text) {
-            [void][System.Windows.Forms.MessageBox]::Show('Пароли не совпадают.', 'EaW Hub', 'OK', 'Warning')
+            [void][System.Windows.Forms.MessageBox]::Show((Get-EawUiText -Text 'Пароли не совпадают.'), 'EaW Hub', 'OK', 'Warning')
             return
         }
         $script:temporaryPasswordResult = $first.Text
@@ -313,30 +315,30 @@ function Show-TemporaryPasswordDialog([string]$DisplayName) {
 }
 
 function Refresh-Users {
-    Set-Status 'Загрузка списка пользователей…'
+    Set-Status (Get-EawUiText -Text 'Загрузка списка пользователей…')
     $result = Invoke-HubAdminApi -Method Get -Route '/api/management/users'
     $script:userRows = @($result.users)
     $users.Items.Clear()
     foreach ($user in $script:userRows) {
         $item = [System.Windows.Forms.ListViewItem]::new([string]$user.displayName)
         [void]$item.SubItems.Add((@($user.roles) -join ', '))
-        [void]$item.SubItems.Add($(if ($user.enabled) { 'включён' } else { 'отключён' }))
-        [void]$item.SubItems.Add($(if ($user.temporaryPassword) { 'временный' } elseif ($user.passwordSet) { 'да' } else { 'нет' }))
+        [void]$item.SubItems.Add($(if ($user.enabled) { (Get-EawUiText -Text 'включён') } else { (Get-EawUiText -Text 'отключён') }))
+        [void]$item.SubItems.Add($(if ($user.temporaryPassword) { (Get-EawUiText -Text 'временный') } elseif ($user.passwordSet) { (Get-EawUiText -Text 'да') } else { (Get-EawUiText -Text 'нет') }))
         $recoveryNames = @{
-            active = 'активен'; setup_required = 'нужно сохранить'; pending_confirmation = 'не подтверждён'
-            admin_authorization_required = 'нужно разрешение'; issuance_authorized = 'выдача разрешена'
+            active = (Get-EawUiText -Text 'активен'); setup_required = (Get-EawUiText -Text 'нужно сохранить'); pending_confirmation = (Get-EawUiText -Text 'не подтверждён')
+            admin_authorization_required = (Get-EawUiText -Text 'нужно разрешение'); issuance_authorized = (Get-EawUiText -Text 'выдача разрешена')
         }
         [void]$item.SubItems.Add([string]$recoveryNames[[string]$user.recoveryStatus])
         $item.Tag = [string]$user.id
         if (-not $user.enabled) { $item.ForeColor = [System.Drawing.Color]::Gray }
         [void]$users.Items.Add($item)
     }
-    Set-Status "Загружено пользователей: $($script:userRows.Count)."
+    Set-Status (Get-EawUiText -Text 'Загружено пользователей: {0}.' -Values @($($script:userRows.Count)))
 }
 
 function Show-InvitationsDialog {
     $dialog = [System.Windows.Forms.Form]::new()
-    $dialog.Text = 'Приглашения и коды активации'
+    $dialog.Text = (Get-EawUiText -Text 'Приглашения и коды активации')
     $dialog.Size = [System.Drawing.Size]::new(900, 520)
     $dialog.MinimumSize = [System.Drawing.Size]::new(900, 520)
     $dialog.StartPosition = 'CenterParent'
@@ -348,34 +350,34 @@ function Show-InvitationsDialog {
     $list.FullRowSelect = $true
     $list.MultiSelect = $false
     $list.GridLines = $true
-    [void]$list.Columns.Add('Статус', 100)
-    [void]$list.Columns.Add('Роли', 270)
-    [void]$list.Columns.Add('Использовано', 100)
-    [void]$list.Columns.Add('Осталось', 90)
-    [void]$list.Columns.Add('Истекает', 230)
+    [void]$list.Columns.Add((Get-EawUiText -Text 'Статус'), 100)
+    [void]$list.Columns.Add((Get-EawUiText -Text 'Роли'), 270)
+    [void]$list.Columns.Add((Get-EawUiText -Text 'Использовано'), 100)
+    [void]$list.Columns.Add((Get-EawUiText -Text 'Осталось'), 90)
+    [void]$list.Columns.Add((Get-EawUiText -Text 'Истекает'), 230)
     $dialog.Controls.Add($list)
     $action = [System.Windows.Forms.Button]::new()
-    $action.Text = 'Отозвать выбранное'
+    $action.Text = (Get-EawUiText -Text 'Отозвать выбранное')
     $action.Location = [System.Drawing.Point]::new(530, 400)
     $action.Size = [System.Drawing.Size]::new(175, 32)
     $action.Anchor = 'Bottom, Right'
     $dialog.Controls.Add($action)
     $close = [System.Windows.Forms.Button]::new()
-    $close.Text = 'Закрыть'
+    $close.Text = (Get-EawUiText -Text 'Закрыть')
     $close.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $close.Location = [System.Drawing.Point]::new(715, 400)
     $close.Size = [System.Drawing.Size]::new(150, 32)
     $close.Anchor = 'Bottom, Right'
     $dialog.Controls.Add($close)
     $dialog.CancelButton = $close
-    $statusNames = @{ active = 'активно'; expired = 'истекло'; exhausted = 'исчерпано'; revoked = 'отозвано' }
+    $statusNames = @{ active = (Get-EawUiText -Text 'активно'); expired = (Get-EawUiText -Text 'истекло'); exhausted = (Get-EawUiText -Text 'исчерпано'); revoked = (Get-EawUiText -Text 'отозвано') }
     $refreshInvites = {
         $result = Invoke-HubAdminApi -Method Get -Route '/api/management/invites'
         $list.Items.Clear()
         foreach ($invite in @($result.invites)) {
             $item = [System.Windows.Forms.ListViewItem]::new([string]$statusNames[[string]$invite.status])
             [void]$item.SubItems.Add((@($invite.roles) -join ', '))
-            [void]$item.SubItems.Add("$($invite.uses) из $($invite.maxUses)")
+            [void]$item.SubItems.Add((Get-EawUiText -Text '{0} из {1}' -Values @($($invite.uses), $($invite.maxUses))))
             [void]$item.SubItems.Add([string]$invite.remainingUses)
             $expires = [DateTimeOffset]::Parse([string]$invite.expiresAt).ToLocalTime().ToString('dd.MM.yyyy HH:mm')
             [void]$item.SubItems.Add($expires)
@@ -386,11 +388,11 @@ function Show-InvitationsDialog {
     $list.Add_SelectedIndexChanged({
         if ($list.SelectedItems.Count -ne 1) { return }
         $invite = $list.SelectedItems[0].Tag
-        $action.Text = if ([string]$invite.status -eq 'active') { 'Отозвать выбранное' } else { 'Удалить запись' }
+        $action.Text = if ([string]$invite.status -eq 'active') { (Get-EawUiText -Text 'Отозвать выбранное') } else { (Get-EawUiText -Text 'Удалить запись') }
     })
     $action.Add_Click({
         try {
-            if ($list.SelectedItems.Count -ne 1) { throw 'Сначала выберите приглашение.' }
+            if ($list.SelectedItems.Count -ne 1) { throw (Get-EawUiText -Text 'Сначала выберите приглашение.') }
             $invite = $list.SelectedItems[0].Tag
             $id = [Uri]::EscapeDataString([string]$invite.id)
             if ([string]$invite.status -eq 'active') {
@@ -400,7 +402,7 @@ function Show-InvitationsDialog {
             }
             & $refreshInvites
         } catch {
-            [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Приглашение не изменено', 'OK', 'Warning')
+            [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, (Get-EawUiText -Text 'Приглашение не изменено'), 'OK', 'Warning')
         }
     })
     & $refreshInvites
@@ -410,13 +412,13 @@ function Show-InvitationsDialog {
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = if ($TeamManagement) { 'EaW Localisation Hub 0.8.8F7 – Управление командой' } else { 'EaW Localisation Hub 0.8.8F7 – Администратор' }
+$form.Text = if ($TeamManagement) { (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F8 – Управление командой') } else { (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F8 – Администратор') }
 $form.Size = [System.Drawing.Size]::new(900, 790)
 $form.MinimumSize = [System.Drawing.Size]::new(900, 790)
 $form.StartPosition = 'CenterScreen'
 
 $serverLabel = [System.Windows.Forms.Label]::new()
-$serverLabel.Text = 'Сервер:'
+$serverLabel.Text = (Get-EawUiText -Text 'Сервер:')
 $serverLabel.AutoSize = $true
 $serverLabel.Location = [System.Drawing.Point]::new(20, 24)
 $form.Controls.Add($serverLabel)
@@ -426,13 +428,13 @@ $serverBox.Location = [System.Drawing.Point]::new(90, 20)
 $serverBox.Size = [System.Drawing.Size]::new(615, 24)
 $form.Controls.Add($serverBox)
 $refreshButton = [System.Windows.Forms.Button]::new()
-$refreshButton.Text = 'Обновить'
+$refreshButton.Text = (Get-EawUiText -Text 'Обновить')
 $refreshButton.Location = [System.Drawing.Point]::new(720, 18)
 $refreshButton.Size = [System.Drawing.Size]::new(135, 29)
 $form.Controls.Add($refreshButton)
 
 $usersLabel = [System.Windows.Forms.Label]::new()
-$usersLabel.Text = 'Пользователи'
+$usersLabel.Text = (Get-EawUiText -Text 'Пользователи')
 $usersLabel.AutoSize = $true
 $usersLabel.Location = [System.Drawing.Point]::new(20, 67)
 $form.Controls.Add($usersLabel)
@@ -443,44 +445,44 @@ $users.View = 'Details'
 $users.FullRowSelect = $true
 $users.MultiSelect = $false
 $users.GridLines = $true
-[void]$users.Columns.Add('Имя', 220)
-[void]$users.Columns.Add('Роли', 220)
-[void]$users.Columns.Add('Доступ', 90)
-[void]$users.Columns.Add('Пароль', 115)
-[void]$users.Columns.Add('Восстановление', 185)
+[void]$users.Columns.Add((Get-EawUiText -Text 'Имя'), 220)
+[void]$users.Columns.Add((Get-EawUiText -Text 'Роли'), 220)
+[void]$users.Columns.Add((Get-EawUiText -Text 'Доступ'), 90)
+[void]$users.Columns.Add((Get-EawUiText -Text 'Пароль'), 115)
+[void]$users.Columns.Add((Get-EawUiText -Text 'Восстановление'), 185)
 $form.Controls.Add($users)
 
 $toggleEnabledButton = [System.Windows.Forms.Button]::new()
-$toggleEnabledButton.Text = 'Отключить'
+$toggleEnabledButton.Text = (Get-EawUiText -Text 'Отключить')
 $toggleEnabledButton.Location = [System.Drawing.Point]::new(20, 345)
 $toggleEnabledButton.Size = [System.Drawing.Size]::new(150, 32)
 $form.Controls.Add($toggleEnabledButton)
 
 $deleteButton = [System.Windows.Forms.Button]::new()
-$deleteButton.Text = 'Удалить навсегда'
+$deleteButton.Text = (Get-EawUiText -Text 'Удалить навсегда')
 $deleteButton.Location = [System.Drawing.Point]::new(180, 345)
 $deleteButton.Size = [System.Drawing.Size]::new(150, 32)
 $form.Controls.Add($deleteButton)
 
 $editRolesButton = [System.Windows.Forms.Button]::new()
-$editRolesButton.Text = 'Изменить роли…'
+$editRolesButton.Text = (Get-EawUiText -Text 'Изменить роли…')
 $editRolesButton.Location = [System.Drawing.Point]::new(340, 345)
 $editRolesButton.Size = [System.Drawing.Size]::new(130, 32)
 $form.Controls.Add($editRolesButton)
 
 $recoveryAuthorizeButton = [System.Windows.Forms.Button]::new()
-$recoveryAuthorizeButton.Text = 'Разрешить новый код восстановления'
+$recoveryAuthorizeButton.Text = (Get-EawUiText -Text 'Разрешить новый код восстановления')
 $recoveryAuthorizeButton.Location = [System.Drawing.Point]::new(480, 345)
 $recoveryAuthorizeButton.Size = [System.Drawing.Size]::new(220, 32)
 $form.Controls.Add($recoveryAuthorizeButton)
 $temporaryPasswordButton = [System.Windows.Forms.Button]::new()
-$temporaryPasswordButton.Text = 'Временный пароль…'
+$temporaryPasswordButton.Text = (Get-EawUiText -Text 'Временный пароль…')
 $temporaryPasswordButton.Location = [System.Drawing.Point]::new(710, 345)
 $temporaryPasswordButton.Size = [System.Drawing.Size]::new(150, 32)
 $form.Controls.Add($temporaryPasswordButton)
 
 $inviteGroup = [System.Windows.Forms.GroupBox]::new()
-$inviteGroup.Text = 'Новое приглашение'
+$inviteGroup.Text = (Get-EawUiText -Text 'Новое приглашение')
 $inviteGroup.Location = [System.Drawing.Point]::new(20, 390)
 $inviteGroup.Size = [System.Drawing.Size]::new(550, 230)
 $form.Controls.Add($inviteGroup)
@@ -488,7 +490,7 @@ $inviteRoles = [System.Windows.Forms.CheckedListBox]::new()
 $inviteRoles.CheckOnClick = $true
 $inviteRoles.Location = [System.Drawing.Point]::new(15, 27)
 $inviteRoles.Size = [System.Drawing.Size]::new(230, 94)
-$roleOptions = if ($TeamManagement) { @('senior translator', 'translator', 'trainee-translator', 'translation-editor') } else { @('admin', 'senior translator', 'translator', 'trainee-translator', 'translation-editor') }
+$roleOptions = if ($TeamManagement) { @('senior translator', 'translator', 'trainee-translator', 'translation-editor', 'mod-contributor') } else { @('admin', 'senior translator', 'translator', 'trainee-translator', 'translation-editor', 'mod-contributor') }
 $roleOptions | ForEach-Object {
     [void]$inviteRoles.Items.Add($_, ($_ -eq 'translator'))
 }
@@ -501,7 +503,7 @@ $usesBox.Location = [System.Drawing.Point]::new(270, 28)
 $usesBox.Size = [System.Drawing.Size]::new(70, 24)
 $inviteGroup.Controls.Add($usesBox)
 $usesLabel = [System.Windows.Forms.Label]::new()
-$usesLabel.Text = 'исп.'
+$usesLabel.Text = (Get-EawUiText -Text 'исп.')
 $usesLabel.AutoSize = $true
 $usesLabel.Location = [System.Drawing.Point]::new(343, 32)
 $inviteGroup.Controls.Add($usesLabel)
@@ -513,12 +515,12 @@ $hoursBox.Location = [System.Drawing.Point]::new(390, 28)
 $hoursBox.Size = [System.Drawing.Size]::new(75, 24)
 $inviteGroup.Controls.Add($hoursBox)
 $hoursLabel = [System.Windows.Forms.Label]::new()
-$hoursLabel.Text = 'час.'
+$hoursLabel.Text = (Get-EawUiText -Text 'час.')
 $hoursLabel.AutoSize = $true
 $hoursLabel.Location = [System.Drawing.Point]::new(468, 32)
 $inviteGroup.Controls.Add($hoursLabel)
 $createInviteButton = [System.Windows.Forms.Button]::new()
-$createInviteButton.Text = 'Создать'
+$createInviteButton.Text = (Get-EawUiText -Text 'Создать')
 $createInviteButton.Location = [System.Drawing.Point]::new(270, 72)
 $createInviteButton.Size = [System.Drawing.Size]::new(220, 32)
 $inviteGroup.Controls.Add($createInviteButton)
@@ -528,38 +530,38 @@ $inviteResult.Location = [System.Drawing.Point]::new(15, 145)
 $inviteResult.Size = [System.Drawing.Size]::new(390, 25)
 $inviteGroup.Controls.Add($inviteResult)
 $copyInviteButton = [System.Windows.Forms.Button]::new()
-$copyInviteButton.Text = 'Копировать'
+$copyInviteButton.Text = (Get-EawUiText -Text 'Копировать')
 $copyInviteButton.Location = [System.Drawing.Point]::new(415, 142)
 $copyInviteButton.Size = [System.Drawing.Size]::new(115, 30)
 $inviteGroup.Controls.Add($copyInviteButton)
 $manageInvitesButton = [System.Windows.Forms.Button]::new()
-$manageInvitesButton.Text = 'Просмотреть приглашения…'
+$manageInvitesButton.Text = (Get-EawUiText -Text 'Просмотреть приглашения…')
 $manageInvitesButton.Location = [System.Drawing.Point]::new(270, 108)
 $manageInvitesButton.Size = [System.Drawing.Size]::new(220, 30)
 $inviteGroup.Controls.Add($manageInvitesButton)
 $inviteHint = [System.Windows.Forms.Label]::new()
-$inviteHint.Text = 'Код показывается только при создании. В списке видны роли, срок и остаток активаций.'
+$inviteHint.Text = (Get-EawUiText -Text 'Код показывается только при создании. В списке видны роли, срок и остаток активаций.')
 $inviteHint.Location = [System.Drawing.Point]::new(15, 184)
 $inviteHint.Size = [System.Drawing.Size]::new(515, 32)
 $inviteGroup.Controls.Add($inviteHint)
 
 $backupGroup = [System.Windows.Forms.GroupBox]::new()
-$backupGroup.Text = 'Резервная копия на этом ПК'
+$backupGroup.Text = (Get-EawUiText -Text 'Резервная копия на этом ПК')
 $backupGroup.Location = [System.Drawing.Point]::new(585, 390)
 $backupGroup.Size = [System.Drawing.Size]::new(275, 230)
 $form.Controls.Add($backupGroup)
 $setPassphraseButton = [System.Windows.Forms.Button]::new()
-$setPassphraseButton.Text = 'Задать пароль копий'
+$setPassphraseButton.Text = (Get-EawUiText -Text 'Задать пароль копий')
 $setPassphraseButton.Location = [System.Drawing.Point]::new(15, 28)
 $setPassphraseButton.Size = [System.Drawing.Size]::new(235, 31)
 $backupGroup.Controls.Add($setPassphraseButton)
 $backupButton = [System.Windows.Forms.Button]::new()
-$backupButton.Text = 'Создать копию сейчас'
+$backupButton.Text = (Get-EawUiText -Text 'Создать копию сейчас')
 $backupButton.Location = [System.Drawing.Point]::new(15, 70)
 $backupButton.Size = [System.Drawing.Size]::new(235, 31)
 $backupGroup.Controls.Add($backupButton)
 $scheduleBackupButton = [System.Windows.Forms.Button]::new()
-$scheduleBackupButton.Text = 'Ежедневно в 03:00'
+$scheduleBackupButton.Text = (Get-EawUiText -Text 'Ежедневно в 03:00')
 $scheduleBackupButton.Location = [System.Drawing.Point]::new(15, 112)
 $scheduleBackupButton.Size = [System.Drawing.Size]::new(235, 31)
 $backupGroup.Controls.Add($scheduleBackupButton)
@@ -567,82 +569,82 @@ $backupGroup.Visible = -not $TeamManagement
 if (-not $TeamManagement) {
     . (Join-Path $PSScriptRoot 'admin-audit-ui.ps1')
     $auditButton = [System.Windows.Forms.Button]::new()
-    $auditButton.Text = 'Журнал действий…'
+    $auditButton.Text = (Get-EawUiText -Text 'Журнал действий…')
     $auditButton.Location = [System.Drawing.Point]::new(685, 54)
     $auditButton.Size = [System.Drawing.Size]::new(175, 29)
     $form.Controls.Add($auditButton)
     $auditButton.Add_Click({
-        try { Show-EawAuditDialog -Owner $form } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+        try { Show-EawAuditDialog -Owner $form } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) }
     })
 }
 
 $status = [System.Windows.Forms.Label]::new()
-$status.Text = 'Для управления нужен сохранённый вход с подходящей ролью и повторный ввод пароля.'
+$status.Text = (Get-EawUiText -Text 'Для управления нужен сохранённый вход с подходящей ролью и повторный ввод пароля.')
 $status.BorderStyle = 'FixedSingle'
 $status.Location = [System.Drawing.Point]::new(20, 650)
 $status.Size = [System.Drawing.Size]::new(840, 56)
 $status.TextAlign = 'MiddleLeft'
 $form.Controls.Add($status)
 
-$refreshButton.Add_Click({ try { Refresh-Users } catch { Set-Status "Ошибка: $($_.Exception.Message)" } })
+$refreshButton.Add_Click({ try { Refresh-Users } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) } })
 $createInviteButton.Add_Click({
     try {
-        Set-Status 'Создание приглашения…'
+        Set-Status (Get-EawUiText -Text 'Создание приглашения…')
         $selectedRoles = @($inviteRoles.CheckedItems | ForEach-Object { [string]$_ })
-        if ($selectedRoles.Count -eq 0) { throw 'Выберите хотя бы одну роль.' }
+        if ($selectedRoles.Count -eq 0) { throw (Get-EawUiText -Text 'Выберите хотя бы одну роль.') }
         $result = Invoke-HubAdminApi -Method Post -Route '/api/management/invites' -Fresh -Body @{
             roles = $selectedRoles
             maxUses = [int]$usesBox.Value
             expiresInHours = [int]$hoursBox.Value
         }
         $inviteResult.Text = [string]$result.code
-        Set-Status 'Приглашение создано. Передайте код нужному участнику через доверенный канал.'
-    } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+        Set-Status (Get-EawUiText -Text 'Приглашение создано. Передайте код нужному участнику через доверенный канал.')
+    } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) }
 })
 $copyInviteButton.Add_Click({
     if ($inviteResult.Text) {
         [System.Windows.Forms.Clipboard]::SetText($inviteResult.Text)
-        Set-Status 'Код приглашения скопирован.'
+        Set-Status (Get-EawUiText -Text 'Код приглашения скопирован.')
     }
 })
 $users.Add_SelectedIndexChanged({
     if ($users.SelectedItems.Count -ne 1) { return }
     $user = $script:userRows | Where-Object { [string]$_.id -eq [string]$users.SelectedItems[0].Tag } | Select-Object -First 1
-    if ($user) { $toggleEnabledButton.Text = if ($user.enabled) { 'Отключить' } else { 'Включить' } }
+    if ($user) { $toggleEnabledButton.Text = if ($user.enabled) { (Get-EawUiText -Text 'Отключить') } else { (Get-EawUiText -Text 'Включить') } }
 })
 $toggleEnabledButton.Add_Click({
     try {
-        if ($users.SelectedItems.Count -ne 1) { throw 'Сначала выберите пользователя.' }
+        if ($users.SelectedItems.Count -ne 1) { throw (Get-EawUiText -Text 'Сначала выберите пользователя.') }
         $selected = $users.SelectedItems[0]
         $user = $script:userRows | Where-Object { [string]$_.id -eq [string]$selected.Tag } | Select-Object -First 1
         $operation = if ($user.enabled) { 'disable' } else { 'enable' }
         [void](Invoke-HubAdminApi -Method Post -Fresh -Route ('/api/management/users/' + [Uri]::EscapeDataString([string]$selected.Tag) + "/$operation"))
         Refresh-Users
-    } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+    } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) }
 })
 $deleteButton.Add_Click({
     try {
-        if ($users.SelectedItems.Count -ne 1) { throw 'Сначала выберите пользователя.' }
+        if ($users.SelectedItems.Count -ne 1) { throw (Get-EawUiText -Text 'Сначала выберите пользователя.') }
         $selected = $users.SelectedItems[0]
         $answer = [System.Windows.Forms.MessageBox]::Show(
-            "БЕЗВОЗВРАТНО удалить аккаунт «$($selected.Text)», все его сессии и коды восстановления? Для временного ухода используйте отключение.",
-            'Безвозвратное удаление',
+            (Get-EawUiText -Text 'БЕЗВОЗВРАТНО удалить аккаунт «{0}», все его сессии и коды восстановления? Для временного ухода используйте отключение.' -Values @($($selected.Text))),
+            (Get-EawUiText -Text 'Безвозвратное удаление'),
             'YesNo',
             'Warning')
         if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
         [void](Invoke-HubAdminApi -Method Delete -Fresh -Route ('/api/management/users/' + [Uri]::EscapeDataString([string]$selected.Tag)))
         Refresh-Users
-    } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+    } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) }
 })
 $editRolesButton.Add_Click({
     try {
-        if ($users.SelectedItems.Count -ne 1) { throw 'Сначала выберите пользователя.' }
+        if ($users.SelectedItems.Count -ne 1) { throw (Get-EawUiText -Text 'Сначала выберите пользователя.') }
         $selected = $users.SelectedItems[0]
         $user = $script:userRows | Where-Object { [string]$_.id -eq [string]$selected.Tag } | Select-Object -First 1
-        if (-not $user) { throw 'Пользователь больше не найден. Обновите список.' }
+        if (-not $user) { throw (Get-EawUiText -Text 'Пользователь больше не найден. Обновите список.') }
 
         $dialog = [System.Windows.Forms.Form]::new()
-        $dialog.Text = "Роли: $($user.displayName)"
+        $dialog.Text = (Get-EawUiText -Text 'Роли: {0}' -Values @($($user.displayName)))
         $dialog.Size = [System.Drawing.Size]::new(385, 330)
         $dialog.FormBorderStyle = 'FixedDialog'
         $dialog.MaximizeBox = $false
@@ -657,12 +659,12 @@ $editRolesButton.Add_Click({
         }
         $dialog.Controls.Add($roleList)
         $saveRoles = [System.Windows.Forms.Button]::new()
-        $saveRoles.Text = 'Сохранить'
+        $saveRoles.Text = (Get-EawUiText -Text 'Сохранить')
         $saveRoles.Location = [System.Drawing.Point]::new(150, 215)
         $saveRoles.Size = [System.Drawing.Size]::new(95, 32)
         $dialog.Controls.Add($saveRoles)
         $cancelRoles = [System.Windows.Forms.Button]::new()
-        $cancelRoles.Text = 'Отмена'
+        $cancelRoles.Text = (Get-EawUiText -Text 'Отмена')
         $cancelRoles.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
         $cancelRoles.Location = [System.Drawing.Point]::new(255, 215)
         $cancelRoles.Size = [System.Drawing.Size]::new(95, 32)
@@ -671,41 +673,41 @@ $editRolesButton.Add_Click({
         $saveRoles.Add_Click({
             try {
                 $roles = @($roleList.CheckedItems | ForEach-Object { [string]$_ })
-                if ($roles.Count -eq 0) { throw 'Выберите хотя бы одну роль.' }
+                if ($roles.Count -eq 0) { throw (Get-EawUiText -Text 'Выберите хотя бы одну роль.') }
                 [void](Invoke-HubAdminApi -Method Put -Fresh `
                     -Route ('/api/management/users/' + [Uri]::EscapeDataString([string]$user.id) + '/roles') `
                     -Body @{ roles = $roles })
                 $dialog.DialogResult = [System.Windows.Forms.DialogResult]::OK
                 $dialog.Close()
             } catch {
-                [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Роли не сохранены', 'OK', 'Warning')
+                [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, (Get-EawUiText -Text 'Роли не сохранены'), 'OK', 'Warning')
             }
         })
         if ($dialog.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
             Refresh-Users
         }
         $dialog.Dispose()
-    } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+    } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) }
 })
 $recoveryAuthorizeButton.Add_Click({
     try {
-        if ($users.SelectedItems.Count -ne 1) { throw 'Сначала выберите пользователя.' }
+        if ($users.SelectedItems.Count -ne 1) { throw (Get-EawUiText -Text 'Сначала выберите пользователя.') }
         $selected = $users.SelectedItems[0]
         $answer = [System.Windows.Forms.MessageBox]::Show(
-            "Разрешить «$($selected.Text)» получить новый код восстановления? Действующий код будет аннулирован. Сам новый код администратору показан не будет.",
-            'Новый код восстановления',
+            (Get-EawUiText -Text 'Разрешить «{0}» получить новый код восстановления? Действующий код будет аннулирован. Сам новый код администратору показан не будет.' -Values @($($selected.Text))),
+            (Get-EawUiText -Text 'Новый код восстановления'),
             'YesNo',
             'Question')
         if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
         [void](Invoke-HubAdminApi -Method Post -Fresh `
             -Route ('/api/management/users/' + [Uri]::EscapeDataString([string]$selected.Tag) + '/recovery-authorize'))
         Refresh-Users
-        Set-Status 'Выдача разрешена. Пользователь увидит красную плашку и сохранит код сам; администратор код не получает.'
-    } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+        Set-Status (Get-EawUiText -Text 'Выдача разрешена. Пользователь увидит красную плашку и сохранит код сам; администратор код не получает.')
+    } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) }
 })
 $temporaryPasswordButton.Add_Click({
     try {
-        if ($users.SelectedItems.Count -ne 1) { throw 'Сначала выберите пользователя.' }
+        if ($users.SelectedItems.Count -ne 1) { throw (Get-EawUiText -Text 'Сначала выберите пользователя.') }
         $selected = $users.SelectedItems[0]
         $temporaryPassword = Show-TemporaryPasswordDialog ([string]$selected.Text)
         if ([string]::IsNullOrEmpty($temporaryPassword)) { return }
@@ -714,25 +716,25 @@ $temporaryPasswordButton.Add_Click({
             -Body @{ temporaryPassword = $temporaryPassword })
         $temporaryPassword = $null
         Refresh-Users
-        Set-Status 'Временный пароль установлен. Все прежние сессии завершены; после входа пользователь обязан сменить пароль.'
+        Set-Status (Get-EawUiText -Text 'Временный пароль установлен. Все прежние сессии завершены; после входа пользователь обязан сменить пароль.')
     } catch {
         $temporaryPassword = $null
-        Set-Status "Ошибка: $($_.Exception.Message)"
+        Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message)))
     }
 })
 $manageInvitesButton.Add_Click({
-    try { Show-InvitationsDialog } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+    try { Show-InvitationsDialog } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) }
 })
 $setPassphraseButton.Add_Click({
     try {
         if (Save-BackupPassphrase) {
-            Set-Status 'Пароль резервных копий сохранён в Windows Credential Manager.'
+            Set-Status (Get-EawUiText -Text 'Пароль резервных копий сохранён в Windows Credential Manager.')
         }
-    } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+    } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) }
 })
 $backupButton.Add_Click({
     try {
-        Set-Status 'Создание зашифрованной резервной копии…'
+        Set-Status (Get-EawUiText -Text 'Создание зашифрованной резервной копии…')
         Ensure-AdminSession -Fresh
         $server = $serverBox.Text.Trim()
         $backupCredentialTarget = Get-EawHubCredentialTarget -Server $server -Kind 'BackupToken'
@@ -748,11 +750,11 @@ $backupButton.Add_Click({
             $result = & (Join-Path $PSScriptRoot 'backup-server.ps1') `
                 -Server $server -CredentialTarget $backupCredentialTarget
         }
-        Set-Status "Резервная копия создана: $($result.Backup)"
+        Set-Status (Get-EawUiText -Text 'Резервная копия создана: {0}' -Values @($($result.Backup)))
     } catch {
-        Set-Status "Ошибка создания копии: $($_.Exception.Message)"
+        Set-Status (Get-EawUiText -Text 'Ошибка создания копии: {0}' -Values @($($_.Exception.Message)))
         [void][System.Windows.Forms.MessageBox]::Show(
-            $_.Exception.Message, 'Резервная копия не создана', 'OK', 'Error')
+            $_.Exception.Message, (Get-EawUiText -Text 'Резервная копия не создана'), 'OK', 'Error')
     }
 })
 $scheduleBackupButton.Add_Click({
@@ -760,9 +762,9 @@ $scheduleBackupButton.Add_Click({
         [void](Refresh-BackupCredential)
         $result = & (Join-Path $PSScriptRoot 'install-backup-task.ps1') -Server $serverBox.Text.Trim()
         Set-Status $result
-    } catch { Set-Status "Ошибка: $($_.Exception.Message)" }
+    } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) }
 })
 
-$form.Add_Shown({ try { Refresh-Users } catch { Set-Status "Ошибка: $($_.Exception.Message)" } })
+$form.Add_Shown({ try { Refresh-Users } catch { Set-Status (Get-EawUiText -Text 'Ошибка: {0}' -Values @($($_.Exception.Message))) } })
 $form.Add_FormClosing({ Close-AdminSession })
 [void]$form.ShowDialog()

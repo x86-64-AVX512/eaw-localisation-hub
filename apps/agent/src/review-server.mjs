@@ -26,6 +26,9 @@ import { currentGitFileBlobAsync } from './git-ticket-context.mts';
 import { confirmDiskMaterialisation } from './disk-reconciliation.mjs';
 import { DiffCache } from './diff-cache.mjs';
 import { handleRepositorySyncApi } from './repository-sync-api.mjs';
+import { canEditDocument } from '../../../packages/shared/src/document-permissions.mts';
+import { handleUiLanguageApi } from './ui-language.mjs';
+import { attachReviewMultiplexer } from './review-multiplexer.mjs';
 
 const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -127,7 +130,8 @@ function secureHeaders(response, contentType) {
     "connect-src 'self' ws://127.0.0.1:*",
     "object-src 'none'",
     "base-uri 'none'",
-    "frame-ancestors 'none'",
+    "frame-src 'self'",
+    "frame-ancestors 'self'",
   ].join('; '));
 }
 
@@ -175,6 +179,13 @@ class ReviewClient {
         this.compactVariants = message.variants === 'compact-v1';
       }
       this.hub.receiveClientMessage(this, message);
+      if (message.type === 'activate' && typeof message.path === 'string') {
+        const state = this.documents.get(path.resolve(message.path));
+        if (state) void writeLastReview(this.hub.options, {
+          schema:1,path:path.resolve(message.path),relativePath:state.binding.relativePath,
+          ticket:state.binding.ticketId ?? '',updatedAt:new Date().toISOString(),
+        }).catch(() => {});
+      }
       if (typeof message.path === 'string' && typeof message.type === 'string'
         && ['edit', 'snapshot', 'reviewUpdate', 'undo', 'redo', 'suggestionAccept', 'suggestionRevert', 'historyRestore', 'externalConflictResolve'].includes(message.type)) {
         this.scheduleMaterialisation(message.path);
@@ -217,6 +228,7 @@ class ReviewClient {
       || state.binding.ticketId || this.hub.workspaceBlocked || this.hub.gitOperationInProgress?.()) return;
     const materialisationMode = state.binding.personalMaterialisationMode;
     const expectedGitBlob = state.binding.gitState?.localBlob;
+    if (!canEditDocument(this.hub.identity, state.binding.relativePath)) return;
     const materialised = typeof state.binding.localFileText === 'function'
       ? state.binding.localFileText() : state.binding.text.toString();
     if (materialised === null || !state.binding.synced) return;
@@ -230,6 +242,7 @@ class ReviewClient {
         expectedText: state.diskBase,
         isCurrent: async () => {
           const stillCurrent = () => !this.closed && state.binding.synced && state.binding.gitWritable !== false
+            && canEditDocument(this.hub.identity, state.binding.relativePath)
             && !this.hub.workspaceBlocked && !state.pendingExternal && !this.hub.gitOperationInProgress?.()
             && state.binding.gitState?.localBlob === expectedGitBlob
             && state.binding.personalMaterialisationMode === materialisationMode
@@ -309,6 +322,14 @@ export async function startReviewServer(hub, options) {
       requestUrl = new URL(request.url ?? '/', `http://127.0.0.1:${port}`);
     } catch {
       response.writeHead(400).end();
+      return;
+    }
+    if (requestUrl.pathname === '/api/ui-language') {
+      if (request.headers.origin && request.headers.origin !== `http://127.0.0.1:${port}`) {
+        response.writeHead(403).end(); return;
+      }
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      await handleUiLanguageApi({ request, response, requestUrl, stateDirectory: options.state });
       return;
     }
     if (requestUrl.pathname === '/api/repository-sync') {
@@ -429,7 +450,7 @@ export async function startReviewServer(hub, options) {
             ? withoutUtf8Bom(await fsPromises.readFile(absolutePath, 'utf8'))
             : ticketBootstrap?.text ?? withoutUtf8Bom(await readTrackedTextFile(options.repo, absolutePath));
         }
-        if (!englishReadOnly) {
+        if (!englishReadOnly && requestUrl.searchParams.get('workspace') !== '1') {
           await writeLastReview(options, {
             schema: 1, path: absolutePath, relativePath,
             ticket: ticketBootstrap?.ticket?.id ?? '', updatedAt: new Date().toISOString(),
@@ -676,6 +697,10 @@ export async function startReviewServer(hub, options) {
       return;
     }
     websocketServer.handleUpgrade(request, socket, head, (websocket) => {
+      if (requestUrl.searchParams.get('multiplex') === '1') {
+        attachReviewMultiplexer(websocket, hub, channel => new ReviewClient(channel, hub));
+        return;
+      }
       const client = new ReviewClient(websocket, hub);
       if (!hub.attachAuthenticatedClient(client)) websocket.close(1013, 'Too many local clients');
     });

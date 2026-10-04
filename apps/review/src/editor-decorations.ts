@@ -1,5 +1,7 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { colorClass, decodeBase64, safeColor } from './review-utilities.ts';
 import { createPresenceCursorLayer } from './presence-cursors.ts';
+import { activeSuggestionPreview, suggestionPreview } from './suggestion-preview.ts';
 import { suggestionTraceParts } from '../../../packages/shared/src/suggestion-trace.mts';
 import type * as Monaco from 'monaco-editor';
 import type { ReviewComment, ReviewSuggestion } from './review-card-types.ts';
@@ -45,6 +47,22 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
   let activeZoneKey = '';
   let completedZoneIds: string[] = [];
   let completedZoneKey = '';
+  let refreshFrame = 0;
+  let disposed = false;
+  const metricsKey = () => {
+    const font = editor.getOption(monaco.editor.EditorOption.fontInfo);
+    const layout = editor.getLayoutInfo();
+    return JSON.stringify([layout.contentWidth, layout.verticalScrollbarWidth, font.fontFamily,
+      font.fontSize, font.fontWeight, font.lineHeight, font.letterSpacing]);
+  };
+  const schedule = () => {
+    cancelAnimationFrame(refreshFrame);
+    refreshFrame = requestAnimationFrame(() => { if (!disposed) refreshDecorations(); });
+  };
+  const layoutSubscription = editor.onDidLayoutChange(schedule);
+  const fontSubscription = editor.onDidChangeConfiguration(event => {
+    if (event.hasChanged(monaco.editor.EditorOption.fontInfo)) schedule();
+  });
 
   function textRuns(text: string): Array<{ offset: number; text: string }> {
     const runs: Array<{ offset: number; text: string }> = [];
@@ -58,8 +76,11 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
   function syncActiveOriginalZone(projection: ActiveProjection | null): void {
     const original = projection ? projection.baseText.slice(projection.start, projection.previousEnd) : '';
     const multiline = original.includes('\n');
+    const replacement = projection ? editor.getModel()?.getValue().slice(projection.start,
+      projection.start + projection.replacementLength) ?? '' : '';
+    const { zoneText } = activeSuggestionPreview(original, replacement);
     const nextKey = multiline && projection
-      ? `${projection.start}:${projection.previousEnd}:${projection.color}:${original}`
+      ? `${projection.start}:${projection.previousEnd}:${projection.color}:${zoneText}:${metricsKey()}`
       : '';
     if (nextKey === activeZoneKey) return;
     editor.changeViewZones((accessor) => {
@@ -70,14 +91,13 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
       const model = editor.getModel();
       if (!model || !projection) return;
       const position = model.getPositionAt(projection.start);
-      const domNode = document.createElement('div');
-      domNode.className = 'active-suggestion-original-zone';
-      domNode.style.setProperty('--author-color', safeColor(projection.color));
-      domNode.textContent = original;
+      const lineStart = projection.baseText.lastIndexOf('\n', projection.start - 1) + 1;
+      const prefix = projection.baseText.slice(lineStart, projection.start);
+      const preview = suggestionPreview(monaco, editor, (prefix.trim() ? '' : prefix) + zoneText,
+        'active-suggestion-original-zone', safeColor(projection.color));
       activeZoneId = accessor.addZone({
         afterLineNumber: Math.max(0, position.lineNumber - 1),
-        heightInLines: Math.max(2, original.split('\n').length),
-        domNode,
+        ...preview,
       });
     });
   }
@@ -88,7 +108,7 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
       && item.status === 'open' && replacement.includes('\n'));
     const nextKey = candidates.map(({ item, replacement }) => [
       item.id, item.startByte, item.endByte, item.status, item.color, replacement,
-    ].join(':')).join('|');
+    ].join(':')).join('|') + metricsKey();
     if (nextKey === completedZoneKey) return;
     editor.changeViewZones((accessor) => {
       for (const id of completedZoneIds) accessor.removeZone(id);
@@ -97,24 +117,22 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
       for (const { item, replacement } of candidates) {
         const range = resolvedRange(item.startByte, item.endByte);
         if (!range) continue;
-        const domNode = document.createElement('div');
-        domNode.className = 'multiline-suggestion-zone';
-        domNode.style.setProperty('--author-color', safeColor(item.color));
-        domNode.setAttribute('aria-label', 'Предлагаемый перенос строки');
-        domNode.textContent = replacement.replace(/^\n|\n$/gu, '');
+        const preview = suggestionPreview(monaco, editor, replacement.replace(/\r\n|\r/gu, '\n').replace(/^\n|\n$/gu, ''),
+          'multiline-suggestion-zone', safeColor(item.color));
+        const { domNode } = preview;
+        domNode.setAttribute('aria-label', uiText("Предлагаемый перенос строки"));
         completedZoneIds.push(accessor.addZone({
           // The proposed line belongs after the struck original. Placing a
           // leading-newline replacement before a column-one range reverses
           // the visual order (replacement above deletion).
           afterLineNumber: completedSuggestionZoneAfterLine(range),
-          heightInLines: Math.max(1, (replacement.match(/\n/gu) ?? []).length),
-          domNode,
+          ...preview,
         }));
       }
     });
   }
 
-  return function refreshDecorations(): void {
+  function refreshDecorations(): void {
     const decorations: Monaco.editor.IModelDeltaDecoration[] = [];
     const resolvedRange = (start: number, end: number): Monaco.Range | null => {
       try { return rangeFromBytes(start, end); } catch { return null; }
@@ -135,6 +153,14 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
       const projectedText = model.getValue();
       const replacementEnd = activeProjection.start + activeProjection.replacementLength;
       const replacement = projectedText.slice(activeProjection.start, replacementEnd);
+      let { inlineTail } = activeSuggestionPreview(original, replacement);
+      if (inlineTail) {
+        const lineStart = activeProjection.baseText.lastIndexOf('\n', activeProjection.start - 1) + 1;
+        const prefix = activeProjection.baseText.slice(lineStart, activeProjection.start);
+        if (!prefix.trim() && inlineTail.startsWith(prefix)) inlineTail = inlineTail.slice(prefix.length);
+        decorations.push({ range: monaco.Range.fromPositions(model.getPositionAt(activeProjection.start)),
+          options: { before: { content: inlineTail, inlineClassName: strikeClass }, showIfCollapsed: true } });
+      }
       let replacementOffset = 0;
       for (const part of suggestionTraceParts(original, replacement, activeProjection.traceJson)) {
         if (part.kind === 'delete' && !part.text.includes('\n')) {
@@ -150,7 +176,7 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
             );
             decorations.push({ range: monaco.Range.fromPositions(start, end), options: {
               inlineClassName: replacementClass,
-              hoverMessage: { value: `**${activeProjection.author}** редактирует правку` },
+              hoverMessage: { value: uiText("**{0}** редактирует правку", activeProjection.author) },
             } });
           }
         }
@@ -190,11 +216,11 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
       if (item.status === 'orphaned' || item.startByte === item.endByte) continue;
       const reservationClass = colorClass('reservation-range', item.color,
         (color) => `background:${color}25;border-bottom:1px solid ${color}`);
-      const delegated = item.createdBy && item.createdBy !== item.assignee ? ` · создал: ${item.createdBy}` : '';
+      const delegated = item.createdBy && item.createdBy !== item.assignee ? uiText(" · создал: {0}", item.createdBy) : '';
       const range = resolvedRange(item.startByte, item.endByte);
       if (range) decorations.push({ range, options: {
         inlineClassName: reservationClass,
-        hoverMessage: { value: `**Бронь: ${item.assignee}**${delegated}${item.comment ? `  \n${item.comment}` : ''}` },
+        hoverMessage: { value: uiText("**Бронь: {0}**{1}{2}", item.assignee, delegated, item.comment ? `  \n${item.comment}` : '') },
       } });
     }
     for (const item of state.comments.values()) {
@@ -214,7 +240,7 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
       const afterClass = colorClass('suggestion-after', color,
         (value) => `color:${value};font-weight:650;text-decoration:none`);
       const original = decodeBase64(item.originalBase64);
-      const replacement = decodedReplacement || '[удалить]';
+      const replacement = decodedReplacement || uiText("[удалить]");
       const range = resolvedRange(item.startByte, item.endByte);
       if (range) {
         const model = editor.getModel();
@@ -239,7 +265,7 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
             const position = model.getPositionAt(rangeStart + originalOffset);
             decorations.push({ range: monaco.Range.fromPositions(position), options: {
               after: { content: part.text, inlineClassName: afterClass }, showIfCollapsed: true,
-              hoverMessage: { value: `**${item.author}** предлагает: ${replacement}` },
+              hoverMessage: { value: uiText("**{0}** предлагает: {1}", item.author, replacement) },
             } });
           }
         }
@@ -247,5 +273,15 @@ export function createDecorationRenderer({ monaco, state, editor, rangeFromBytes
     }
     collection.set(decorations);
     onLayout();
+  }
+  refreshDecorations.dispose = () => {
+    disposed = true;
+    cancelAnimationFrame(refreshFrame); layoutSubscription.dispose(); fontSubscription.dispose();
+    collection.clear(); cursors.sync([], () => null);
+    editor.changeViewZones(accessor => {
+      if (activeZoneId) accessor.removeZone(activeZoneId);
+      for (const id of completedZoneIds) accessor.removeZone(id);
+    });
   };
+  return refreshDecorations;
 }

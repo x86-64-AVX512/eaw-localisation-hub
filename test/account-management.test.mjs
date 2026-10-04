@@ -53,3 +53,18 @@ test('senior translators can manage peers and senior invitations but not adminis
 
   now += 2 * 60 * 60 * 1000;
 });
+
+test('senior translators can issue and manage mod-contributor invitations, including combined roles', async () => {
+  const store = new AuthStore('unused', async () => {}, 'required');
+  const senior = user('senior', ['senior translator']);
+  store.state.users.push(senior);
+  for (const roles of [['mod-contributor'], ['mod-contributor', 'translator']]) {
+    const { invite } = await store.createInvite(senior, { roles, maxUses: 2, expiresInHours: 72 });
+    assert.deepEqual([...invite.roles].sort(), [...roles].sort());
+    assert.equal(store.listInvites(senior).some((item) => item.id === invite.id), true);
+    assert.equal((await store.revokeInvite(senior, invite.id)).status, 'revoked');
+  }
+  await assert.rejects(store.createInvite(senior, { roles: ['mod-contributor', 'admin'] }), {
+    code: 'administrator_role_forbidden',
+  });
+});

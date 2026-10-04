@@ -14,12 +14,67 @@ import { checkDiskChange, finishExternalMerge, confirmDiskMaterialisation,
   resolveExternalConflict, emitExternalConflicts, retryPendingDiskMerges } from '../apps/agent/src/disk-reconciliation.mjs';
 import { writeTrackedTextFile } from '../packages/shared/src/text.mts';
 import { requestDiskMergeCheck, receiveDiskMergeResult } from '../apps/agent/src/disk-merge-request.mjs';
-import { setLocalisationSelection, localisationVariantConflicts } from '../packages/shared/src/merge.mts';
+import { setLocalisationSelection, localisationVariantConflicts, localisationSelectionChanges } from '../packages/shared/src/merge.mts';
 import { mergeConflictId, mergeStateRevision } from '../packages/shared/src/merge-state.mts';
 
 const actor = { id: 'alice', displayName: 'Alice' };
 const single = 'l_russian:\n key:0 "Git"\n other:0 "Unchanged"\n';
 const duplicate = 'l_russian:\n repeated:0 "One"\n repeated:0 "Two"\n other:0 "Unchanged"\n';
+
+test('partial BAR deletion -> personal projection -> unchecked keys writes exact Git without changing shared text', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-partial-key-'));
+  const absolutePath = path.join(root, 'localisation/russian/bar_l_russian.yml');
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  const git = 'l_russian:\n before:0 "Before"\n\n BAR_friend_white_star_is_helping_tooltip:0 "White Star is here to help her brother."\n BAR_fix_the_climate_tooltip:0 "Effects of Barrad climate will be less severe."\n\n\n after:0 "After"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
+  const shared = git.replace(' BAR_friend_white_star_is_helping_tooltip:0 "White Star is here to help her brother."\n BAR_fix_the_climate_tooltip:0 "Effects of Barrad climate will be less severe."', ' BAR_friend_white_star_is_helping_tooltip:');
+  const history = new DocumentHistory(path.join(root, 'history.json'));
+  history.ensureBaseline(git);
+  history.record(shared, actor);
+  try {
+    let local = history.personalProjection(actor.id, git);
+    assert.equal(local, shared);
+    await fs.writeFile(absolutePath, local);
+    for (const key of ['BAR_friend_white_star_is_helping_tooltip', 'BAR_fix_the_climate_tooltip']) {
+      const previous = local;
+      local = setLocalisationSelection(git, shared, local, `key:${key}`, false);
+      history.replacePersonalProjection(actor, local, git);
+      assert.equal(history.personalProjection(actor.id, git), local, 'server confirmation retains the checkbox choice');
+      await writeTrackedTextFile(root, absolutePath, local, { expectedText: previous });
+    }
+    assert.equal(local, git);
+    assert.equal((await fs.readFile(absolutePath, 'utf8')).replace(/^\uFEFF/u, ''), git);
+    assert.equal(history.text(history.entries.at(-1).id), shared, 'checkboxes must not change the canonical document');
+    assert.ok(localisationSelectionChanges(git, shared, local).entries.every(({ state }) => state === 'excluded'));
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('deleted group with blank and ASCII suffix keeps its layout through server confirmation and disk writes', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-deleted-group-'));
+  const absolutePath = path.join(root, 'localisation/russian/bar_l_russian.yml');
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  const block = ' company:0 "Company"\n description:0 "Description"\n\n progress: "Progress"\n pending: "Pending"\n';
+  const git = `l_russian:\n before:0 "Before"\n${block}\n\n # ASCII heading\n # #### ###\n\n\n after:0 "After"\n repeated:0 "One"\n repeated:0 "Two"\n`;
+  const shared = git.replace(block, '');
+  const history = new DocumentHistory(path.join(root, 'history.json'));
+  history.ensureBaseline(git); history.record(shared, actor);
+  try {
+    let local = history.personalProjection(actor.id, git);
+    assert.equal(local, shared);
+    await fs.writeFile(absolutePath, local);
+    for (const include of [false, true, false]) {
+      for (const key of ['pending', 'description', 'company', 'progress']) {
+        const previous = local;
+        local = setLocalisationSelection(git, shared, local, `key:${key}`, include);
+        history.replacePersonalProjection(actor, local, git);
+        assert.equal(history.personalProjection(actor.id, git), local, 'server confirmation cannot move the restored group');
+        await writeTrackedTextFile(root, absolutePath, local, { expectedText: previous });
+      }
+      assert.equal(local, include ? shared : git);
+      assert.equal((await fs.readFile(absolutePath, 'utf8')).replace(/^\uFEFF/u, ''), local);
+    }
+    assert.equal(history.text(history.entries.at(-1).id), shared);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
 
 function rebaseDuplicate() {
   const history = new DocumentHistory('unused');

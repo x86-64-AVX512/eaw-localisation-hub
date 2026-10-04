@@ -1,6 +1,29 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F7` form; package metadata uses `0.8.8-beta.7`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F8` form; package metadata uses `0.8.8-beta.8`.
+
+## 0.8.8F8
+
+- Standardise authored interface and documentation punctuation on U+2013 en dashes and «guillemets» in both Russian and English. Keep apostrophes, code/YAML syntax and interpolated user/document text unchanged.
+- Redesign Review as a compact editor workbench: File/Edit/View/Git menus, a focused editing toolbar, a bottom connection/cursor status bar and collapsible collaboration/discussion panels. Keep shared, draggable warm-document tabs directly above the editor; shorten labels with language and ticket context while retaining full-path tooltips.
+- Retain F7 suggestion editing, saving and undo behavior with the new workbench design, localisation and document permissions. Measure deleted/proposed text with the actual editor font and width so wrapped previews are not clipped; recalculate on layout and font changes without altering draft contents or remapping line numbers.
+- Keep annotated-text context menus open on right-click, including suggestion view zones and injected deleted text in WebView2. Capture mouse-down before Monaco's cursor handling so the click that finishes a draft cannot reopen it on mouse-up.
+- Reuse the retained caret row for the last struck line of an active multiline deletion ending before its final newline. Typing continues on that row instead of showing an extra empty row below the original; keep explicitly inserted newlines distinct. Normalize CRLF only in the DOM preview and preserve actual blank separators without changing document offsets or server text.
+- Keep unfinished declarations ending at the colon or version number attributable to their localisation key during materialisation. Excluding partial-key deletions restores the Git line in place instead of preserving an orphan fragment and inserting another declaration; retain strict syntax diagnostics and the locale header's structural identity.
+- Restore deleted groups at their Git position above untouched comment headings, including blank separators removed inside the group. Preserve per-key choices through any checkbox order and server confirmation; re-including the entire deletion removes its restored internal spacing again without changing the collaborative document.
+- Restyle ticket creation/catalog, history, local-file controls, diagnostics and suggestion cards to match the workbench. Replace white native dropdown popups with themed keyboard-accessible lists; opening diff views no longer resets the selected editor theme.
+- Name the existing wire protocol EaW Hub Sync Protocol (EHSP), with protocol version 21 remaining independent of the application version.
+- Add English/Russian UI catalogs for Review, Desktop Agent, account management, updater progress, Windows alerts and deployment UI. Default to Russian only for Russian Windows UI languages; otherwise default to English. Persist manual language overrides locally.
+- Resolve Review language before constructing tutorials and menus; use the selected language for dates and preserve localisation, discussion text, account names and paths verbatim.
+- Add the additive `mod-contributor` role: edit English localisation and replacement files, read and discuss all documents, and manage own tickets. Require a translation role for suggestion decisions, ticket approval and application.
+- Enforce document permissions on the server for CRDT, history restoration and conflict controls; guard local materialisation and batch replacement in Agent. Reconnect authenticated document sockets after role changes so stale privileges cannot survive.
+- Allow senior translators to issue and manage mod-contributor invitations without permitting administrator role escalation.
+- Fix the auto-pull startup deadlock when Review opens a server-confirmed outdated file before checkout updates. Preserve delivery/conflict/worktree guards and use the new Git checkout as the initial disk base so the old opening snapshot cannot be imported as an edit.
+- Keep Review tabs in a stable opening order when switching or confirming document paths. Add drag-and-drop ordering with insertion markers and persist the chosen order without changing the active document or losing saved editor positions.
+- Add an on-demand context-menu character count for a localisation line's quoted source value, including counts with and without whitespace. Keep dynamic references and formatting literal; no runtime expansion or HoI4 window-fit estimate is performed.
+- Keep open Review documents subscribed across tab switches through one multiplexed local Agent connection. Isolate editor/CRDT/undo/discussion state per file and ticket; publish presence only for the active tab and include every warm document in repository-update safety checks.
+- Sleep clean inactive tabs after five minutes by default, with configurable idle time and a soft limit of four warm editors. Protect drafts, local undo history, unconfirmed delivery, conflicts and materialisation; require Agent/server flush confirmation before releasing a document. Restore cursor/scroll on wake and reopen saved tabs lazily.
+- Localise native Review errors and installer tasks/prompts. Prepare F8 metadata; no installer/deployer build or publication is included.
 
 ## 0.8.8F7
 
@@ -10,7 +33,7 @@ All notable public changes to EaW Localisation Hub are recorded here. Version na
 - Add an Update repository button to Review using the same guarded Agent service, explicit branch confirmation, live progress and actionable blocking reasons.
 - Block Git updates on dirty/staged/untracked files, divergence, active Git operations, Review conflicts and unconfirmed edits. Drain materialisation, confirm server delivery, recheck branch/HEAD and reconnect Review using the new disk base.
 - Show the blocking reason and new-commit count; optionally play one sound, flash the taskbar finitely and show a Windows notification per unresolved blocking episode. Network errors and ordinary synchronisation waits do not trigger these signals.
-- Check for releases without downloading or installing automatically. Add an explicit “Update client” button with confirmation explaining the download, installation and restart.
+- Check for releases without downloading or installing automatically. Add an explicit «Update client» button with confirmation explaining the download, installation and restart.
 - Show user-requested updates in a standalone progress window that remains visible while Agent is stopped. Display downloaded bytes and percentage, plus verification, installation and restart stages.
 - Restart Agent after installation and verify the new version, process identity and Review discovery before reporting success; reopen Review if it was running. Keep update failures visible until dismissed.
 - Prepare F7 metadata only; no installer or deployer has been built or published for this work-in-progress release.

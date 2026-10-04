@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 interface CursorEditor {
   getModel(): { getLineContent(line: number): string } | null;
   getPosition(): { lineNumber: number } | null;
@@ -23,12 +24,12 @@ export function keyAtCursor(editor: CursorEditor): string {
 export function createEnglishOriginal(options: EnglishOriginalOptions): void {
   const { state, editor, token, showToast, onOpened = () => {} } = options;
   const button = document.querySelector<HTMLButtonElement>('#english-original');
-  if (!button) throw new Error('Не найдена кнопка английского оригинала.');
+  if (!button) throw new Error(uiText("Не найдена кнопка английского оригинала."));
 
   button.addEventListener('click', async () => {
     const key = keyAtCursor(editor);
     if (!key) {
-      showToast('Поставьте курсор на строку с ключом локализации.', true);
+      showToast(uiText("Поставьте курсор на строку с ключом локализации."), true);
       return;
     }
     button.disabled = true;
@@ -43,9 +44,9 @@ export function createEnglishOriginal(options: EnglishOriginalOptions): void {
       const result = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
       if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : `HTTP ${response.status}`);
       onOpened(pair);
-      showToast(`Английский файл открыт: ${result.file}:${result.line}`);
+      showToast(uiText("Английский файл открыт: {0}:{1}", result.file, result.line));
     } catch (error) {
-      showToast(`Не удалось открыть оригинал: ${error instanceof Error ? error.message : String(error)}`, true);
+      showToast(uiText("Не удалось открыть оригинал: {0}", error instanceof Error ? error.message : String(error)), true);
     } finally {
       button.disabled = false;
     }

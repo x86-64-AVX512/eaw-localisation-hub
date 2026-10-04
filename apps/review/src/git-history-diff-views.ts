@@ -1,3 +1,4 @@
+import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { createStandardDiffView } from './standard-diff-view.ts';
 import type * as Monaco from 'monaco-editor';
 
@@ -19,7 +20,7 @@ export function createGitHistoryDiffViews({ monaco, container }: {
   container.classList.add('git-history-diff-host');
   const status = document.createElement('div');
   status.className = 'git-history-diff-status';
-  status.textContent = 'Загрузка сравнения…';
+  status.textContent = uiText("Загрузка сравнения…");
   status.hidden = true;
   container.append(status);
   const cached = new Map<string, CachedDiff>();
@@ -73,7 +74,7 @@ export function createGitHistoryDiffViews({ monaco, container }: {
 
   function showLoading() {
     cancelPending();
-    status.textContent = 'Вычисление отличий…';
+    status.textContent = uiText("Вычисление отличий…");
     status.hidden = false;
   }
 

@@ -1,3 +1,4 @@
+import { uiText, uiMessage } from '../../../packages/shared/src/ui-language.mts';
 import type * as Monaco from 'monaco-editor';
 import type { LocalisationDiagnostic } from '../../../packages/shared/src/localisation-syntax.mts';
 import { requiredElement } from './dom-elements.ts';
@@ -27,15 +28,15 @@ export function diagnosticsToMarkers(
 ): Monaco.editor.IMarkerData[] {
   return diagnostics.map((issue) => ({
     code: issue.code,
-    source: 'Синтаксис локализации',
+    source: uiText("Синтаксис локализации"),
     severity: issue.severity === 'error' ? monaco.MarkerSeverity.Error
       : issue.severity === 'info' ? monaco.MarkerSeverity.Info : monaco.MarkerSeverity.Warning,
-    message: issue.message,
+    message: uiMessage(issue.message),
     startLineNumber: issue.lineNumber, endLineNumber: issue.lineNumber,
     startColumn: issue.startColumn, endColumn: issue.endColumn,
     ...(issue.related ? { relatedInformation: [{
       resource: model.uri,
-      message: 'Первое объявление ключа',
+      message: uiText("Первое объявление ключа"),
       startLineNumber: issue.related.lineNumber, endLineNumber: issue.related.lineNumber,
       startColumn: issue.related.startColumn, endColumn: issue.related.endColumn,
     }] } : {}),
@@ -69,14 +70,14 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
       row.className = `syntax-problem ${issue.severity}`;
       const jump = document.createElement('button');
       jump.type = 'button';
-      jump.textContent = `Строка ${issue.lineNumber}: ${issue.message}`;
+      jump.textContent = uiText("Строка {0}: {1}", issue.lineNumber, uiMessage(issue.message));
       jump.addEventListener('click', () => jumpTo(issue.lineNumber, issue.startColumn));
       row.append(jump);
       if (issue.related) {
         const related = issue.related;
         const first = document.createElement('button');
         first.type = 'button'; first.className = 'syntax-related';
-        first.textContent = `Первое объявление: строка ${related.lineNumber}`;
+        first.textContent = uiText("Первое объявление: строка {0}", related.lineNumber);
         first.addEventListener('click', () => jumpTo(related.lineNumber, related.startColumn));
         row.append(first);
       }
@@ -100,7 +101,7 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
   worker.onmessage = ({ data }: MessageEvent<SyntaxWorkerResult>) => {
     if (data.type === 'key-index-ready') { indexError = ''; schedule(); return; }
     if (data.type === 'key-index-error') {
-      if (indexError !== data.error) showToast(`Индекс ссылок локализации недоступен: ${data.error}`, true);
+      if (indexError !== data.error) showToast(uiText("Индекс ссылок локализации недоступен: {0}", data.error), true);
       indexError = data.error ?? '';
       return;
     }
@@ -108,7 +109,7 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
     const model = editor.getModel();
     if (!model || model.getVersionId() !== data.version) return;
     if (data.error) {
-      if (!failed) showToast(`Проверка синтаксиса недоступна: ${data.error}`, true);
+      if (!failed) showToast(uiText("Проверка синтаксиса недоступна: {0}", data.error), true);
       failed = true;
       return;
     }
@@ -116,17 +117,18 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
     if (Array.isArray(data.diagnostics)) publish(model, data.diagnostics);
   };
   worker.onerror = () => {
-    if (!failed) showToast('Фоновая проверка синтаксиса завершилась с ошибкой.', true);
+    if (!failed) showToast(uiText("Фоновая проверка синтаксиса завершилась с ошибкой."), true);
     failed = true;
   };
 
   function schedule(): void {
+    if (!isWorkspaceVisible()) return;
     if (timer !== null) clearTimeout(timer);
     revision += 1;
     const id = revision;
     timer = setTimeout(() => {
       const model = editor.getModel();
-      if (!model || id !== revision) return;
+      if (!model || id !== revision || !isWorkspaceVisible()) return;
       const filePath = getFilePath?.();
       if (getFilePath && !filePath) return;
       worker.postMessage({ id, version: model.getVersionId(), text: model.getValue(), filePath });
@@ -151,3 +153,4 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
     if (markedModel) monaco.editor.setModelMarkers(markedModel, MARKER_OWNER, []);
   } };
 }
+import { isWorkspaceVisible } from './workspace-runtime.ts';

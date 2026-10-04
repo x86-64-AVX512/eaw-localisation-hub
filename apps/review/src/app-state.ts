@@ -23,7 +23,7 @@ export interface BootstrapPayload {
 export function createAppState() {
   return {
     path: '', relativePath: '', workspace: '', ticket: null as Ticket | null,
-    user: '', userId: '', color: '#6aa9ff', avatarBase64: '', ready: false, applyingRemote: false,
+    user: '', userId: '', roles: [] as string[], color: '#6aa9ff', avatarBase64: '', ready: false, applyingRemote: false,
     suggestions: new Map<string, ReviewSuggestion>(), comments: new Map<string, ReviewComment>(),
     presences: new Map<string, ReviewPresence>(), reservations: new Map<string, ReviewReservation>(),
     reservationTargets: [] as ReviewReservationTarget[], externalConflicts: new Map<string, ReviewExternalConflict>(),

@@ -46,6 +46,7 @@ foreach ($scriptName in @(
     'client-update-transfer.ps1',
     'client-update-restart.ps1',
     'repository-sync-ui.ps1',
+    'ui-language.ps1',
     'start-review.ps1',
     'credential-store.ps1',
     'install-client.ps1',
