@@ -32,6 +32,15 @@ test('public repository metadata declares GPL-2.0-only and publication safeguard
   assert.match(dockerIgnore, /deploy\/\.env/);
   assert.match(license, /GNU GENERAL PUBLIC LICENSE\s+Version 2/);
   assert.doesNotMatch(workflow, /submodules: recursive/);
+  // GitHub rejects the whole workflow (zero jobs, reported only as a failed run)
+  // when a step mapping such as `with:` is left without indented children.
+  const workflowLines = workflow.split(/\r?\n/u);
+  workflowLines.forEach((line, index) => {
+    const parent = /^(\s*)(?:- )?(?:with|env|steps|jobs|on|permissions):\s*$/u.exec(line);
+    if (!parent) return;
+    const next = workflowLines.slice(index + 1).find((candidate) => candidate.trim());
+    assert.ok(next && /^\s*/u.exec(next)[0].length > parent[1].length, `empty mapping at ci.yml:${index + 1}`);
+  });
   assert.match(workflow, /scripts\/bootstrap-zig\.ps1/);
   assert.match(workflow, /npm run check:publication/);
   assert.match(audit, /Public infrastructure IP detected/);

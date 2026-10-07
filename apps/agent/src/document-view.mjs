@@ -290,11 +290,13 @@ export function emitHistory(binding, onlyClient = null) {
 
 export function emitReservations(binding, onlyClient = null) {
   const recipients = onlyClient ? [onlyClient] : binding.clients;
+  const canUpdate = binding.reservationUpdates === true && binding.synced === true && binding.socket?.readyState === 1;
   const canonical = binding.text.toString();
   const reservations = [...binding.reservations.values()].map((reservation) => {
     const resolved = binding.resolveReservation(reservation);
     return {
       id: reservation.id,
+      revision: reservation.revision ?? 0,
       assignee: reservation.assignee,
       assigneeId: reservation.assigneeId ?? '',
       color: reservation.color,
@@ -309,6 +311,7 @@ export function emitReservations(binding, onlyClient = null) {
   });
   const positionFingerprint = JSON.stringify([
     binding.reservationRevision ?? 0,
+    canUpdate,
     reservations.map(({ id, status, startIndex, endIndex }) => [id, status, startIndex, endIndex]),
   ]);
   for (const client of recipients) {
@@ -323,7 +326,8 @@ export function emitReservations(binding, onlyClient = null) {
         endByte: byteOffsetFor(binding, canonical, endIndex),
       }));
       if (client.kind === 'review') {
-        client.send({ type: 'reservationSnapshot', path: absolutePath, reservations: encoded });
+        client.send({ type: 'reservationSnapshot', path: absolutePath, reservations: encoded,
+          canUpdate });
       } else {
         client.send({ type: 'reservationReset', path: absolutePath });
         for (const reservation of encoded) client.send({

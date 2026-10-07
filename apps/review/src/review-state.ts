@@ -17,6 +17,7 @@ export interface ReviewReservationTarget {
 
 export interface ReviewReservation {
   id: string;
+  revision?: number;
   startByte: number;
   endByte: number;
   keyCount: number;
@@ -50,6 +51,15 @@ export interface ReviewCollaborationState {
   externalConflicts: Map<string, ReviewExternalConflict>;
   selectedReservation: string;
   selectedConflict: string;
+  reservationUpdates?: boolean;
+}
+
+export interface ReservationUpdateResult {
+  requestId: string;
+  id: string;
+  status: 'saved' | 'stale' | 'deleted' | 'error';
+  revision?: number;
+  message?: string;
 }
 
 export type CollaborationCommand =
@@ -57,6 +67,9 @@ export type CollaborationCommand =
       assigneeId: string; assignee: string; assigneeColor: string; comment: string }
   | { type: 'reservationDeleteAt'; path: string; positionByte: number }
   | { type: 'reservationDelete'; path: string; id: string }
+  | { type: 'reservationUpdate'; path: string; id: string; requestId: string; expectedRevision: number;
+      assigneeId?: string; assignee?: string; assigneeColor?: string; comment?: string;
+      startByte?: number; endByte?: number; reviewAnchors?: string }
   | { type: 'externalConflictResolve'; path: string; key: string; source: string; conflictId: string;
       choice: 'collaborative' | 'external' };
 
@@ -68,5 +81,7 @@ export interface CollaborationPanelOptions {
   jumpToBytes: (start: number, end: number) => void;
   showToast: (message: string, isError?: boolean) => void;
   openConflictDiff?: (conflict: ReviewExternalConflict) => void;
+  canEditReservations?: () => boolean;
+  anchor?: (message: CollaborationCommand) => CollaborationCommand & { reviewAnchors?: string };
 }
 import type * as Monaco from 'monaco-editor';

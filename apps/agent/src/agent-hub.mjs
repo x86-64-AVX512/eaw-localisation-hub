@@ -577,8 +577,12 @@ export class AgentHub {
       client.activeDocumentPath = absolutePath;
     }
     if (message.reviewAnchors) {
+      const anchoredCommand = message;
       message = resolveReviewAnchors(state.binding, client, message);
       if (!message) {
+        if (anchoredCommand.type === 'reservationUpdate') client.send({ type: 'reservationUpdateResult',
+          path: absolutePath, id: anchoredCommand.id, requestId: anchoredCommand.requestId, status: 'error',
+          message: 'Выделенный текст изменился. Выделите новый диапазон брони ещё раз.' });
         client.send({ type: 'notice', path: absolutePath,
           message: 'Выделенный текст изменился. Повторите действие на актуальной версии.' });
         return;
@@ -587,7 +591,7 @@ export class AgentHub {
     }
     const gitMutations = new Set([
       'edit', 'snapshot', 'reviewUpdate', 'undo', 'redo', 'reservationCreate', 'reservationDeleteAt',
-      'reservationDelete', 'commentCreate', 'commentReply', 'commentStatus', 'commentDelete',
+      'reservationDelete', 'reservationUpdate', 'commentCreate', 'commentReply', 'commentStatus', 'commentDelete',
       'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
       'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'historyRestore',
       'externalConflictResolve', 'personalFileMaterialize', 'personalConflictResolve',
@@ -596,6 +600,9 @@ export class AgentHub {
     if (gitMutations.has(message.type) && message.type !== 'documentVariantRequest') {
       const control = message.type.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
       if (!documentControlAllowed(this.identity, state.binding.relativePath, control)) {
+        if (message.type === 'reservationUpdate') client.send({ type: 'reservationUpdateResult',
+          path: absolutePath, id: message.id, requestId: message.requestId, status: 'error',
+          message: 'Недостаточно прав для изменения брони в этом документе.' });
         client.send({ type: 'notice', path: absolutePath,
           message: 'Контрибьюторы мода могут изменять только английские файлы и обсуждать любые документы. Для решений по правкам нужна переводческая роль.' });
         return;
@@ -605,6 +612,9 @@ export class AgentHub {
     if (gitMutations.has(message.type)) this.repositoryEditEpoch += 1;
     if (!state.binding.gitWritable && gitMutations.has(message.type)
       && !(message.type === 'externalConflictResolve' && state.binding.gitState?.status === 'conflict')) {
+      if (message.type === 'reservationUpdate') client.send({ type: 'reservationUpdateResult',
+        path: absolutePath, id: message.id, requestId: message.requestId, status: 'error',
+        message: 'Документ доступен только для чтения. Обновите Git-версию файла.' });
       client.send({
         type: 'notice',
         message: 'Git-версия этого файла устарела. Обновите репозиторий через GitHub Desktop; документ открыт только для чтения.',
@@ -649,6 +659,7 @@ export class AgentHub {
     else if (message.type === 'undo') state.binding.undo(client);
     else if (message.type === 'redo') state.binding.redo(client);
     else if (message.type === 'reservationCreate') state.binding.createReservation(client, absolutePath, message);
+    else if (message.type === 'reservationUpdate') state.binding.updateReservation(client, absolutePath, message);
     else if (message.type === 'reservationDeleteAt') state.binding.deleteReservationAt(client, absolutePath, message);
     else if (message.type === 'reservationDelete') state.binding.deleteReservation(client, absolutePath, message);
     else if (message.type === 'commentCreate') state.binding.createComment(client, absolutePath, message);

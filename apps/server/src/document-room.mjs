@@ -42,6 +42,7 @@ import {
 } from './document-review-policy.mjs';
 import { projectedSuggestionStateBytes } from './document-suggestion-projection.mjs';
 import { repairReservationAnchors } from './reservation-anchors.mjs';
+import { updateReservation } from './reservation-update.mjs';
 import {
   captureReviewAnchor,
   captureReviewAnchors,
@@ -268,6 +269,7 @@ export class DocumentRoom {
           : { ...this.gitStatusFor(socket), checkedAt: this.gitBase.checkedAt })
         : null,
       reservations: this.activeReservations(),
+      reservationUpdates: true,
       commentThreads: this.commentThreads,
       suggestions: this.suggestions,
       history: this.history.summaries(),
@@ -650,11 +652,31 @@ export class DocumentRoom {
   }
 
   receiveJson(socket, message, authorise = () => {}) {
-    return this.enqueueMessage(() => {
+    return this.enqueueMessage(async () => {
       if (this.registry.isUnavailableBranch(this.documentId)) {
         const branch = this.documentId.split(':', 1)[0];
         throw new ProtocolLimitError('Branch merge is in progress or complete',
           this.registry.mergedBranches.has(branch) ? 4002 : 1013);
+      }
+      if (message?.type === 'reservation-update') {
+        const requestId = controlledString(message.requestId, 'Reservation request id', 128, { required: true });
+        const id = controlledString(message.id, 'Reservation id', 128, { required: true });
+        let result;
+        let applied = null;
+        try {
+          authorise();
+          result = await auditDocumentControl(this, socket, message, () => (applied = this.applyJson(socket, message)));
+        } catch (error) {
+          console.error(`[server] reservation update rejected for ${this.documentId}: ${error?.message ?? error}`);
+          // Resource limits keep closing the socket through the shared handler.
+          if (error instanceof ProtocolLimitError) throw error;
+          // A failed completion audit must not report an already broadcast save as lost.
+          result = applied?.status === 'saved' ? applied
+            : { status: 'error', message: 'Не удалось изменить бронь. Проверьте права, исполнителя, примечание и выделение.' };
+        }
+        if (result) sendWithBackpressure(socket, JSON.stringify({ type: 'reservation-update-result',
+          requestId, id, ...result }));
+        return;
       }
       authorise();
       return auditDocumentControl(this, socket, message, () => this.applyJson(socket, message));
@@ -782,6 +804,8 @@ export class DocumentRoom {
       return;
     }
 
+    if (message.type === 'reservation-update') return updateReservation(this, socket, message);
+
     if (message.type === 'reservation-create') {
       const id = controlledString(message.id, 'Reservation id', 128, { required: true });
       const startRelative = controlledString(message.startRelative, 'Reservation start', 4096, { required: true });
@@ -820,6 +844,7 @@ export class DocumentRoom {
         if (!assignee) throw new Error('Reservation assignee account is unavailable');
         this.reservations.push({
           id,
+          revision: 1,
           assigneeId: assignee.id,
           assignee: assignee.displayName,
           color: assignee.color,

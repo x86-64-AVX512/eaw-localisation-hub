@@ -3,6 +3,12 @@ import type * as Monaco from 'monaco-editor';
 import type { LocalisationDiagnostic } from '../../../packages/shared/src/localisation-syntax.mts';
 import { requiredElement } from './dom-elements.ts';
 
+// Templated diagnostics translate by catalogue template; older byte checks and
+// static messages still use the exact-text catalogue.
+function diagnosticText(issue: LocalisationDiagnostic): string {
+  return issue.messageTemplate ? uiText(issue.messageTemplate, ...(issue.messageArgs ?? [])) : uiMessage(issue.message);
+}
+
 const MARKER_OWNER = 'eaw-localisation-syntax';
 
 interface SyntaxDiagnosticsOptions {
@@ -31,7 +37,7 @@ export function diagnosticsToMarkers(
     source: uiText("Синтаксис локализации"),
     severity: issue.severity === 'error' ? monaco.MarkerSeverity.Error
       : issue.severity === 'info' ? monaco.MarkerSeverity.Info : monaco.MarkerSeverity.Warning,
-    message: uiMessage(issue.message),
+    message: diagnosticText(issue),
     startLineNumber: issue.lineNumber, endLineNumber: issue.lineNumber,
     startColumn: issue.startColumn, endColumn: issue.endColumn,
     ...(issue.related ? { relatedInformation: [{
@@ -70,7 +76,7 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
       row.className = `syntax-problem ${issue.severity}`;
       const jump = document.createElement('button');
       jump.type = 'button';
-      jump.textContent = uiText("Строка {0}: {1}", issue.lineNumber, uiMessage(issue.message));
+      jump.textContent = uiText("Строка {0}: {1}", issue.lineNumber, diagnosticText(issue));
       jump.addEventListener('click', () => jumpTo(issue.lineNumber, issue.startColumn));
       row.append(jump);
       if (issue.related) {
@@ -99,7 +105,7 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
   }
 
   worker.onmessage = ({ data }: MessageEvent<SyntaxWorkerResult>) => {
-    if (data.type === 'key-index-ready') { indexError = ''; schedule(); return; }
+    if (data.type === 'key-index-ready' || data.type === 'disk-diagnostics-ready') { indexError = ''; schedule(); return; }
     if (data.type === 'key-index-error') {
       if (indexError !== data.error) showToast(uiText("Индекс ссылок локализации недоступен: {0}", data.error), true);
       indexError = data.error ?? '';

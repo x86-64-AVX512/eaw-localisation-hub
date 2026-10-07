@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { normaliseTrackedPath, withoutUtf8Bom } from '../../../packages/shared/src/text.mts';
+import { parseLocalisationRecords } from '../../../packages/shared/src/localisation-records.mts';
+import { compareTechnicalInsertions } from '../../../packages/shared/src/localisation-markup.mts';
 
 function counterpart(relativePath) {
   const value = relativePath.replaceAll('\\', '/');
@@ -15,13 +17,8 @@ function counterpart(relativePath) {
 }
 
 function entries(text) {
-  const result = [];
-  for (const [index, line] of text.replaceAll('\r\n', '\n').split('\n').entries()) {
-    const match = /^\s*([^#\s][^:]*)\s*:\s*(?:\d+\s*)?"(.*)"\s*(?:#.*)?$/u.exec(line);
-    if (!match) continue;
-    result.push({ key: match[1].trim(), text: match[2], line: index + 1 });
-  }
-  return result;
+  return parseLocalisationRecords(text).filter((record) => !record.fault)
+    .map((record) => ({ key: record.key, text: record.value, line: record.lineNumber }));
 }
 
 function grouped(values) {
@@ -110,7 +107,7 @@ async function readAuditPair(repository, requestedPath) {
 
 // Bump when the audit payload or its structural comparison rules change.
 // The cache survives client upgrades, so file content alone is not sufficient.
-const AUDIT_CACHE_VERSION = 2;
+const AUDIT_CACHE_VERSION = 3;
 
 function auditCacheKey({ sourcePath, otherPath, source, other }) {
   const digest = crypto.createHash('sha256')
@@ -154,7 +151,8 @@ function auditPair({ sourcePath, otherPath, source: sourceBuffer, other: otherBu
     if (!russian) status = 'missing-russian';
     else if (!english) status = 'missing-english';
     else if (russian.count > 1 || english.count > 1) status = 'duplicate';
-    return { key, status, russian, english };
+    const technicalIssues = status === 'ok' ? compareTechnicalInsertions(russian.text, english.text) : [];
+    return { key, status, russian, english, technicalIssues };
   });
   return {
     currentPath: sourcePath, pairPath: otherPath,

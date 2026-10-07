@@ -115,7 +115,7 @@ test('the first meaningful line must contain the header matching the opened file
 test('valid HOI4 reference, variable, colour and icon forms are not diagnosed', () => {
   const values = [
     '$OTHER_KEY$', '$COUNTRY|H$', '$VALUE|0$', '$VALUE|%0$', '$VALUE|+0$',
-    '$VALUE|+=%0$', '$VALUE|$',
+    '$VALUE|+=%0$', '$VALUE|$', '$VALUE|%x$', '[?value|]',
     '§YЖёлтый§! §Gзелёный§!', '§YЖёлтый §Gзелёный§!', '§Y$OTHER_KEY$§!',
     '[GetSomething]', '[Root.GetName]', '[Root.GetNameDef]', '[From.GetAdjective]',
     '[?my_variable]', '[?ROOT.my_variable]', '[?value|G0]', '[?MIT_cost|+=2Y]',
@@ -138,7 +138,7 @@ test('broken reference, bracket and variable forms have independent diagnostics'
     ['$$', 'empty-reference'],
     ['$OTHER KEY$', 'malformed-reference'],
     ['$COUNTRY|H', 'unclosed-reference'],
-    ['$VALUE|%x$', 'suspicious-reference-formatter'],
+    ['$VALUE|%0%$', 'suspicious-reference-formatter'],
     ['$VALUE|+=%0', 'unclosed-reference'],
     ['§YТекст', 'unclosed-colour-tag'],
     ['Текст§!', 'stray-colour-reset'],
@@ -155,7 +155,7 @@ test('broken reference, bracket and variable forms have independent diagnostics'
     ['[?ROOT.]', 'malformed-variable'],
     ['[?value|G0', 'unclosed-variable'],
     ['[?modifier@|+=%0]', 'malformed-variable'],
-    ['[?value|]', 'malformed-variable-format'],
+    ['[?value|%.]', 'malformed-variable-format'],
     ['[!button_click', 'unclosed-command'],
     ['Строка 1\\qСтрока 2', 'unknown-escape'],
     ['$TITLE: [Root.GetName]', 'unclosed-reference'],
@@ -171,4 +171,34 @@ test('broken reference, bracket and variable forms have independent diagnostics'
   ).map((issue) => issue.code);
   assert.ok(combined.includes('unclosed-reference'));
   assert.ok(combined.includes('nested-dynamic-loc'));
+});
+
+test('templated diagnostics translate by catalogue template, never by reverse-matching formatted text', async () => {
+  const { hasEnglishMessage, setUiLanguage, uiText } = await import('../packages/shared/src/ui-language.mts');
+  const sources = [
+    ['localisation/russian/a_l_russian.yml', 'l_english:\n KEY:0 "x"\n KEY:0 "y"\n BAD:0 x\n ESC:0 "a\\q"\n OPEN:0 "z\n'],
+    ['localisation/russian/b_l_russian.yml', ' KEY:0 "x"\n'],
+    ['notes.yml', 'l_x\n'],
+    ['notes.yml', ' KEY:0 "x"\n'],
+    ['localisation/russian/c_l_russian.yml', 'l_russian:\n EYE_a:0 "$EYE_b$ [Root.GetNmae]"\n EYE_b:0 "$EYE_a$ $EYE_gone$"\n'],
+  ];
+  const issues = sources.flatMap(([filePath, text]) => parseLocalisationDiagnostics(text, { filePath,
+    knownKeys: new Set(), knownPrefixes: new Set(['EYE']), knownGetters: new Set(['GetName']) }));
+  for (const code of ['wrong-language-header', 'duplicate-key', 'missing-opening-quote', 'unknown-escape',
+    'unclosed-quote', 'missing-header', 'malformed-header', 'unresolved-local-reference', 'likely-getter-typo', 'local-reference-cycle']) {
+    assert.ok(issues.some((issue) => issue.code === code), code);
+  }
+  try {
+    setUiLanguage('en');
+    for (const issue of issues) {
+      const template = issue.messageTemplate ?? issue.message;
+      assert.ok(hasEnglishMessage(template), `missing English catalogue entry: ${template}`);
+      if (issue.messageTemplate) {
+        assert.equal(uiText(issue.messageTemplate, ...issue.messageArgs).includes('{'), false);
+        setUiLanguage('ru');
+        assert.equal(uiText(issue.messageTemplate, ...issue.messageArgs), issue.message);
+        setUiLanguage('en');
+      }
+    }
+  } finally { setUiLanguage('ru'); }
 });

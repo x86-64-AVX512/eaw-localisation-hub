@@ -1,5 +1,5 @@
-export const DISPLAY_VERSION = '0.8.8F8';
-export const SEMVER_VERSION = '0.8.8-beta.8';
+export const DISPLAY_VERSION = '0.8.8F9';
+export const SEMVER_VERSION = '0.8.8-beta.9';
 export const PROTOCOL_VERSION = 21;
 export const PROTOCOL_NAME = 'EaW Hub Sync Protocol';
 export const PROTOCOL_ABBREVIATION = 'EHSP';

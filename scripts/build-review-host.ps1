@@ -27,7 +27,8 @@ if ($actualHash -ne $expectedHash) {
 if (-not (Test-Path -LiteralPath (Join-Path $sdkRoot 'build\native\include\WebView2.h'))) {
     if (Test-Path -LiteralPath $sdkRoot) { Remove-Item -LiteralPath $sdkRoot -Recurse -Force }
     New-Item -ItemType Directory -Path $sdkRoot | Out-Null
-    & tar.exe -xf $packagePath -C $sdkRoot
+    # GNU tar from Git for Windows may precede System32 on PATH and misreads C:\ paths.
+    & (Join-Path $env:SystemRoot 'System32\tar.exe') -xf $packagePath -C $sdkRoot
     if ($LASTEXITCODE -ne 0) { throw 'Could not extract the WebView2 SDK package.' }
 }
 

@@ -17,9 +17,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 35
     steps:
-      - name: Checkout with native dependencies
+      - name: Checkout
         uses: actions/checkout@v6
-        with:
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v6

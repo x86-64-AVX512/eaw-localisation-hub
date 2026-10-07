@@ -10,6 +10,7 @@ import {
   fingerprintSha256,
   remoteDeploymentCommand,
   shellQuote,
+  systemTar,
   validateDeploymentRequest,
 } from '../apps/deployer/src/deployment-core.mjs';
 
@@ -46,6 +47,12 @@ test('remote deployment verifies its payload, preserves state, checks health, an
   assert.match(command, /docker compose build server/);
 });
 
+test('deployer packs with the Windows system tar, not whichever tar PATH finds first', () => {
+  assert.equal(systemTar('win32', { SystemRoot: 'D:/Windows' }), path.win32.join('D:/Windows', 'System32', 'tar.exe'));
+  assert.equal(systemTar('win32', {}), path.win32.join('C:/Windows', 'System32', 'tar.exe'));
+  assert.equal(systemTar('linux', {}), 'tar');
+});
+
 test('server deployment payload excludes runtime secrets and data', async (context) => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'eaw-deployer-test-'));
   context.after(() => rm(root, { recursive: true, force: true }));
@@ -65,7 +72,7 @@ test('server deployment payload excludes runtime secrets and data', async (conte
   const payload = await createServerPayload(root, '0.8.6F4');
   context.after(payload.dispose);
   assert.match(payload.digest, /^[a-f0-9]{64}$/);
-  const listing = spawnSync('tar.exe', ['-tzf', payload.archivePath], { encoding: 'utf8' });
+  const listing = spawnSync(systemTar(), ['-tzf', payload.archivePath], { encoding: 'utf8' });
   assert.equal(listing.status, 0, listing.stderr);
   assert.doesNotMatch(listing.stdout, /\.env|private\.enc|backups\//);
   assert.match(listing.stdout, /apps\/server\/main\.mjs/);

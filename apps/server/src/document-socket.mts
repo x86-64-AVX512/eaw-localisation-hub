@@ -52,16 +52,26 @@ export function attachDocumentSocket({
     return '';
   };
   socket.messageQueue = Promise.resolve();
+  const respondError = (control: Record<string, unknown> | null, message: string) => {
+    if (control?.type === 'reservation-update' && typeof control.requestId === 'string'
+      && control.requestId.length > 0 && control.requestId.length <= 128
+      && typeof control.id === 'string' && control.id.length > 0 && control.id.length <= 128) {
+      sendWithBackpressure(socket, JSON.stringify({ type: 'reservation-update-result', requestId: control.requestId,
+        id: control.id, status: 'error',
+        message: 'Не удалось изменить бронь. Проверьте права, исполнителя, примечание и выделение.' }));
+    } else sendWithBackpressure(socket, JSON.stringify({ type: 'error', message }));
+  };
   socket.on('message', (data, isBinary) => {
     if (isShuttingDown()) return;
     socket.messageQueue = (socket.messageQueue ?? Promise.resolve()).then(async () => {
+      let control: Record<string, unknown> | null = null;
       try {
         const parsed: unknown = isBinary ? null : JSON.parse(data.toString('utf8'));
         if (!isBinary && !isRecord(parsed)) throw new Error('Invalid document control message');
-        const control = isBinary ? null : parsed as Record<string, unknown>;
+        control = isBinary ? null : parsed as Record<string, unknown>;
         const blocked = writableError(isBinary, control);
         if (blocked) {
-          sendWithBackpressure(socket, JSON.stringify({ type: 'error', message: blocked }));
+          respondError(control, blocked);
           return;
         }
         const recheckWritable = () => {
@@ -79,8 +89,7 @@ export function attachDocumentSocket({
         else if (control) await room.receiveJson(socket, control, recheckWritable);
       } catch (error) {
         console.error('[server] rejected a document message');
-        sendWithBackpressure(socket, JSON.stringify({ type: 'error',
-          message: error instanceof Error ? error.message : String(error) }));
+        respondError(control, error instanceof Error ? error.message : String(error));
         if (error instanceof ProtocolLimitError) {
           socket.close(error.closeCode, 'Protocol resource limit exceeded');
         }

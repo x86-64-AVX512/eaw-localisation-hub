@@ -332,17 +332,4 @@ export async function writeTrackedTextFile(repositoryRoot: string, absolutePath:
   }
 }
 
-export function parseLocalisationKeys(text: string): Array<{ key: string; index: number }> {
-  const entries: Array<{ key: string; index: number }> = [];
-  const expression = /^[ \t]*([^#\s][^:\r\n]*):(?:\d+)?[ \t]+(?=\S)/gm;
-  for (const match of text.matchAll(expression)) {
-    entries.push({ key: match[1].trim(), index: match.index });
-  }
-  return entries;
-}
-
-export function keysInsideRange(text: string, startIndex: number, endIndex: number): string[] {
-  return parseLocalisationKeys(text)
-    .filter(({ index }) => index >= startIndex && index < endIndex)
-    .map(({ key }) => key);
-}
+export { parseLocalisationKeys, keysInsideRange } from './localisation-keys.mts';

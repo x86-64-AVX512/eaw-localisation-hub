@@ -1,7 +1,7 @@
 import { WebSocket } from 'ws';
 import * as Y from 'yjs';
 import { LocalPresenceMux } from './local-presence.mts';
-import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION } from '../../../packages/shared/src/constants.mts';
+import { MAX_MESSAGE_BYTES } from '../../../packages/shared/src/constants.mts';
 import { validateServerMessage } from '../../../packages/shared/src/protocol-schema.mts';
 import * as actions from './document-actions.mjs';
 import * as disk from './disk-reconciliation.mjs';
@@ -12,6 +12,7 @@ import * as gitState from './git-document-state.mjs';
 import * as delivery from './document-delivery.mts';
 import { normaliseLineEndings } from '../../../packages/shared/src/text.mts';
 import * as personalDocument from './personal-document.mjs';
+import * as serverMessages from './document-server-messages.mjs';
 import { broadcastReviewUpdate, applyReviewUpdate } from './review-document.mjs';
 import { handleMergedBranchClose, handleUnavailableTicketClose } from './document-lifecycle.mts';
 const REMOTE_ORIGIN = Symbol('remote-server-update');
@@ -29,6 +30,7 @@ export class DocumentBinding {
     this.commentThreads = new Map();
     this.suggestions = new Map();
     this.reservationRevision = 0; this.reviewRevision = 0;
+    this.reservationUpdates = false;
     this.history = [];
     this.historyHeadId = '';
     this.presences = new Map();
@@ -136,88 +138,7 @@ export class DocumentBinding {
   }
 
   receiveServerMessage(message) {
-    if (message.type === 'disk-merge-result') {
-      diskRequests.receiveDiskMergeResult(this, message);
-      return;
-    }
-    if (message.type === 'tickets-changed') {
-      for (const client of this.clients) {
-        if (client.kind === 'review') client.send({ type: 'ticketCatalogChanged', revision: message.revision });
-      }
-      return;
-    }
-    if (delivery.handleFlushAcknowledgement(this, message)) return;
-    if (message.type === 'synced') {
-      if (message.protocol !== PROTOCOL_VERSION) {
-        this.paused = true;
-        this.gitWritable = false;
-        for (const client of this.clients) client.send({ type: 'notice',
-          message: `Несовместимый протокол: сервер ${message.protocol}, Agent ${PROTOCOL_VERSION}. Обновите клиент и сервер.` });
-        this.socket?.close(1002, 'Protocol version mismatch');
-        return;
-      }
-      gitState.applySyncedMessage(this, message);
-      disk.retryPendingDiskMerges(this);
-      return;
-    }
-    if (message.type === 'git-status') {
-      gitState.applyGitStatus(this, message);
-      if (this.gitWritable) disk.retryPendingDiskMerges(this);
-      return;
-    }
-    if (message.type === 'reservations') {
-      this.reservations = new Map((message.reservations ?? []).map((item) => [item.id, item])); this.reservationRevision += 1;
-      this.emitReservations();
-      return;
-    }
-    if (message.type === 'review') {
-      this.commentThreads = new Map((message.commentThreads ?? []).map((item) => [item.id, item]));
-      this.suggestions = new Map((message.suggestions ?? []).map((item) => [item.id, item])); this.reviewRevision += 1;
-      this.emitReview();
-      return;
-    }
-    if (message.type === 'directory') {
-      this.hub.updateDirectory(message.users ?? []);
-      return;
-    }
-    if (message.type === 'history') {
-      this.history = message.entries ?? [];
-      this.historyHeadId = message.headId ?? '';
-      this.emitHistory();
-      personalDocument.schedulePersonalDocumentRefresh(this);
-      return;
-    }
-    if (message.type === 'history-version') {
-      this.hub.rememberHistoryVersion?.(this, message);
-      for (const client of this.clients) {
-        if (client.kind !== 'review') continue;
-        for (const [absolutePath, state] of client.documents) {
-          if (state.binding === this) client.send({
-            type: 'historyVersion', path: absolutePath, id: message.id, textBase64: message.textBase64,
-          });
-        }
-      }
-      return;
-    }
-    if (message.type === 'personal-projection') {
-      personalDocument.handlePersonalDocument(this, message);
-      return;
-    }
-    if (message.type === 'presence') {
-      if (message.clientId && !this.hub.isLocalPresenceId(message.clientId)) {
-        this.presences.set(message.clientId, message);
-        this.emitPresences();
-        this.emitReservationTargets();
-      }
-      return;
-    }
-    if (message.type === 'presence-left') {
-      if (message.clientId) this.presences.delete(message.clientId);
-      this.emitPresences();
-      this.emitReservationTargets();
-      return;
-    }
-    if (message.type === 'error') delivery.handleServerError(this, message);
+    return serverMessages.receiveServerMessage(this, message);
   }
 
   flushToServer(timeoutMilliseconds = 5000) { return delivery.flushToServer(this, timeoutMilliseconds); }
@@ -461,6 +382,10 @@ export class DocumentBinding {
 
   createReservation(client, absolutePath, message) {
     return actions.createReservation(this, client, absolutePath, message);
+  }
+
+  updateReservation(client, absolutePath, message) {
+    return actions.updateReservation(this, client, absolutePath, message);
   }
 
   deleteReservationAt(client, absolutePath, message) {

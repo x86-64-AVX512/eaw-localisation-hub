@@ -1,6 +1,24 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F8` form; package metadata uses `0.8.8-beta.8`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F9` form; package metadata uses `0.8.8-beta.9`.
+
+## 0.8.8F9
+
+- Edit existing reservations in place from Review: change assignee/comment and explicitly replace the selected range without deleting the reservation or changing its ID/creator. Agent and server negotiate support, validate CRDT ranges, persist revisions, reject stale/deleted updates and confirm saves. Preserve draft input on failure and protect open reservation forms from automatic workspace sleep. Keep existing document permissions and record updates in the audit log.
+- Prepare F9 application, package, Windows and development-tool metadata. Keep EHSP protocol version 21 unchanged; no installer/deployer build or publication is included.
+- Diagnose missing colons and invalid ASCII key names while recovering subsequent editor lines. Match researched loader escapes: accept `\N`/`\T`, flag `\r`, and suppress cascading missing-reference hints after primary loader syntax failures.
+- Inspect local file bytes through an authenticated, path-contained Agent endpoint for UTF-8 BOM and invalid UTF-8. Keep disk diagnostics distinct from the BOM-less editing buffer, size-limit reads and throttle them outside the typing loop. Never rewrite files as part of analysis.
+- Separate repository key inventories by language, invalidate unchanged-union snapshots when language membership changes, and disable negative conclusions for incomplete inventories. Index scripted localisation declarations structurally and offer conservative likely-typo hints using real names and optional installed documentation, without treating that catalogue as an exhaustive getter whitelist.
+- Extend paired RU/EN audit with advisory technical-insertion multiplicities and formatter differences. Ignore insertion order, retain existing structural/key status and invalidate old audit caches. Expose a technical-insertions filter and RU/EN diagnostic translations.
+- Handle parameterised `£$ICON$£` icons and balanced conditional expressions, remove the lowercase-after-percent heuristic, check separated percent repetitions and malformed precision dots, and make isolated colour-balance hints informational. Detect direct local-reference cycles without conflating them with scripted recursion or runtime parameters.
+- Repair the GitHub Actions workflow: an empty checkout `with:` left after the F5 submodule removal made every run since F5 fail without jobs. Guard workflow mappings in the publication test.
+- Log rejected reservation updates, keep protocol-limit errors closing the socket and report an applied save as saved even when its completion audit record fails.
+- Share one browser-safe localisation key reader between Review, Agent and server reservation ranges.
+- Send each indexed key once, per language; files without a detectable language are not indexed. Detect index changes from input file stamps instead of serialising the whole inventory, cache the optional HOI4 getter documentation, and never treat a language missing from the inventory as proof of missing keys.
+- Translate syntax diagnostics by catalogue template and arguments instead of reverse-matching formatted Russian text.
+- Use the Windows system `tar.exe` for deployer and WebView2 SDK archives so GNU tar from Git for Windows cannot misread drive letters.
+- Measure coordinator size budgets in non-whitespace characters instead of lines; extract server-message handling, collaboration-state updates and side-panel list rows instead of packing statements. Rewrite ARCHITECTURE.md as a description of the current system and normalise working-tree line endings with explicit `.gitattributes` rules.
+- Keep materialisation and suggestion editing unchanged. Full typed/runtime getter validation, gameplay-object `loc_check_*` audits and game/DLC/mod overlay modelling are not implemented by these conservative checks.
 
 ## 0.8.8F8
 

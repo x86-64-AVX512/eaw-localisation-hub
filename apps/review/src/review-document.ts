@@ -60,7 +60,7 @@ export function createReviewDocument({ send, onText, beforeChange = () => {} }: 
       const anchors: { documentId: string; positions: Record<string, string>; expectedText?: string } = {
         documentId, positions,
       };
-      if (['suggestionCreate', 'suggestionUpdate'].includes(message.type)
+      if (['suggestionCreate', 'suggestionUpdate', 'reservationUpdate'].includes(message.type)
         && typeof message.startByte === 'number' && typeof message.endByte === 'number') {
         anchors.expectedText = source.slice(byteToUtf16(source, message.startByte), byteToUtf16(source, message.endByte));
       }

@@ -1,40 +1,16 @@
 import { uiText } from '../../../packages/shared/src/ui-language.mts';
-import { byteToUtf16, safeColor, utf16ToByte } from './review-utilities.ts';
-import { avatarElement } from './avatar-view.ts';
+import { byteToUtf16, utf16ToByte } from './review-utilities.ts';
+import { emptyList, listButton } from './list-items.ts';
+import { createReservationEditor } from './reservation-editor.ts';
 import { requiredElement } from './dom-elements.ts';
 import type { CollaborationPanelOptions, ReviewExternalConflict } from './review-state.ts';
 
-function listButton(title: string, subtitle: string, color: unknown, selected: boolean,
-  action: () => void, avatarBase64 = ''): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.className = `list-item${selected ? ' selected' : ''}`;
-  button.style.setProperty('--item-color', safeColor(color));
-  const heading = document.createElement('span');
-  heading.className = 'item-title';
-  const avatar = avatarElement(title, color, avatarBase64, 'avatar-small');
-  const text = document.createElement('span');
-  text.textContent = title;
-  heading.append(avatar, text);
-  button.append(heading);
-  if (subtitle) {
-    const detail = document.createElement('small');
-    detail.textContent = subtitle;
-    button.append(detail);
-  }
-  button.addEventListener('click', action);
-  return button;
-}
-
-function emptyList(container: HTMLElement, text: string): void {
-  const empty = document.createElement('div');
-  empty.className = 'empty-list';
-  empty.textContent = text;
-  container.append(empty);
-}
-
 export function createCollaborationPanel({
-  state, editor, send, selectionBytes, jumpToBytes, showToast, openConflictDiff,
+  state, editor, send, selectionBytes, jumpToBytes, showToast, openConflictDiff, canEditReservations, anchor,
 }: CollaborationPanelOptions) {
+  const reservationEditor = createReservationEditor({
+    state, editor, send, selectionBytes, jumpToBytes, showToast, canEditReservations, anchor,
+  });
   const presenceList = requiredElement<HTMLElement>('#presence-list');
   const presenceCount = requiredElement<HTMLElement>('#presence-count');
   const reservationList = requiredElement<HTMLElement>('#reservation-list');
@@ -121,6 +97,7 @@ export function createCollaborationPanel({
           state.selectedReservation = item.id;
           deleteReservation.disabled = false;
           renderReservations();
+          reservationEditor.refresh();
           if (current.status !== 'orphaned') {
             try { jumpToBytes(current.startByte, current.endByte); }
             catch { showToast(uiText("Границы брони обновляются."), true); }
@@ -164,7 +141,7 @@ export function createCollaborationPanel({
         useExternal.disabled = false;
         renderConflicts();
         jumpToConflict(item);
-      openConflictDiff?.(item);
+        openConflictDiff?.(item);
       }));
     }
     conflictCount.textContent = String(values.length);
@@ -181,6 +158,7 @@ export function createCollaborationPanel({
     if (!sections || sections.has('targets')) renderTargets();
     if (!sections || sections.has('reservations')) renderReservations();
     if (!sections || sections.has('conflicts')) renderConflicts();
+    reservationEditor.refresh();
   }
 
   requiredElement<HTMLButtonElement>('#reservation-create').addEventListener('click', () => {
@@ -215,5 +193,10 @@ export function createCollaborationPanel({
   keepCollaborative.addEventListener('click', () => resolveConflict('collaborative'));
   useExternal.addEventListener('click', () => resolveConflict('external'));
 
-  return { refresh };
+  return {
+    refresh,
+    receiveReservationUpdate: reservationEditor.receive,
+    hasDraft: reservationEditor.hasDraft,
+    dispose: reservationEditor.dispose,
+  };
 }

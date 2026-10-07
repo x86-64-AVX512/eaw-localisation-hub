@@ -10,6 +10,7 @@ interface AuditRow {
   status: string;
   russian: AuditSide | null;
   english: AuditSide | null;
+  technicalIssues?: { kind: string; token: string; detail: string }[];
 }
 interface AuditPayload {
   russianLineCount: number;
@@ -85,7 +86,8 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
 
   function visible(row: AuditRow): boolean {
     if (filter.value === 'all') return true;
-    if (filter.value === 'problems') return row.status !== 'ok';
+    if (filter.value === 'problems') return row.status !== 'ok' || Boolean(row.technicalIssues?.length);
+    if (filter.value === 'technical') return Boolean(row.technicalIssues?.length);
     if (filter.value === 'missing') return row.status.startsWith('missing-');
     return row.status === 'duplicate';
   }
@@ -99,6 +101,7 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
     if (payload) {
       const counts = uiText("Русский файл – {0} строк; английский – {1} строк.", payload.russianLineCount, payload.englishLineCount);
       if (structural) {
+        summary.classList.remove('warning');
         summary.textContent = uiText("Слева русский файл, справа английский. {0} {1}", counts, payload.structureMatches
           ? uiText("Физические строки, пустые места и порядок ключей совпадают.")
           : uiText("Структура не совпадает. Красным отмечены удалённые или смещённые строки, зелёным – добавленные."));
@@ -112,7 +115,10 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
         + uiText("английский – {0} ключей / {1} строк.", payload.englishKeyCount, payload.englishLineCount);
       const keysMatch = payload.rows.every((row) => row.status === 'ok');
       summary.classList.toggle('error', !keysMatch);
-      summary.classList.toggle('ok', keysMatch);
+      const technicalCount = payload.rows.filter((row) => row.technicalIssues?.length).length;
+      summary.classList.toggle('ok', keysMatch && technicalCount === 0);
+      summary.classList.toggle('warning', keysMatch && technicalCount > 0);
+      summary.textContent += uiText(" Технические вставки отличаются в {0} ключах. Это подсказки, а не запрет: getters и параметры могут зависеть от контекста.", technicalCount);
     }
     results.replaceChildren();
     if (!payload) return;
@@ -124,6 +130,16 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
       key.className = 'audit-key';
       key.textContent = row.key;
       item.append(key, sideCell(row.russian, uiText("Нет в русском файле")), sideCell(row.english, uiText("Нет в английском файле")));
+      if (row.technicalIssues?.length) {
+        const notes = document.createElement('div'); notes.className = 'audit-technical-notes';
+        for (const issue of row.technicalIssues) {
+          const note = document.createElement('div');
+          const label = issue.kind === 'formatter' ? uiText("Отличается формат")
+            : issue.kind === 'missing' ? uiText("Меньше вставок в RU") : uiText("Больше вставок в RU");
+          note.textContent = `${label}: ${issue.token} (${issue.detail})`; notes.append(note);
+        }
+        item.append(notes);
+      }
       results.append(item);
     }
     if (!rows.length) {

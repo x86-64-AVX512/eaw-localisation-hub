@@ -22,7 +22,8 @@ import { createTicketPanel } from './ticket-panel.ts'; import { createDeletedBra
 import { createScrollSync } from './scroll-sync.ts'; import { createSyntaxDiagnostics } from './syntax-diagnostics.ts';
 import { configureReadOnlyReview } from './read-only-review.ts';
 import { createAgentConnection } from './agent-connection.ts';
-import { createGitConflictDiff } from './git-conflict-diff.ts'; import { resetExternalConflicts, storeExternalConflict } from './git-conflict-state.ts';
+import { createGitConflictDiff } from './git-conflict-diff.ts'; import { resetExternalConflicts } from './git-conflict-state.ts';
+import { applyCollaborationMessage } from './collaboration-messages.ts';
 import { createDocumentVariants } from './document-variants.ts';
 import { createRemoteDocument } from './remote-document.ts';
 import { createLocalisationAuditPanel } from './localisation-audit-panel.ts'; import { createHelpPanel } from './help-panel.ts';
@@ -65,9 +66,10 @@ const editor = monaco.editor.create(requiredElement('#editor'), {
 appbarLayout.connectEditor(editor);
 createEditorSettings({ monaco, editor, showToast });
 const spellcheck = createSpellcheck({ monaco, editor, token, showToast }); const syntaxDiagnostics = createSyntaxDiagnostics({ monaco, editor, token, showToast, getFilePath: () => state.relativePath });
+const anchor = <T extends { type: string }>(message: T): T => state.reviewDocument?.anchor(message) ?? message;
 function send(message: { type: string; [field: string]: unknown }): void {
   if (!isWorkspaceVisible() && ['activate','cursor'].includes(message.type)) return;
-  agentConnection?.send(message.reviewAnchors ? message : state.reviewDocument?.anchor(message) ?? message);
+  agentConnection?.send(message.reviewAnchors ? message : anchor(message));
 }
 const { rangeFromBytes, selectionBytes, jumpToBytes, positionByteAt } = createEditorCoordinates({ monaco, state, editor });
 let editingMode!: ReturnType<typeof createEditingModeController>;
@@ -81,6 +83,8 @@ const gitConflictDiff = createGitConflictDiff({ monaco, state, send });
 const collaborationPanel = createCollaborationPanel({
   state, editor, send, selectionBytes, jumpToBytes, showToast,
   openConflictDiff: gitConflictDiff.open,
+  anchor,
+  canEditReservations: () => state.ready && state.documentView === 'shared' && !editor.getOption(monaco.editor.EditorOption.readOnly),
 });
 const refreshDecorations = createDecorationRenderer({
   monaco, state, editor, rangeFromBytes, onLayout: () => { reviewCards.layout(); appbarLayout.updatePosition(); },
@@ -127,6 +131,10 @@ function handleMessage(raw: unknown): void {
   }
   if (message.path && message.path.toLowerCase() !== state.path.toLowerCase()) return;
   if (reviewRefresh.handleBatch(message.type)) return;
+  if (applyCollaborationMessage(state, message, collaborationPanel.receiveReservationUpdate)) {
+    scheduleRefresh(message.type);
+    return;
+  }
   if (message.type === 'agentHello') {
     applyAgentIdentity(state, message);
     setStatus(`${message.user} · ${message.workspace}`);
@@ -138,8 +146,11 @@ function handleMessage(raw: unknown): void {
     reviewRefresh.schedule(); commentActions.refresh();
   } else if (message.type === 'documentStatus') {
     applyDocumentStatus(message, state, editor, setStatus);
+    if (['offline', 'unauthorized', 'syncing'].includes(message.status)) state.reservationUpdates = false;
+    collaborationPanel.refresh();
   } else if (message.type === 'documentReady') {
     state.ready = true; spellcheck.start();
+    collaborationPanel.refresh();
     state.reviewDocument?.replay();
     send({ type: 'activate', path: state.path, positionByte: 0, anchorByte: 0 });
     ticketPanel.refresh();
@@ -152,34 +163,7 @@ function handleMessage(raw: unknown): void {
   else if (message.type === 'documentVariants') documentVariants.update(message);
   else if (message.type === 'documentVariant') documentVariants.updateAuthor(message);
   else if (message.type === 'personalFileStatus') documentVariants.status(message);
-  else if (message.type === 'presenceReset') state.presences.clear();
-  else if (message.type === 'presence') state.presences.set(message.clientId, message);
-  else if (message.type === 'presenceSnapshot') state.presences = new Map(
-    (message.presences ?? []).map((item) => [item.clientId, item]),
-  );
-  else if (message.type === 'reservationReset') state.reservations.clear();
-  else if (message.type === 'reservation') state.reservations.set(message.id, message);
-  else if (message.type === 'reservationSnapshot') {
-    state.reservations = new Map(
-      (message.reservations ?? []).map((item) => [item.id, item]),
-    );
-  }
-  else if (message.type === 'reservationTargetReset') state.reservationTargets = [];
-  else if (message.type === 'reservationTarget') state.reservationTargets.push(message);
-  else if (message.type === 'reservationTargetSnapshot') state.reservationTargets = message.targets ?? [];
-  else if (message.type === 'externalConflictReset') resetExternalConflicts(state, message.source);
-  else if (message.type === 'externalConflict') storeExternalConflict(state, message);
-  else if (message.type === 'commentReset') { state.comments.clear(); state.commentMessages.clear(); }
-  else if (message.type === 'commentThread') state.comments.set(message.id, message);
-  else if (message.type === 'commentMessage') {
-    const messages = state.commentMessages.get(message.id) ?? [];
-    messages.push(message); state.commentMessages.set(message.id, messages);
-  } else if (message.type === 'suggestionReset') { state.suggestions.clear(); state.suggestionMessages.clear(); }
-  else if (message.type === 'suggestion') state.suggestions.set(message.id, message);
-  else if (message.type === 'suggestionMessage') {
-    const messages = state.suggestionMessages.get(message.id) ?? [];
-    messages.push(message); state.suggestionMessages.set(message.id, messages);
-  } else if (message.type === 'notice') showToast(uiMessage(message.message));
+  else if (message.type === 'notice') showToast(uiMessage(message.message));
   else if (message.type === 'history') historyPanel.update(message.entries ?? [], message.headId ?? '');
   else if (message.type === 'historyVersion') historyPanel.receiveVersion(message);
   else if (message.type === 'recoveryCode') recoveryBanner.save(message.recoveryCode);
@@ -199,8 +183,11 @@ function handleMessage(raw: unknown): void {
     setStatus(uiMessage(message.message), true);
     showToast(uiMessage(message.message), true);
   }
-  if (/^(presence|reservation|externalConflict)/.test(message.type)) collaborationRefresh.schedule(message.type);
-  if (/^(comment|suggestion)/.test(message.type)) reviewRefresh.schedule();
+  scheduleRefresh(message.type);
+}
+function scheduleRefresh(type: string): void {
+  if (/^(presence|reservation|externalConflict)/.test(type)) collaborationRefresh.schedule(type);
+  if (/^(comment|suggestion)/.test(type)) reviewRefresh.schedule();
 }
 function collaborativeUndo() { if (state.ready) editingMode.undo(); }
 function collaborativeRedo() { if (state.ready) editingMode.redo(); }
@@ -227,11 +214,12 @@ requiredElement('#review-lane').addEventListener('scroll', reviewCards.layout);
 window.addEventListener('resize', reviewCards.layout);
 const commentActions = createCommentActions({ monaco, editor, state,
   button: requiredButton('#comment-create'), selectionBytes, askText, send, showToast,
-  anchor: (message) => state.reviewDocument?.anchor(message) ?? message,
+  anchor,
 });
 const textStatistics = createTextStatisticsAction({ editor, showToast });
 const suggestionContextMenu = createSuggestionContextMenu(editor);
-const workspaceRuntime = createWorkspaceRuntime({ state, editor, hasDraft:editingMode.hasDraft, send, close:closeActiveDocument,
+const hasDraft = () => editingMode.hasDraft() || collaborationPanel.hasDraft();
+const workspaceRuntime = createWorkspaceRuntime({ state, editor, hasDraft, send, close:closeActiveDocument,
   onVisible:() => { presenceController.publish(); syntaxDiagnostics.refresh(); reviewRefresh.schedule(); } });
 async function start() {
   if (!token || !requestedPath) throw new Error(uiText("Review-приложение запущено без локальной сессии или файла."));
@@ -278,6 +266,7 @@ async function start() {
     },
     onWaiting: (_delay, error = '') => {
       state.ready = false;
+      collaborationPanel.refresh();
       editor.updateOptions({ readOnly: true });
       setStatus(error || uiText("Desktop Agent отключён – ожидается автоматическое переподключение…"), true);
     },
@@ -293,4 +282,5 @@ window.addEventListener('beforeunload', () => {
   historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();
   scrollSync.dispose(); reviewRefresh.dispose(); refreshDecorations.dispose(); themedSelects.dispose(); collaborationRefresh.dispose(); spellcheck.dispose(); syntaxDiagnostics.dispose();
   workspaceRuntime.dispose(); reviewNavigation.dispose(); commentActions.dispose(); textStatistics.dispose(); suggestionContextMenu.dispose(); appbarLayout.dispose(); agentConnection?.dispose(); gitConflictDiff.dispose();
+  collaborationPanel.dispose();
 });

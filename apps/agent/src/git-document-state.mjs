@@ -34,6 +34,7 @@ export function documentStatus(gitState) {
 
 export function applySyncedMessage(binding, message) {
   binding.deliveryFailed = false;
+  binding.reservationUpdates = message.reservationUpdates === true;
   binding.reservations = new Map((message.reservations ?? []).map((item) => [item.id, item]));
   binding.commentThreads = new Map((message.commentThreads ?? []).map((item) => [item.id, item]));
   binding.suggestions = new Map((message.suggestions ?? []).map((item) => [item.id, item]));

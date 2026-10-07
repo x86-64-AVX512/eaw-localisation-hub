@@ -152,6 +152,60 @@ function waitForJson(socket, predicate, timeout = 10000) {
   });
 }
 
+test('reservation update is broadcast, rejects stale/deleted edits, and survives a real server restart', { timeout: 30000 }, async () => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-reservation-update-'));
+  const dataDirectory = path.join(temporary, 'data'); const port = await freePort();
+  const documentId = 'branch:localisation/russian/reservation_l_russian.yml';
+  let server, first, second, restarted;
+  try {
+    server = spawnServer(port, dataDirectory); await waitForHealth(port);
+    first = await connectDocument(port, documentId); assert.equal(first.synced.reservationUpdates, true);
+    const text = first.document.getText('content'); const source = 'l_russian:\n first:0 "Один"\n second:0 "Два"\n';
+    text.insert(0, source); first.socket.send(Y.encodeStateAsUpdate(first.document));
+    let snapshot = waitForJson(first.socket, (m) => m.type === 'reservations');
+    first.socket.send(JSON.stringify({ type: 'reservation-create', id: 'stable', assignee: 'Alice', createdBy: 'Alice',
+      color: '#112233', comment: 'Original', initialKeys: ['first'],
+      startRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(text, source.indexOf(' first'), -1)),
+      endRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(text, source.indexOf(' second'), 0)) }));
+    const initial = (await snapshot).reservations[0]; assert.equal(initial.revision, 1);
+    second = await connectDocument(port, documentId);
+    snapshot = waitForJson(second.socket, (m) => m.type === 'reservations' && m.reservations[0]?.revision === 2);
+    let result = waitForJson(first.socket, (m) => m.type === 'reservation-update-result' && m.requestId === 'edit');
+    first.socket.send(JSON.stringify({ type: 'reservation-update', id: 'stable', requestId: 'edit', expectedRevision: 1,
+      assigneeId: 'bob', assignee: 'Bob', assigneeColor: '#abcdef', comment: 'Changed' }));
+    assert.equal((await result).status, 'saved'); const updated = (await snapshot).reservations[0];
+    assert.equal(updated.id, 'stable'); assert.equal(updated.createdBy, 'Alice'); assert.equal(updated.assignee, 'Bob');
+    assert.equal(updated.startRelative, initial.startRelative); assert.equal(updated.endRelative, initial.endRelative);
+    result = waitForJson(second.socket, (m) => m.type === 'reservation-update-result' && m.requestId === 'stale');
+    second.socket.send(JSON.stringify({ type: 'reservation-update', id: 'stable', requestId: 'stale', expectedRevision: 1, comment: 'Overwrite' }));
+    assert.equal((await result).status, 'stale');
+    await waitForValue(async () => {
+      try {
+        for (const name of await fs.readdir(path.join(dataDirectory, 'documents'))) {
+          if (!/^[0-9a-f]{64}\.json$/u.test(name)) continue;
+          const metadata = JSON.parse(await fs.readFile(path.join(dataDirectory, 'documents', name), 'utf8'));
+          if (metadata.reservations?.[0]?.revision === 2) return true;
+        }
+      } catch {}
+      return false;
+    }, 'reservation revision persistence');
+    const closed = [once(first.socket, 'close'), once(second.socket, 'close')];
+    first.socket.close(); second.socket.close(); await Promise.all(closed); await stopServer(server);
+    server = spawnServer(port, dataDirectory); await waitForHealth(port); restarted = await connectDocument(port, documentId);
+    assert.equal(restarted.synced.reservations[0].revision, 2); assert.equal(restarted.synced.reservations[0].comment, 'Changed');
+    assert.equal(restarted.synced.reservations[0].createdBy, 'Alice');
+    snapshot = waitForJson(restarted.socket, (m) => m.type === 'reservations' && m.reservations.length === 0);
+    restarted.socket.send(JSON.stringify({ type: 'reservation-delete', id: 'stable' })); await snapshot;
+    result = waitForJson(restarted.socket, (m) => m.type === 'reservation-update-result' && m.requestId === 'deleted');
+    restarted.socket.send(JSON.stringify({ type: 'reservation-update', id: 'stable', requestId: 'deleted', expectedRevision: 2, comment: 'Revive' }));
+    assert.equal((await result).status, 'deleted');
+  } finally {
+    first?.socket.terminate(); second?.socket.terminate(); restarted?.socket.terminate();
+    await stopServer(server); first?.document.destroy(); second?.document.destroy(); restarted?.document.destroy();
+    await fs.rm(temporary, { recursive: true, force: true });
+  }
+});
+
 test('server restores CRDT text, reservations, comments, and suggestions after restart', { timeout: 30000 }, async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-persist-'));
   const dataDirectory = path.join(temporary, 'data');

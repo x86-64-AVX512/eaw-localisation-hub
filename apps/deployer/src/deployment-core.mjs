@@ -144,6 +144,13 @@ function runProcess(file, args, options = {}) {
   });
 }
 
+// Git for Windows puts GNU tar on PATH, which reads "C:\..." as a remote host.
+// The Windows bsdtar understands drive letters, so never resolve it via PATH.
+export function systemTar(platform = process.platform, environment = process.env) {
+  if (platform !== 'win32') return 'tar';
+  return path.win32.join(environment.SystemRoot || environment.windir || 'C:\\Windows', 'System32', 'tar.exe');
+}
+
 export async function createServerPayload(projectRoot, version) {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'eaw-hub-deploy-'));
   const stageRoot = path.join(temporaryRoot, 'payload');
@@ -173,7 +180,7 @@ export async function createServerPayload(projectRoot, version) {
     });
   }
   await writeFile(path.join(stageRoot, 'deployment.json'), JSON.stringify({ version, createdAt: new Date().toISOString() }), 'utf8');
-  await runProcess('tar.exe', ['-czf', archivePath, '-C', stageRoot, '.']);
+  await runProcess(systemTar(), ['-czf', archivePath, '-C', stageRoot, '.']);
   const digest = createHash('sha256').update(await readFile(archivePath)).digest('hex');
   return {
     archivePath,

@@ -3,7 +3,7 @@ import type { HistoryEntry } from './history-panel.ts';
 import type { ReviewCardMessage } from './review-card-elements.ts';
 import type { ReviewComment, ReviewSuggestion } from './review-card-types.ts';
 import type { ReviewDocumentUpdate } from './review-document.ts';
-import type { ReviewExternalConflict, ReviewPresence, ReviewReservation, ReviewReservationTarget } from './review-state.ts';
+import type { ReviewExternalConflict, ReviewPresence, ReviewReservation, ReviewReservationTarget, ReservationUpdateResult } from './review-state.ts';
 
 type AgentMessageBody =
   | { type: 'ticketCatalogChanged'; revision?: string }
@@ -23,7 +23,8 @@ type AgentMessageBody =
   | ({ type: 'presence' } & ReviewPresence)
   | { type: 'presenceSnapshot'; presences?: ReviewPresence[] }
   | ({ type: 'reservation' } & ReviewReservation)
-  | { type: 'reservationSnapshot'; reservations?: ReviewReservation[] }
+  | { type: 'reservationSnapshot'; reservations?: ReviewReservation[]; canUpdate?: boolean }
+  | ({ type: 'reservationUpdateResult' } & ReservationUpdateResult)
   | ({ type: 'reservationTarget' } & ReviewReservationTarget)
   | { type: 'reservationTargetSnapshot'; targets?: ReviewReservationTarget[] }
   | { type: 'externalConflictReset'; source?: string }
@@ -56,6 +57,7 @@ const requiredFields: Readonly<Record<AgentMessage['type'], Shape>> = {
   presenceSnapshot: {}, reservationReset: {},
   reservation: { id: 'string', startByte: 'number', endByte: 'number', keyCount: 'number', status: 'string', assignee: 'string', assigneeId: 'string', color: 'string' },
   reservationSnapshot: {}, reservationTargetReset: {},
+  reservationUpdateResult: { requestId: 'string', id: 'string', status: 'string' },
   reservationTarget: { id: 'string', displayName: 'string', color: 'string' },
   reservationTargetSnapshot: {}, externalConflictReset: {}, externalConflict: { key: 'string', label: 'string', conflictId: 'string' },
   commentReset: {}, commentThread: { id: 'string', status: 'string', startByte: 'number', endByte: 'number', summaryBase64: 'string' },
@@ -74,7 +76,8 @@ const optionalFields: Partial<Readonly<Record<AgentMessage['type'], Shape>>> = {
   documentVariants: { sharedBase64: 'string', mineBase64: 'string', gitBase64: 'string',
     mineFromGit: 'boolean', mineBaseRevision: 'string', mineRevision: 'string', contributors: 'array', conflicts: 'array',
     gitConflicts: 'array', localSelections: 'array', localSelectionBlocked: 'string', localSelectionRevision: 'string' },
-  presenceSnapshot: { presences: 'array' }, reservationSnapshot: { reservations: 'array' },
+  presenceSnapshot: { presences: 'array' }, reservationSnapshot: { reservations: 'array', canUpdate: 'boolean' },
+  reservationUpdateResult: { revision: 'number', message: 'string' },
   reservationTargetSnapshot: { targets: 'array' }, externalConflictReset: { source: 'string' },
   history: { entries: 'array', headId: 'string' }, workspaceChanged: { workspace: 'string' },
 };
@@ -113,6 +116,11 @@ export function parseAgentMessage(value: unknown): AgentMessage | null {
     && !(value.roles as unknown[]).every((role) => typeof role === 'string')) return null;
   if (value.type === 'presenceSnapshot' && !optionalArray(value, 'presences', requiredFields.presence)) return null;
   if (value.type === 'reservationSnapshot' && !optionalArray(value, 'reservations', requiredFields.reservation)) return null;
+  if (value.type === 'reservationSnapshot' && (value.reservations as Record<string, unknown>[] | undefined)?.some((item) =>
+    item.revision !== undefined && (!Number.isSafeInteger(item.revision) || Number(item.revision) < 0))) return null;
+  if (value.type === 'reservationUpdateResult' && !['saved', 'stale', 'deleted', 'error'].includes(String(value.status))) return null;
+  if (value.type === 'reservationUpdateResult' && (value.status === 'saved' || value.revision !== undefined)
+    && (!Number.isSafeInteger(value.revision) || Number(value.revision) < 0)) return null;
   if (value.type === 'reservationTargetSnapshot' && !optionalArray(value, 'targets', requiredFields.reservationTarget)) return null;
   if (value.type === 'history' && !optionalArray(value, 'entries', {
     id: 'string', reason: 'string', author: 'string', createdAt: 'string',

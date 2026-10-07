@@ -185,12 +185,21 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     assert.equal(keyIndexResponse.status, 200);
     const keyIndex = await keyIndexResponse.json();
     assert.equal(keyIndex.complete, true);
-    assert.deepEqual(keyIndex.keys, ['REVIEW_KEY']);
+    assert.deepEqual(keyIndex.languages.russian.keys, ['REVIEW_KEY']);
     const unchangedKeyIndex = await fetch(`${discovery.origin}/api/localisation-key-index`, {
       headers: { Authorization: `Bearer ${discovery.token}`,
         'If-None-Match': keyIndexResponse.headers.get('etag') },
     });
     assert.equal(unchangedKeyIndex.status, 304);
+
+    const byteUrl = `${discovery.origin}/api/localisation-file-diagnostics?path=${encodeURIComponent(tracked)}`;
+    assert.equal((await fetch(byteUrl)).status, 401);
+    const byteResponse = await fetch(byteUrl, { headers: { Authorization: `Bearer ${discovery.token}` } });
+    assert.equal(byteResponse.status, 200);
+    assert.equal((await byteResponse.json()).diagnostics[0].code, 'disk-missing-utf8-bom');
+    const invalidByteResponse = await fetch(`${discovery.origin}/api/localisation-file-diagnostics?path=..%2Foutside.yml`,
+      { headers: { Authorization: `Bearer ${discovery.token}` } });
+    assert.equal(invalidByteResponse.status, 400);
 
     const gitHeadUrl = `${discovery.origin}/api/git-history/head?path=${encodeURIComponent(tracked)}`;
     assert.equal((await fetch(gitHeadUrl)).status, 401);

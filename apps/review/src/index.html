@@ -109,8 +109,27 @@
         <input id="reservation-comment" maxlength="512" placeholder="Необязательно">
         <div class="side-actions">
           <button id="reservation-create" class="primary">Забронировать выделение</button>
+          <button id="reservation-edit" disabled>Изменить выбранную бронь</button>
           <button id="reservation-delete-at">Удалить под курсором</button>
           <button id="reservation-delete" class="danger" disabled>Удалить выбранную</button>
+        </div>
+        <div id="reservation-editor" hidden>
+          <strong id="reservation-edit-title">Изменение брони</strong>
+          <label for="reservation-edit-target">Исполнитель</label>
+          <select id="reservation-edit-target"></select>
+          <label for="reservation-edit-comment">Примечание</label>
+          <input id="reservation-edit-comment" maxlength="512" placeholder="Необязательно">
+          <p id="reservation-edit-range"></p>
+          <div class="side-actions">
+            <button id="reservation-edit-selection">Использовать выделение</button>
+            <button id="reservation-edit-reset-range" disabled>Сохранить прежние границы</button>
+          </div>
+          <p id="reservation-edit-status" role="status" aria-live="polite"></p>
+          <button id="reservation-edit-reload" hidden>Загрузить актуальную бронь (сбросить форму)</button>
+          <div class="side-actions">
+            <button id="reservation-edit-save" class="primary">Сохранить</button>
+            <button id="reservation-edit-cancel">Отмена</button>
+          </div>
         </div>
       </section>
       <section class="side-section conflicts-section" hidden>
@@ -355,7 +374,7 @@
       <div class="history-toolbar">
         <h2>Сверка локализации</h2>
         <label>Режим <select id="localisation-audit-view"><option value="keys">Ключи</option><option value="structure">Строки и порядок</option></select></label>
-        <label id="localisation-audit-filter-label">Показывать <select id="localisation-audit-filter"><option value="problems">Только расхождения</option><option value="all">Все ключи</option><option value="missing">Пропущенные</option><option value="duplicates">Дубликаты</option></select></label>
+        <label id="localisation-audit-filter-label">Показывать <select id="localisation-audit-filter"><option value="problems">Только расхождения</option><option value="all">Все ключи</option><option value="missing">Пропущенные</option><option value="duplicates">Дубликаты</option><option value="technical">Технические вставки</option></select></label>
         <button id="localisation-audit-fullscreen">На весь экран</button>
         <button id="localisation-audit-close">Закрыть</button>
       </div>

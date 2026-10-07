@@ -59,7 +59,7 @@ test('Review client protocol schema rejects field confusion and unknown commands
 test('every dispatched Review command has an explicit schema', () => {
   assert.deepEqual(clientMessageTypes, [
     'open', 'activate', 'deactivate', 'close', 'edit', 'snapshot', 'reviewUpdate', 'cursor', 'undo', 'redo',
-    'reservationCreate', 'reservationDeleteAt', 'reservationDelete', 'commentCreate', 'commentReply',
+    'reservationCreate', 'reservationDeleteAt', 'reservationUpdate', 'reservationDelete', 'commentCreate', 'commentReply',
     'commentStatus', 'commentDelete', 'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
     'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'avatarSet', 'avatarDelete',
     'recoveryIssue', 'recoveryConfirm', 'recoveryDiscard', 'externalConflictResolve',

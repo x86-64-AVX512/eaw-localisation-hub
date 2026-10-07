@@ -29,6 +29,12 @@ const clientSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Objec
     comment: text(2048, false),
   },
   reservationDeleteAt: { path: pathField, positionByte: positionField },
+  reservationUpdate: {
+    path: pathField, id: idField, requestId: idField, expectedRevision: integer(),
+    startByte: integer(0x7fffffff, false), endByte: integer(0x7fffffff, false),
+    assigneeId: text(256, false), assignee: text(256, false), assigneeColor: text(32, false),
+    comment: text(2048, false),
+  },
   reservationDelete: { path: pathField, id: idField },
   commentCreate: { path: pathField, startByte: positionField, endByte: positionField, bodyBase64: base64Field },
   commentReply: { path: pathField, id: idField, bodyBase64: base64Field },
@@ -166,6 +172,7 @@ function validatePresence(value: unknown): void {
 function validateReservation(value: unknown): void {
   const reservation = serverRecord(value, 'Reservation');
   serverString(reservation.id, 'Reservation id', 256);
+  if (reservation.revision !== undefined) serverInteger(reservation.revision, 'Reservation revision', Number.MAX_SAFE_INTEGER);
   serverString(reservation.assignee, 'Reservation assignee', 256);
   serverString(reservation.color, 'Reservation color', 32);
   serverString(reservation.startRelative, 'Reservation start', 4096);
@@ -223,6 +230,9 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
     return message;
   }
   if (type === 'synced') {
+    if (message.reservationUpdates !== undefined && typeof message.reservationUpdates !== 'boolean') {
+      throw new TypeError('Reservation update capability must be boolean');
+    }
     if (typeof message.protocol !== 'number' || !Number.isSafeInteger(message.protocol)
       || message.protocol < 0 || message.protocol > 1000) {
       throw new TypeError('Server protocol version must be an integer');
@@ -305,6 +315,14 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
       }
     }
     if (!message.stale && !message.error) serverString(message.mergeRevision, 'Disk merge revision', 64);
+    return message;
+  }
+  if (type === 'reservation-update-result') {
+    serverString(message.requestId, 'Reservation request id', 256);
+    serverString(message.id, 'Reservation id', 256);
+    if (!['saved', 'stale', 'deleted', 'error'].includes(String(message.status))) throw new TypeError('Invalid reservation update status');
+    if (message.status === 'saved') serverInteger(message.revision, 'Reservation revision', Number.MAX_SAFE_INTEGER);
+    serverString(message.message, 'Reservation update error', 2048, { optional: true });
     return message;
   }
   if (type === 'reservations') {

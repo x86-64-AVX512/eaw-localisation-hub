@@ -4,7 +4,7 @@ const ACTIONS = new Set([
   'comment-create', 'comment-reply', 'comment-status', 'comment-delete',
   'suggestion-create', 'suggestion-update', 'suggestion-reply', 'suggestion-accept',
   'suggestion-revert', 'suggestion-reject', 'suggestion-delete',
-  'reservation-create', 'reservation-delete', 'git-conflict-resolve',
+  'reservation-create', 'reservation-update', 'reservation-delete', 'git-conflict-resolve',
   'personal-projection-resolve', 'personal-projection-set', 'history-restore',
 ]);
 const short = (value, limit = 240) => String(value ?? '').slice(0, limit);

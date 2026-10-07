@@ -60,6 +60,51 @@ export function deleteReservationAt(binding, client, absolutePath, message) {
   client.send({ type: 'notice', message: 'Под курсором нет брони.' });
 }
 
+export function updateReservation(binding, client, absolutePath, message) {
+  const state = binding.requireState(client, absolutePath);
+  const reply = (status, detail = '') => client.send({ type: 'reservationUpdateResult', path: absolutePath,
+    requestId: message.requestId, id: message.id, status, message: detail });
+  if (!binding.synced || binding.socket?.readyState !== 1) {
+    reply('error', 'Нет подключения к серверу. Изменения брони не отправлены.'); return;
+  }
+  if (!binding.reservationUpdates) {
+    reply('error', 'Этот сервер ещё не поддерживает изменение брони.'); return;
+  }
+  const current = binding.reservations.get(message.id);
+  if (!current) { reply('deleted'); return; }
+  if ((current.revision ?? 0) !== message.expectedRevision) {
+    binding.emitReservations(client); reply('stale'); return;
+  }
+  const update = { type: 'reservation-update', id: message.id, requestId: message.requestId,
+    expectedRevision: message.expectedRevision };
+  for (const field of ['comment', 'assigneeId', 'assignee', 'assigneeColor']) {
+    if (message[field] !== undefined) update[field] = message[field];
+  }
+  if (message.startByte !== undefined || message.endByte !== undefined) {
+    if (!Number.isSafeInteger(message.startByte) || !Number.isSafeInteger(message.endByte)) {
+      reply('error', 'Выделите новый диапазон брони ещё раз.'); return;
+    }
+    const start = utf8ByteOffsetToUtf16Index(state.mirror, Math.min(message.startByte, message.endByte));
+    const end = utf8ByteOffsetToUtf16Index(state.mirror, Math.max(message.startByte, message.endByte));
+    const keys = keysInsideRange(state.mirror, start, end);
+    if (start === end || !keys.length || keys.length > 1000) {
+      reply('error', 'Выделение должно содержать от 1 до 1000 ключей локализации.'); return;
+    }
+    update.startRelative = encodeRelativePosition(Y.createRelativePositionFromTypeIndex(binding.text, start, -1));
+    update.endRelative = encodeRelativePosition(Y.createRelativePositionFromTypeIndex(binding.text, end, 0));
+  }
+  binding.socket.send(JSON.stringify(update));
+}
+
+export function receiveReservationUpdateResult(binding, message) {
+  for (const client of binding.clients) {
+    if (client.kind !== 'review') continue;
+    for (const [absolutePath, state] of client.documents) {
+      if (state.binding === binding) client.send({ ...message, type: 'reservationUpdateResult', path: absolutePath });
+    }
+  }
+}
+
 export function deleteReservation(binding, client, absolutePath, message) {
   binding.requireState(client, absolutePath);
   const id = String(message.id ?? '');

@@ -159,11 +159,12 @@ test('localisation audit ignores results cached before version suffixes were nor
     await fs.writeFile(english, 'l_english:\n key:0 "Translation"\n');
     const prepared = await prepareLocalisationAudit(repository, russian);
     const [version, sourcePath, otherPath, digest] = JSON.parse(prepared.cacheKey);
-    assert.equal(version, 2);
+    assert.equal(version, 3);
     const cache = new DiffCache(path.join(repository, 'cache'));
     await cache.set('localisation-audit', JSON.stringify([sourcePath, otherPath, digest]), {
       englishDiffText: ' key:0 "…"',
     });
+    await cache.set('localisation-audit', JSON.stringify([2, sourcePath, otherPath, digest]), { rows: [] });
     assert.equal(await cache.get('localisation-audit', prepared.cacheKey), undefined);
     const current = prepared.create();
     assert.equal(current.russianDiffText, current.englishDiffText);

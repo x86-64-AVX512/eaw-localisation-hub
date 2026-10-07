@@ -9,6 +9,7 @@ export function minimalReservation(reservation) {
   const assignee = String(reservation.assignee ?? reservation.createdBy ?? 'Unknown');
   const result = {
     id: String(reservation.id),
+    revision: Number.isSafeInteger(reservation.revision) && reservation.revision >= 0 ? reservation.revision : 0,
     assigneeId: reservation.assigneeId ? String(reservation.assigneeId) : null,
     assignee,
     color: String(reservation.color ?? '#6aa9ff'),

@@ -10,23 +10,26 @@ function source(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), 'utf8');
 }
 
-function lineCount(relativePath) {
-  return source(relativePath).split(/\r?\n/u).length;
+// Budgets count non-whitespace characters, not lines: joining statements onto
+// one line must not make room for new code. Each value is the former line
+// budget converted at the file's own characters-per-line in 0.8.8F8.
+function codeSize(relativePath) {
+  return source(relativePath).replace(/\s+/gu, '').length;
 }
 
 test('entrypoints stay coordinators instead of absorbing extracted subsystems', () => {
   const budgets = new Map([
-    ['apps/server/src/main.mjs', 450],
-    ['apps/agent/src/document-binding.mjs', 550],
-    ['apps/server/src/auth.mjs', 600],
-    ['apps/review/src/app.ts', 300],
-    ['apps/review/src/collaboration-panel.ts', 220],
-    ['apps/review/src/review-cards.ts', 190],
+    ['apps/server/src/main.mjs', 16_300],
+    ['apps/agent/src/document-binding.mjs', 17_000],
+    ['apps/server/src/auth.mjs', 19_700],
+    ['apps/review/src/app.ts', 18_100],
+    ['apps/review/src/collaboration-panel.ts', 9_050],
+    ['apps/review/src/review-cards.ts', 8_700],
   ]);
-  for (const [relativePath, maximumLines] of budgets) {
+  for (const [relativePath, maximumCharacters] of budgets) {
     assert.ok(
-      lineCount(relativePath) <= maximumLines,
-      `${relativePath} exceeded its ${maximumLines}-line architecture budget`,
+      codeSize(relativePath) <= maximumCharacters,
+      `${relativePath} exceeded its ${maximumCharacters}-character architecture budget; extract a module instead of packing lines`,
     );
   }
   assert.doesNotMatch(source('apps/server/src/main.mjs'), /class DocumentRoom/u);
@@ -43,6 +46,7 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/server/src/document-socket.mts',
     'apps/server/src/document-room.mjs',
     'apps/server/src/room-metadata.mjs',
+    'apps/server/src/reservation-update.mjs',
     'apps/server/src/room-registry.mjs',
     'apps/server/src/ticket-store.mjs',
     'apps/server/src/ticket-http.mjs',
@@ -53,6 +57,7 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/server/src/git-commit-verifier.mjs',
     'apps/server/src/document-history.mjs',
     'apps/agent/src/document-actions.mjs',
+    'apps/agent/src/document-server-messages.mjs',
     'apps/agent/src/document-view.mjs',
     'apps/agent/src/disk-reconciliation.mjs',
     'apps/agent/src/personal-document.mjs',
@@ -68,6 +73,10 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/agent/src/ticket-review-api.mjs',
     'apps/agent/src/key-replacement-workflow.mjs',
     'apps/review/src/collaboration-panel.ts',
+    'apps/review/src/collaboration-messages.ts',
+    'apps/review/src/list-items.ts',
+    'apps/review/src/reservation-editor.ts',
+    'packages/shared/src/localisation-keys.mts',
     'apps/review/src/avatar-profile.ts',
     'apps/review/src/avatar-view.ts',
     'apps/review/src/editor-decorations.ts',

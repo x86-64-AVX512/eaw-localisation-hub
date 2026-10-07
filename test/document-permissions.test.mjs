@@ -61,7 +61,7 @@ test('server rejects forged Russian CRDT edits and restoration before changing s
     await assert.rejects(room.applyBinary(socket, Y.encodeStateAsUpdate(document)), /English localisation/u);
     assert.equal(room.currentText(), '');
     await room.applyBinary(socket, Uint8Array.of(0, 0));
-    for (const type of ['history-restore', 'suggestion-accept', 'git-conflict-resolve']) {
+  for (const type of ['history-restore', 'suggestion-accept', 'git-conflict-resolve', 'reservation-update']) {
       assert.throws(() => room.applyJson(socket, { type, id: 'fake' }), /English localisation|translation role/u);
     }
     assert.equal(room.currentText(), '');

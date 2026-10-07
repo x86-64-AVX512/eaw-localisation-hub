@@ -22,6 +22,7 @@ import { fileHistoryDiff, listFileHistory } from './git-file-history.mts';
 import { runGitSync } from './git-executable.mts';
 import { prepareLocalisationAudit } from './localisation-audit.mjs';
 import { getLocalisationKeyIndex } from './localisation-key-index.mjs';
+import { inspectLocalisationFile } from './localisation-file-analysis.mjs';
 import { currentGitFileBlobAsync } from './git-ticket-context.mts';
 import { confirmDiskMaterialisation } from './disk-reconciliation.mjs';
 import { DiffCache } from './diff-cache.mjs';
@@ -393,6 +394,18 @@ export async function startReviewServer(hub, options) {
         response.end(JSON.stringify(index));
       } catch (error) {
         response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+    if (requestUrl.pathname === '/api/localisation-file-diagnostics' && request.method === 'GET') {
+      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      try {
+        const payload = await inspectLocalisationFile(options.repo, requestUrl.searchParams.get('path') ?? '');
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify(payload));
+      } catch (error) {
+        response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ error: error.message }));
       }
       return;

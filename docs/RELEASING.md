@@ -8,7 +8,7 @@ This checklist is for maintainers publishing EaW Localisation Hub releases.
 4. Run `npm run check`. This audits public files, runs tests, builds every Windows artifact and verifies the packages.
 5. Review the generated archives and matching `.sha256` files in `dist`.
    Before publication, run `npm run test:update-flow` after `npm run build:installer`. It verifies the actual installer and checksum, tests the updater's elevated, silent launch arguments, and stops a simulated Agent without changing the installed client. After publication, run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-updater.ps1 -PublishedRelease` to test GitHub's live asset delivery and SHA-256.
-6. Commit the release, create an annotated tag such as `v.0.8.8F8`, and push both commit and tag.
+6. Commit the release, create an annotated tag such as `v.0.8.8F9`, and push both commit and tag.
 7. Create a GitHub Release and attach the Windows installer and its SHA-256 file. The client, deployer and source archives may also be attached when needed; the auto-updater does not use them.
 8. Publish deployment credentials only through private channels. Never add `.env`, authentication state, recovery codes, backups or private server addresses to the repository or release assets.
 

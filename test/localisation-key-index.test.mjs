@@ -6,6 +6,8 @@ import test from 'node:test';
 import { collectLocalisationKeys } from '../apps/agent/src/localisation-key-index-worker.mjs';
 import { getLocalisationKeyIndex } from '../apps/agent/src/localisation-key-index.mjs';
 
+const allKeys = (index) => [...Object.values(index.languages).flatMap((item) => item.keys)].sort();
+
 test('local key index runs off the Agent event loop and includes versionless keys in all languages', async (t) => {
   const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-localisation-keys-'));
   t.after(() => fs.rm(repository, { recursive: true, force: true }));
@@ -18,13 +20,22 @@ test('local key index runs off the Agent event loop and includes versionless key
   const direct = await collectLocalisationKeys(repository);
   assert.equal(direct.complete, true);
   assert.equal(direct.files, 2);
-  assert.deepEqual(direct.keys, ['EYE_one', 'EYE_two']);
-  assert.deepEqual(new Set(direct.keys), new Set(['EYE_one', 'EYE_two']));
+  assert.deepEqual(allKeys(direct), ['EYE_one', 'EYE_two']);
+  assert.equal(direct.keys, undefined, 'keys are sent once per language, not repeated as a union');
+  assert.deepEqual(direct.languages.russian.keys, ['EYE_one']);
+  assert.deepEqual(direct.languages.english.keys, ['EYE_two']);
   const threaded = await getLocalisationKeyIndex(repository);
-  assert.deepEqual(new Set(threaded.keys), new Set(direct.keys));
+  assert.deepEqual(allKeys(threaded), allKeys(direct));
   const unchanged = await getLocalisationKeyIndex(repository, { forceRefresh: true });
   assert.strictEqual(unchanged, threaded, 'an unchanged index should not be copied back from the worker');
   await fs.writeFile(path.join(english, 'a.yml'), 'l_english:\n EYE_two: "Two"\n EYE_three:0 "Three"\n');
   const changed = await getLocalisationKeyIndex(repository, { forceRefresh: true });
-  assert.ok(changed.keys.includes('EYE_three'));
+  assert.ok(allKeys(changed).includes('EYE_three'));
+  // A language-only change must invalidate ETag even if the union stays equal.
+  await fs.writeFile(path.join(english, 'a.yml'), 'l_english:\n EYE_three:0 "Three"\n');
+  await fs.writeFile(path.join(russian, 'a.yml'), 'l_russian:\n EYE_one:0 "Один"\n EYE_two:0 "Два"\n');
+  const moved = await getLocalisationKeyIndex(repository, { forceRefresh: true });
+  assert.deepEqual(allKeys(moved), allKeys(changed));
+  assert.notStrictEqual(moved, changed);
+  assert.deepEqual(moved.languages.english.keys, ['EYE_three']);
 });

@@ -274,6 +274,10 @@ button.primary { border-color: #517bdc; background: #315db8; }
 .item-list { display: flex; flex-direction: column; gap: 4px; }
 .scroll-list { min-height: 72px; max-height: none; margin-bottom: 9px; overflow: auto; }
 #reservation-list { min-height: 0; flex: 1 1 auto; overflow-y: auto; }
+.reservations-section.editing-reservation { min-height: 660px; flex-basis: 660px; }
+#reservation-editor { flex-shrink: 0; max-height: 350px; overflow-y: auto; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wb-border, #303746); }
+#reservation-editor[hidden] { display: none; }
+#reservation-edit-range, #reservation-edit-status { font-size: 12px; overflow-wrap: anywhere; }
 #conflict-list { max-height: 220px; flex: 1 1 auto; }
 .list-item {
   width: 100%; border: 1px solid transparent; border-radius: 7px; padding: 6px 7px;
@@ -460,6 +464,8 @@ html[data-theme="contrast"] select, html[data-theme="contrast"] textarea { color
 .audit-row { display: grid; grid-template-columns: minmax(180px, 30%) minmax(0, 1fr) minmax(0, 1fr); border-bottom: 1px solid #30394a; }
 .audit-row.missing-russian, .audit-row.missing-english { background: #3a2318; }
 .audit-row.duplicate { background: #38202a; }
+.audit-technical-notes { grid-column: 1 / -1; padding: 8px 12px; border-left: 3px solid #b89454; background: var(--wb-panel, #22221c); color: var(--wb-text, #e0c48b); font-size: 12px; overflow-wrap: anywhere; }
+.localisation-audit-shell .audit-summary.warning { border-left: 4px solid #b89454; }
 .audit-key { padding: 9px 10px; overflow-wrap: anywhere; color: #50d6c1; background: #171d27; }
 .audit-side { min-width: 0; padding: 6px 8px; border-left: 1px solid #30394a; }
 .audit-side.missing { display: flex; align-items: center; color: #ffad91; font-style: italic; }
