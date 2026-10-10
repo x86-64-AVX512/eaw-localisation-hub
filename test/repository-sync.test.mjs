@@ -6,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import crypto from 'node:crypto';
 import { runGitSync } from '../apps/agent/src/git-executable.mts';
+import { AgentHub } from '../apps/agent/src/agent-hub.mjs';
 import { RepositorySync, repositorySnapshot, repositorySyncSettings,
   repositoryReviewReason, repositoryWorktreeReason } from '../apps/agent/src/repository-sync.mjs';
 
@@ -30,8 +31,9 @@ async function fixture(t, settings = { autoPull: true }) {
   git(publisher, 'remote', 'add', 'fork', remote); git(publisher, 'push', '-u', 'fork', 'barrad');
   git(root, 'clone', '-b', 'barrad', '-o', 'fork', remote, repo);
   git(repo, 'config', 'user.email', 'test@example.invalid'); git(repo, 'config', 'user.name', 'Test');
-  const hub = { options: { state: path.join(root, 'state'), repo, workspace: 'barrad' },
-    documents: new Map(), clients: new Set(), repositoryUpdating: false, repositoryEditEpoch: 0 };
+  const hub = { options: { state: path.join(root, 'state'), repo, workspace: 'barrad', server: 'ws://localhost:10443' },
+    documents: new Map(), clients: new Set(), repositoryUpdating: false, repositoryEditEpoch: 0,
+    pendingDocumentUpdatePath: AgentHub.prototype.pendingDocumentUpdatePath };
   const service = new RepositorySync(hub);
   t.after(() => service.close());
   fs.mkdirSync(service.directory, { recursive: true });
@@ -195,14 +197,51 @@ test('changing HEAD or disabling auto-pull during flush aborts the update', asyn
 
 test('unopened recovery buffers block updates; alerts reset only after resolution', async (t) => {
   const f = await fixture(t); f.publish();
-  const directory = path.join(f.hub.options.state, 'pending-document-updates'); fs.mkdirSync(directory);
-  fs.writeFileSync(path.join(directory, 'saved.update'), 'pending');
+  const saved = f.hub.pendingDocumentUpdatePath('barrad:localisation/russian/test_l_russian.yml');
+  fs.mkdirSync(path.dirname(saved)); fs.writeFileSync(saved, 'pending');
   assert.equal(repositoryReviewReason(f.hub), 'recovery');
   await f.service.tick(); const first = f.service.status.alertId; assert.ok(first);
-  fs.unlinkSync(path.join(directory, 'saved.update')); await f.service.tick();
+  fs.unlinkSync(saved); await f.service.tick();
   assert.equal(f.service.status.stage, 'updated');
   fs.writeFileSync(path.join(f.repo, 'file.txt'), 'local'); f.publish('next remote\n'); f.request('update');
   await f.service.tick(); assert.ok(f.service.status.alertId); assert.notEqual(f.service.status.alertId, first);
+});
+
+test('buffers of deleted tickets, other branches and other servers never block this checkout', async (t) => {
+  const f = await fixture(t); f.publish();
+  const file = 'localisation/russian/test_l_russian.yml';
+  const foreign = [`ticket-${crypto.randomUUID()}:${file}`, `other-branch:${file}`]
+    .map((id) => f.hub.pendingDocumentUpdatePath(id));
+  foreign.push(AgentHub.prototype.pendingDocumentUpdatePath.call(
+    { options: { ...f.hub.options, server: 'wss://elsewhere.example' } }, `barrad:${file}`));
+  fs.mkdirSync(path.dirname(foreign[0]));
+  for (const target of foreign) fs.writeFileSync(target, 'pending');
+  assert.equal(repositoryReviewReason(f.hub), '');
+  await f.service.tick();
+  assert.equal(f.service.status.stage, 'updated');
+  for (const target of foreign) assert.ok(fs.existsSync(target), 'unrelated buffers are left untouched');
+});
+
+test('an in-flight HEAD poll on the same timer period is awaited, not reported as unconfirmed Review changes', async (t) => {
+  const f = await fixture(t); f.publish();
+  // Both services poll every three seconds; the HEAD poll fires first, and its
+  // asynchronous Git call cannot finish while this service runs synchronously.
+  // Model that: the flag clears only once the service yields to the poll.
+  f.hub.gitCommitCheckPending = true;
+  f.hub.gitCommitCheckSettled = { then(resolve) { f.hub.gitCommitCheckPending = false; resolve(); } };
+  await f.service.tick();
+  assert.equal(f.service.status.stage, 'updated', f.service.status.message);
+  assert.notEqual(git(f.repo, 'rev-parse', 'HEAD'), f.head);
+});
+
+test('the HEAD poll exposes its completion so waiting services can outlast it', async (t) => {
+  const f = await fixture(t);
+  const hub = { options: { repo: f.repo, workspaceExplicit: true }, documents: new Map(), gitCommit: f.head };
+  const running = AgentHub.prototype.checkGitCommitChange.call(hub);
+  assert.equal(hub.gitCommitCheckPending, true);
+  await hub.gitCommitCheckSettled;
+  assert.equal(hub.gitCommitCheckPending, false);
+  await running;
 });
 
 test('failed fetch stays unknown during backoff and cannot silently trust stale tracking refs', async (t) => {

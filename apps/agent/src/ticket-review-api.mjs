@@ -4,6 +4,19 @@ function json(response, status, payload, secureHeaders) {
   response.end(JSON.stringify(payload));
 }
 
+// Deleting a ticket or removing its files is this user's own decision. Tell the
+// document bindings before the server closes those rooms, so they do not keep
+// a recovery copy of text the user has just discarded.
+async function removingTicketRooms(hub, documentIds, closeReason, request) {
+  const withdraw = hub.expectTicketRemoval(documentIds, closeReason);
+  try { return await request(); }
+  catch (error) { withdraw(); throw error; }
+}
+
+function openTicketDocuments(hub, id) {
+  return [...hub.documents.values()].filter((binding) => binding.ticketId === id);
+}
+
 export async function handleTicketReviewApi(context) {
   const {
     request, requestUrl, response, authorised, hub, options, readJsonBody, secureHeaders,
@@ -46,11 +59,19 @@ export async function handleTicketReviewApi(context) {
     else if (action === 'archive' && request.method === 'POST') {
       payload = await hub.ticketRequest(`/api/tickets/${id}/archive`, { method: 'POST', body: '{}' });
     } else if (action === 'files' && request.method === 'PUT') {
-      payload = await hub.ticketRequest(`/api/tickets/${id}/files`, {
-        method: 'PUT', body: JSON.stringify(await readJsonBody(request)),
-      });
+      const input = await readJsonBody(request);
+      // Match the server's path separator normalization. Kept and added files
+      // must never inherit an intent to discard another file's pending edits.
+      const remaining = Array.isArray(input.files)
+        ? new Set(input.files.map((file) => String(file ?? '').replaceAll('\\', '/'))) : new Set();
+      const removed = remaining.size ? openTicketDocuments(hub, id)
+        .filter((binding) => !remaining.has(binding.relativePath)).map((binding) => binding.documentId) : [];
+      payload = await removingTicketRooms(hub, removed, 'Ticket file removed',
+        () => hub.ticketRequest(`/api/tickets/${id}/files`, { method: 'PUT', body: JSON.stringify(input) }));
     } else if (!action && request.method === 'DELETE') {
-      payload = await hub.ticketRequest(`/api/tickets/${id}`, { method: 'DELETE' });
+      const removed = openTicketDocuments(hub, id).map((binding) => binding.documentId);
+      payload = await removingTicketRooms(hub, removed, 'Ticket deleted',
+        () => hub.ticketRequest(`/api/tickets/${id}`, { method: 'DELETE' }));
     } else if (!action && request.method === 'PATCH') {
       payload = await hub.ticketRequest(`/api/tickets/${id}`, {
         method: 'PATCH', body: JSON.stringify(await readJsonBody(request)),

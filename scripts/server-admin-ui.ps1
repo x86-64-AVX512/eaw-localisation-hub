@@ -138,9 +138,9 @@ function Open-AdminSession {
     $script:adminIssuedAt = [DateTime]::UtcNow
     $script:managerUser = $session.user
     $form.Text = if ($TeamManagement) {
-        (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F9 – Управление командой')
+        (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F10 – Управление командой')
     } else {
-        (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F9 – Администратор')
+        (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F10 – Администратор')
     }
 }
 
@@ -412,7 +412,7 @@ function Show-InvitationsDialog {
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = if ($TeamManagement) { (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F9 – Управление командой') } else { (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F9 – Администратор') }
+$form.Text = if ($TeamManagement) { (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F10 – Управление командой') } else { (Get-EawUiText -Text 'EaW Localisation Hub 0.8.8F10 – Администратор') }
 $form.Size = [System.Drawing.Size]::new(900, 790)
 $form.MinimumSize = [System.Drawing.Size]::new(900, 790)
 $form.StartPosition = 'CenterScreen'

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runGitAsync, runGitSync } from './git-executable.mts';
 import { clearTrackedLineEndingPreferences, normaliseLineEndings, withoutUtf8Bom } from '../../../packages/shared/src/text.mts';
+import { TRACKED_PATH_PATTERN } from '../../../packages/shared/src/constants.mts';
 
 export const REPOSITORY_SYNC_DEFAULTS = Object.freeze({
   autoFetch: false, autoPull: false, intervalMinutes: 5,
@@ -85,6 +86,28 @@ export function repositoryWorktreeReason(repo) {
   return '';
 }
 
+// Only an unconfirmed buffer of a document in this checkout's branch has to be
+// delivered before HEAD moves. Ticket rooms, other branches, repositories and
+// servers do not depend on this worktree, and a buffer of a deleted ticket can
+// never be confirmed at all.
+function workspaceRecoveryPending(hub) {
+  let names;
+  try {
+    names = new Set(fs.readdirSync(path.join(hub.options.state, 'pending-document-updates'))
+      .filter((name) => name.endsWith('.update')));
+  } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+  if (!names.size) return false;
+  return git(hub.options.repo, ['ls-files', '-z', '--', 'localisation']).split('\0')
+    .some((relativePath) => TRACKED_PATH_PATTERN.test(relativePath)
+      && names.has(path.basename(hub.pendingDocumentUpdatePath(`${hub.options.workspace}:${relativePath}`))));
+}
+
+// The HEAD poll shares this service's period, so its in-flight flag would be
+// observed on every tick. Let it finish; its outcome is checked afterwards.
+async function headCheckSettled(hub) {
+  if (hub.gitCommitCheckPending) await hub.gitCommitCheckSettled;
+}
+
 export function repositoryReviewReason(hub) {
   if (hub.closing || hub.workspaceTransitioning || hub.workspaceBlocked || hub.gitCommitCheckPending) return 'syncing';
   for (const binding of hub.documents.values()) {
@@ -118,13 +141,8 @@ export function repositoryReviewReason(hub) {
       }
     }
   }
-  // An unopened recovery buffer cannot be confirmed with the server. Be
-  // conservative even if it belongs to a different repository in this profile.
-  const pendingDirectory = path.join(hub.options.state, 'pending-document-updates');
-  if (fs.existsSync(pendingDirectory) && fs.readdirSync(pendingDirectory).some((name) => name.endsWith('.update'))) {
-    return 'recovery';
-  }
-  return '';
+  // An unopened recovery buffer cannot be confirmed with the server.
+  return workspaceRecoveryPending(hub) ? 'recovery' : '';
 }
 
 const REASONS = {
@@ -308,6 +326,7 @@ export class RepositorySync {
       this.lastFetchFailed = false;
     }
     if (this.lastFetchFailed) { this.publish('error', { ...checkout, reason: 'error' }); return; }
+    await headCheckSettled(hub);
     if (this.stopped || hub.closing) return;
     if (!sameCheckout(checkout, repositorySnapshot(repo))) {
       this.publish('blocked', { ...checkout, reason: 'changed' }); return;
@@ -339,6 +358,7 @@ export class RepositorySync {
       if (acknowledgements.some((confirmed) => !confirmed)) {
         this.publish('blocked', { ...detail, reason: 'syncing' }); return;
       }
+      await headCheckSettled(hub);
       // Settings and Git identity are rechecked after all asynchronous waits.
       const settings = repositorySyncSettings(readJson(path.join(this.directory, 'settings.json')));
       if (this.stopped || hub.closing || (!manual && !settings.autoPull)) return;

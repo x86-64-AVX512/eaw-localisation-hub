@@ -47,11 +47,15 @@ export function scriptedLocalisationDefinitions(text, relativePath) {
 }
 
 export async function collectScriptedLocalisation(repository, fileCache = new Map()) {
-  const root = path.join(repository, 'common', 'scripted_localisation');
-  let canonical;
-  try { canonical = await fs.realpath(root); }
+  // Callers may pass an alias of the checkout (an 8.3 short name or a junction).
+  // Containment is only meaningful between canonical paths.
+  let canonical, canonicalRepository;
+  try {
+    canonicalRepository = await fs.realpath(repository);
+    canonical = await fs.realpath(path.join(canonicalRepository, 'common', 'scripted_localisation'));
+  }
   catch (error) { if (error.code === 'ENOENT') { fileCache.clear(); return { definitions: [], complete: true }; } throw error; }
-  const inside = (location) => { const relative = path.relative(repository, location); return relative && !relative.startsWith('..') && !path.isAbsolute(relative); };
+  const inside = (location) => { const relative = path.relative(canonicalRepository, location); return relative && !relative.startsWith('..') && !path.isAbsolute(relative); };
   if (!inside(canonical)) return { definitions: [], complete: false };
   const definitions = [], seen = new Set(); let complete = true, bytes = 0, files = 0;
   const walk = async (directory, depth = 0) => {
@@ -71,7 +75,7 @@ export async function collectScriptedLocalisation(repository, fileCache = new Ma
       let parsed;
       if (cached?.size === stat.size && cached.mtimeNs === stat.mtimeNs && cached.ctimeNs === stat.ctimeNs) parsed = cached.parsed;
       else {
-        parsed = scriptedLocalisationDefinitions(await fs.readFile(resolved, 'utf8'), path.relative(repository, resolved).replaceAll('\\', '/'));
+        parsed = scriptedLocalisationDefinitions(await fs.readFile(resolved, 'utf8'), path.relative(canonicalRepository, resolved).replaceAll('\\', '/'));
         fileCache.set(resolved, { size: stat.size, mtimeNs: stat.mtimeNs, ctimeNs: stat.ctimeNs, parsed });
       }
       definitions.push(...parsed.definitions);

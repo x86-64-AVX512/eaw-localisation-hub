@@ -78,6 +78,8 @@ export class AgentHub {
     /** @type {import('./repository-sync.mjs').RepositorySync | null} */
     this.repositorySync = null;
     this.repositoryEditEpoch = 0;
+    /** @type {Map<string, Map<symbol, { expiresAt: number, closeReason: string }>>} */
+    this.ticketRemovals = new Map();
     this.accountRefreshTimer = setInterval(() => {
       this.refreshAccountStatus().catch(() => {});
     }, 15_000);
@@ -263,6 +265,44 @@ export class AgentHub {
     }
   }
 
+  // For a room this user asked the server to delete: nothing is left to retry.
+  discardPendingDocumentUpdate(documentId) {
+    try { fs.unlinkSync(this.pendingDocumentUpdatePath(documentId)); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+
+  // The server closes the ticket's rooms before its HTTP reply arrives, so the
+  // intent is recorded first. Returns a function that withdraws it on failure.
+  expectTicketRemoval(documentIds, closeReason, now = Date.now()) {
+    for (const [id, requests] of this.ticketRemovals) {
+      for (const [token, request] of requests) if (request.expiresAt <= now) requests.delete(token);
+      if (!requests.size) this.ticketRemovals.delete(id);
+    }
+    const token = Symbol('ticket-removal');
+    const ids = [...new Set(documentIds)];
+    for (const id of ids) {
+      const requests = this.ticketRemovals.get(id) ?? new Map();
+      requests.set(token, { expiresAt: now + 60_000, closeReason });
+      this.ticketRemovals.set(id, requests);
+    }
+    // Failure of an older request must not withdraw a newer request's intent.
+    return () => {
+      for (const id of ids) {
+        const requests = this.ticketRemovals.get(id);
+        requests?.delete(token);
+        if (requests && !requests.size) this.ticketRemovals.delete(id);
+      }
+    };
+  }
+
+  consumeTicketRemoval(documentId, closeReason, now = Date.now()) {
+    const requests = this.ticketRemovals?.get(documentId);
+    // A later incarnation of this room must not inherit an earlier removal.
+    this.ticketRemovals?.delete(documentId);
+    return [...(requests?.values() ?? [])].some((request) =>
+      request.expiresAt > now && request.closeReason === closeReason);
+  }
+
   clearPendingDocumentUpdate(documentId, expectedUpdate) {
     const target = this.pendingDocumentUpdatePath(documentId);
     try {
@@ -413,6 +453,10 @@ export class AgentHub {
   async checkGitCommitChange() {
     if (this.closing || this.workspaceTransitioning || this.repositoryUpdating || this.gitCommitCheckPending) return;
     this.gitCommitCheckPending = true;
+    // Repository sync polls on the same period and must wait for this check
+    // instead of reading its in-flight flag as an unconfirmed Review change.
+    let settle;
+    this.gitCommitCheckSettled = new Promise((resolve) => { settle = resolve; });
     try {
       if (!this.options.workspaceExplicit) {
         const branch = await runGitAsync(['branch', '--show-current'], { cwd: this.options.repo });
@@ -431,6 +475,7 @@ export class AgentHub {
       for (const binding of this.documents.values()) binding.reconnectForGitHead();
     } finally {
       this.gitCommitCheckPending = false;
+      settle();
     }
   }
 

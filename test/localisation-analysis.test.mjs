@@ -110,6 +110,11 @@ test('scripted getter index ignores comments, quoted fake declarations and neste
   const file = path.join(folder, 'test.txt'); await fs.writeFile(file, source);
   const cache = new Map();
   assert.deepEqual((await collectScriptedLocalisation(repo, cache)).definitions, parsed.definitions);
+  // CI hands out 8.3 temp paths (RUNNER~1); an alias of the checkout must index the same files.
+  const alias = `${repo}-alias`;
+  await fs.symlink(repo, alias, 'junction');
+  t.after(() => fs.rm(alias, { force: true }));
+  assert.deepEqual((await collectScriptedLocalisation(alias, new Map())).definitions, parsed.definitions);
   await fs.writeFile(file, 'defined_text = { name = GetUnclosed');
   assert.equal((await collectScriptedLocalisation(repo, cache)).complete, false);
 });

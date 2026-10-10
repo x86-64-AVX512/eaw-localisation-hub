@@ -1,6 +1,13 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F9` form; package metadata uses `0.8.8-beta.9`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F10` form; package metadata uses `0.8.8-beta.10`.
+
+## 0.8.8F10
+
+- Fix repository auto-update staying blocked after a ticket is deleted: the Agent checkpoints all locally changed ticket text (including previously sent but unconfirmed edits) and writes a readable recovery copy. It awaits the synced copy before retiring the exact retry checkpoint; write failures retain the checkpoint and report an error, and newer checkpoints are never deleted. Only unconfirmed buffers of documents in the current branch of this repository and server block an update; buffers of tickets, other branches, repositories or servers are left in place and ignored.
+- Deleting your own ticket, or removing a file from it, through the Agent no longer leaves a recovery copy and a notice each time; a ticket removed by someone else still does. Removal intent is scoped to each open document and its expected close reason, consumed on room closure, and withdrawn independently on request failure. Keeping or adding a file never marks it for removal. Failed buffer deletion retains recovery state and reports an error instead of escaping the WebSocket close handler. An edit that reaches the Agent after the deletion checkpoint now replaces the same recovery copy atomically instead of being dropped.
+- Stop reporting «waiting for the server to confirm Review changes» while the real blocker is something else: repository sync now waits for the HEAD poll that runs on the same three-second period instead of treating its in-flight flag as a blocker.
+- Index scripted localisation correctly when the repository is addressed through an alias such as an 8.3 short path or a junction (this failed on the CI runner).
 
 ## 0.8.8F9
 
