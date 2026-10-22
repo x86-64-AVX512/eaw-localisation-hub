@@ -3,6 +3,10 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
+$node = (Get-Command node.exe -ErrorAction Stop).Source
+$runtimeCheck = Join-Path $PSScriptRoot 'check-node-runtime.mjs'
+& $node $runtimeCheck
+if ($LASTEXITCODE -ne 0) { throw 'Refusing to package an unsafe Node.js runtime.' }
 $version = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw -Encoding utf8).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+F\d+$') { throw "Invalid client version: $version" }
 $distRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
@@ -14,10 +18,9 @@ if (Test-Path -LiteralPath $packageRoot) { Remove-Item -LiteralPath $packageRoot
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $packageRoot 'apps'), (Join-Path $packageRoot 'packages') -Force | Out-Null
 
-$node = (Get-Command node.exe -ErrorAction Stop).Source
-$nodeVersion = [version](& $node -p process.versions.node)
-if ($nodeVersion -lt [version]'22.18.0') { throw "Node.js 22.18.0 or newer is required for TypeScript source: $nodeVersion" }
 Copy-Item -LiteralPath $node -Destination (Join-Path $packageRoot 'node.exe')
+& (Join-Path $packageRoot 'node.exe') $runtimeCheck
+if ($LASTEXITCODE -ne 0) { throw 'Packaged Node.js failed the security baseline.' }
 $nodeLicense = Join-Path (Split-Path -Parent $node) 'LICENSE'
 if (-not (Test-Path -LiteralPath $nodeLicense -PathType Leaf)) { throw "Bundled Node.js license is missing: $nodeLicense" }
 Copy-Item -LiteralPath $nodeLicense -Destination (Join-Path $packageRoot 'THIRD-PARTY-NODE-LICENSE.txt')
@@ -41,6 +44,7 @@ foreach ($scriptName in @(
     'start-hub.ps1',
     'agent-status.ps1',
     'hash-utils.ps1',
+    'check-node-runtime.mjs',
     'update-client.ps1',
     'client-update-ui.ps1',
     'client-update-transfer.ps1',

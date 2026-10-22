@@ -20,7 +20,7 @@ foreach ($relative in @(
 
 foreach ($relative in @(
     'apps\agent\review-web', 'data', 'dist', 'node_modules', 'output',
-    'deploy\.env', 'deploy\backups', 'deploy\rollbacks'
+    'deploy\.env', 'deploy\backups', 'deploy\rollbacks', 'deploy\docker-compose.override.yml', 'deploy\docker-compose.override.yaml', 'deploy\compose.override.yml', 'deploy\compose.override.yaml'
 )) {
     if (Test-Path -LiteralPath (Join-Path $packageRoot $relative)) {
         throw "Source package contains generated or private state: $relative"

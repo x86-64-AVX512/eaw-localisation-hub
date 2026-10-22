@@ -7,6 +7,8 @@ import { spawn } from 'node:child_process';
 
 const SAFE_REMOTE_ROOT = /^\/[A-Za-z0-9._/-]+$/;
 const SAFE_RELEASE_ID = /^[A-Za-z0-9._-]+$/;
+const LOCAL_DEPLOY_FILES = ['.env', 'docker-compose.override.yml', 'docker-compose.override.yaml', 'compose.override.yml', 'compose.override.yaml'];
+const RUNTIME_SECURITY_BASELINE = '2026-10-21';
 
 export function validateDeploymentRequest(request) {
   const host = String(request?.host ?? '').trim();
@@ -58,6 +60,8 @@ export function remoteDeploymentCommand({ remoteRoot, uploadPath, releaseId, exp
   const rollback = shellQuote(`${rollbackRoot}/${releaseId}.tar.gz`);
   const rollbackDir = shellQuote(rollbackRoot);
   const healthUrl = 'http://127.0.0.1:${HUB_PORT:-3210}/health';
+  const preserveFiles = LOCAL_DEPLOY_FILES.map((name) => `! -name ${shellQuote(name)}`).join(' ');
+  const cleanDeploy = `find "$ROOT/deploy" -mindepth 1 -maxdepth 1 ${preserveFiles} ! -name backups ! -name rollbacks -exec rm -rf -- {} + 2>/dev/null || true`;
   return [
     'set -eu',
     `ROOT=${root}`,
@@ -77,7 +81,9 @@ export function remoteDeploymentCommand({ remoteRoot, uploadPath, releaseId, exp
     'if [ -d "$ROOT" ]; then',
     '  PREVIOUS_IMAGE=$(cd "$ROOT/deploy" && docker compose images -q server 2>/dev/null | head -n 1 || true)',
     '  tar -czf "$ROLLBACK" --exclude=deploy/backups --exclude=deploy/rollbacks -C "$ROOT" .',
-    '  if [ -f "$ROOT/deploy/.env" ]; then cp "$ROOT/deploy/.env" "$STAGE/deploy/.env"; fi',
+    `  for config in ${LOCAL_DEPLOY_FILES.map(shellQuote).join(' ')}; do`,
+    '    if [ -f "$ROOT/deploy/$config" ]; then cp -p "$ROOT/deploy/$config" "$STAGE/deploy/$config"; fi',
+    '  done',
     'fi',
     'mkdir -p "$STAGE/deploy/backups"',
     'rollback() {',
@@ -90,7 +96,8 @@ export function remoteDeploymentCommand({ remoteRoot, uploadPath, releaseId, exp
     '    rm -f -- "$ROOT/Dockerfile" "$ROOT/package.json" "$ROOT/package-lock.json" "$ROOT/VERSION"',
     '    cp -a "$ROLLBACK_STAGE/apps" "$ROLLBACK_STAGE/packages" "$ROOT/"',
     '    cp "$ROLLBACK_STAGE/Dockerfile" "$ROLLBACK_STAGE/package.json" "$ROLLBACK_STAGE/package-lock.json" "$ROLLBACK_STAGE/VERSION" "$ROOT/"',
-    '    find "$ROOT/deploy" -mindepth 1 -maxdepth 1 ! -name .env ! -name backups ! -name rollbacks -exec rm -rf -- {} + 2>/dev/null || true',
+    '    if [ -d "$ROLLBACK_STAGE/scripts" ]; then mkdir -p "$ROOT/scripts"; cp -a "$ROLLBACK_STAGE/scripts/." "$ROOT/scripts/"; fi',
+    `    ${cleanDeploy}`,
     '    cp -a "$ROLLBACK_STAGE/deploy/." "$ROOT/deploy/"',
     '    (cd "$ROOT/deploy" && docker compose up -d --no-build server) || true',
     '  fi',
@@ -101,15 +108,19 @@ export function remoteDeploymentCommand({ remoteRoot, uploadPath, releaseId, exp
     'rm -f -- "$ROOT/Dockerfile" "$ROOT/package.json" "$ROOT/package-lock.json" "$ROOT/VERSION"',
     'cp -a "$STAGE/apps" "$STAGE/packages" "$ROOT/"',
     'cp "$STAGE/Dockerfile" "$STAGE/package.json" "$STAGE/package-lock.json" "$STAGE/VERSION" "$ROOT/"',
+    'mkdir -p "$ROOT/scripts"',
+    'cp -a "$STAGE/scripts/." "$ROOT/scripts/"',
     'mkdir -p "$ROOT/deploy/backups"',
-    'find "$ROOT/deploy" -mindepth 1 -maxdepth 1 ! -name .env ! -name backups ! -name rollbacks -exec rm -rf -- {} + 2>/dev/null || true',
+    cleanDeploy,
     'cp -a "$STAGE/deploy/." "$ROOT/deploy/"',
     'cd "$ROOT/deploy"',
     `ONLINE_BUILD_OK=${preferOffline ? '0' : 'pending'}`,
-    'if [ "$ONLINE_BUILD_OK" = pending ] && timeout 300 docker compose build server; then ONLINE_BUILD_OK=1; fi',
+    'if [ "$ONLINE_BUILD_OK" = pending ] && timeout 300 docker compose build --pull server; then ONLINE_BUILD_OK=1; fi',
     'if [ "$ONLINE_BUILD_OK" != 1 ]; then',
     '  echo "Online build failed; trying the existing server image as an offline base." >&2',
     '  test -n "${PREVIOUS_IMAGE:-}" || { kill -HUP $$; exit 30; }',
+    `  BASELINE=$(docker image inspect --format '{{ index .Config.Labels "org.eawhub.runtime-security" }}' "$PREVIOUS_IMAGE" 2>/dev/null || true)`,
+    `  if [ "$BASELINE" != ${shellQuote(RUNTIME_SECURITY_BASELINE)} ]; then echo "Offline base lacks the required Node.js and CA security baseline; perform an online rebuild." >&2; kill -HUP $$; exit 30; fi`,
     '  TARGET_IMAGE=$(docker compose config --images | head -n 1)',
     '  docker build --build-arg "PREVIOUS_IMAGE=$PREVIOUS_IMAGE" -f Dockerfile.incremental -t "$TARGET_IMAGE" .. || { kill -HUP $$; exit 30; }',
     'fi',
@@ -158,7 +169,7 @@ export async function createServerPayload(projectRoot, version) {
   await mkdir(stageRoot, { recursive: true });
   const files = ['Dockerfile', 'package.json', 'package-lock.json', 'VERSION'];
   const directories = ['apps/server', 'packages/shared', 'deploy'];
-  const serverScripts = ['scripts/manage-server.mjs'];
+  const serverScripts = ['scripts/manage-server.mjs', 'scripts/check-node-runtime.mjs'];
   for (const relative of files) {
     const source = path.join(projectRoot, relative);
     await access(source, fsConstants.R_OK);
@@ -176,7 +187,8 @@ export async function createServerPayload(projectRoot, version) {
     await mkdir(path.dirname(destination), { recursive: true });
     await cp(path.join(projectRoot, relative), destination, {
       recursive: true,
-      filter: (source) => !/(?:^|[\\/])(?:backups|rollbacks)(?:[\\/]|$)/i.test(source) && !/[\\/]\.env$/i.test(source),
+      filter: (source) => !/(?:^|[\\/])(?:backups|rollbacks)(?:[\\/]|$)/i.test(source)
+        && !LOCAL_DEPLOY_FILES.includes(path.basename(source).toLowerCase()),
     });
   }
   await writeFile(path.join(stageRoot, 'deployment.json'), JSON.stringify({ version, createdAt: new Date().toISOString() }), 'utf8');

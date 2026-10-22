@@ -1,13 +1,15 @@
-FROM node:22-alpine
-
-RUN node -e "const [major, minor] = process.versions.node.split('.').map(Number); if (major < 22 || (major === 22 && minor < 18)) process.exit(1)"
+FROM node:22.23.4-alpine
 
 ENV NODE_ENV=production
 WORKDIR /app
 
+COPY scripts/check-node-runtime.mjs ./scripts/check-node-runtime.mjs
+RUN node scripts/check-node-runtime.mjs
+
 COPY package.json package-lock.json ./
-RUN apk add --no-cache git
+RUN apk add --no-cache git ca-certificates && apk upgrade --no-cache ca-certificates && update-ca-certificates
 RUN npm ci --omit=dev && npm cache clean --force
+LABEL org.eawhub.runtime-security="2026-10-21"
 
 COPY apps/server ./apps/server
 COPY packages/shared ./packages/shared

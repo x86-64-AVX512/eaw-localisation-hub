@@ -6,6 +6,10 @@ output
 data
 .git
 deploy/.env
+deploy/docker-compose.override.yml
+deploy/docker-compose.override.yaml
+deploy/compose.override.yml
+deploy/compose.override.yaml
 deploy/backups
 deploy/rollbacks
 apps/agent/review-web

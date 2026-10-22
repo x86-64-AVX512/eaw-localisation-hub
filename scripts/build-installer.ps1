@@ -22,6 +22,9 @@ if (-not (Test-Path -LiteralPath (Join-Path $payloadDirectory 'review\EaWReview.
     throw "Build the client package first; installer payload is missing: $payloadDirectory"
 }
 
+& (Join-Path $payloadDirectory 'node.exe') (Join-Path $PSScriptRoot 'check-node-runtime.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Refusing to build an installer with an unsafe Node.js runtime.' }
+
 $compilerCandidates = @(
     (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
     (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),

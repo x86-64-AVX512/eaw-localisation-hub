@@ -8,6 +8,7 @@ $packageRoot = Join-Path $projectRoot "dist\EaW-Hub-Deployer-$version"
 $archivePath = "$packageRoot.zip"
 $checksumPath = "$archivePath.sha256"
 $required = @(
+    'scripts\check-node-runtime.mjs',
     'node.exe', 'VERSION', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'THIRD-PARTY-NODE-LICENSE.txt',
     'Launch EaW Hub Deployer.cmd', 'apps\deployer\src\main.mjs',
     'apps\deployer\src\deployment-core.mjs', 'apps\server\src\main.mjs',
@@ -22,7 +23,7 @@ foreach ($relative in $required) {
         throw "Deployer package is missing $relative"
     }
 }
-foreach ($forbidden in @('deploy\.env', 'deploy\backups', 'deploy\rollbacks')) {
+foreach ($forbidden in @('deploy\.env', 'deploy\backups', 'deploy\rollbacks', 'deploy\docker-compose.override.yml', 'deploy\docker-compose.override.yaml', 'deploy\compose.override.yml', 'deploy\compose.override.yaml')) {
     if (Test-Path -LiteralPath (Join-Path $packageRoot $forbidden)) {
         throw "Deployer package contains private runtime state: $forbidden"
     }
@@ -33,4 +34,6 @@ if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) { throw "Deploye
 $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw) -split '\s+')[0]
 $actualHash = Get-EawFileSha256 -LiteralPath $archivePath
 if ($expectedHash -ne $actualHash) { throw 'Deployer archive checksum does not match.' }
+& (Join-Path $packageRoot 'node.exe') (Join-Path $PSScriptRoot 'check-node-runtime.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Packaged Node.js failed the security baseline.' }
 Write-Output "[deployer-package-smoke] verified $($required.Count) required artifact(s)"

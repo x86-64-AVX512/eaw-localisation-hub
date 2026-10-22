@@ -10,6 +10,7 @@ const forbiddenPaths = [
   /^(?:dist|output|node_modules|data|\.tools|\.playwright-cli)(?:\/|$)/i,
   /^apps\/agent\/review-web(?:\/|$)/i,
   /^deploy\/(?:\.env|backups|rollbacks)(?:\/|$)/i,
+  /^deploy\/(?:docker-)?compose\.override\.ya?ml$/i,
   /(?:^|\/)(?:auth\.json|bootstrap-invite\.txt)$/i,
   /\.eawhub\.enc$/i,
 ];

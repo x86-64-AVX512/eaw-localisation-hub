@@ -8,6 +8,7 @@ $packageRoot = Join-Path $projectRoot "dist\EaW-Hub-Client-$expectedVersion"
 $archivePath = Join-Path $projectRoot "dist\EaW-Hub-Client-$expectedVersion.zip"
 $checksumPath = "$archivePath.sha256"
 $required = @(
+    'scripts\check-node-runtime.mjs',
     'node.exe',
     'LICENSE',
     'THIRD_PARTY_NOTICES.md',
@@ -76,4 +77,6 @@ if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) { throw "Client 
 $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw) -split '\s+')[0]
 $actualHash = Get-EawFileSha256 -LiteralPath $archivePath
 if ($expectedHash -ne $actualHash) { throw 'Client archive checksum does not match.' }
+& (Join-Path $packageRoot 'node.exe') (Join-Path $PSScriptRoot 'check-node-runtime.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Packaged Node.js failed the security baseline.' }
 Write-Output "[client-package-smoke] verified $($required.Count) required artifact(s)"

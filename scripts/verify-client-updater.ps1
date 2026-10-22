@@ -52,6 +52,11 @@ if ($null -ne $selected) { throw 'An empty release list must not trigger install
 $script:mockReleases = @($legacyTagRelease)
 $selected = Find-NewClientRelease -InstalledVersion '0.8.8F5'
 if ($selected.Version -cne '0.8.8F8') { throw 'Existing v.X.Y.ZFN release tag was not recognized.' }
+$script:mockReleases = @((New-TestRelease '0.8.8F10'), (New-TestRelease '0.8.8F11'))
+$selected = Find-NewClientRelease -InstalledVersion '0.8.8F10'
+if ($selected.Version -cne '0.8.8F11') { throw 'F11 security update was not offered to an F10 client.' }
+$selected = Find-NewClientRelease -InstalledVersion '0.8.8F11'
+if ($null -ne $selected) { throw 'F11 must not reinstall itself as a newer release.' }
 Remove-Item Function:Invoke-RestMethod
 
 $rejected = $false
@@ -178,9 +183,10 @@ try {
             'X-GitHub-Api-Version' = '2022-11-28'
         } -TimeoutSec 20
         Write-Output "[client-updater-published] found $(@($liveReleases).Count) release(s); first tag: $($liveReleases[0].tag_name)"
-        $published = Find-NewClientRelease -InstalledVersion '0.8.8F4'
-        if (-not $published -or $published.Version -cne '0.8.8F5') {
-            throw 'The published F5 installer was not selected for an F4 client.'
+        $expectedPublishedVersion = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw -Encoding utf8).Trim()
+        $published = Find-NewClientRelease -InstalledVersion '0.0.0F0'
+        if (-not $published -or $published.Version -cne $expectedPublishedVersion) {
+            throw "The latest complete published installer does not match $expectedPublishedVersion."
         }
         $publishedInstaller = Join-Path $testRoot $published.InstallerName
         $publishedChecksum = "$publishedInstaller.sha256"

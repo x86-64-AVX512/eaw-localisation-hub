@@ -1,6 +1,14 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F10` form; package metadata uses `0.8.8-beta.10`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F11` form; package metadata uses `0.8.8-beta.11`.
+
+## 0.8.8F11 – 2026-10-22
+
+- Security: require Node.js 22.23.4, 24.22.1 or 26.12.1 (or newer patches in the same supported major) to block the compromised eMudhra intermediate CA keys. Verify the actual runtime before packaging, after copying it, and before building the installer.
+- Pin the server base to Node.js 22.23.4, refresh its CA package and request a fresh base on online deployment. Offline builds require the new runtime/CA baseline and recheck the inherited Node binary.
+- Preserve local Compose override files during server updates and rollback, including custom CA mounts and runtime trust settings. Exclude those files from source and deployment packages.
+- Update the pinned DOMPurify dependency to 3.4.17 for the published sanitizer security fixes used by Monaco.
+- Add isolated deployment regressions for retained TLS configuration, rollback on an unsafe offline image, and reuse of a safe image. EHSP remains 21.
 
 ## 0.8.8F10
 

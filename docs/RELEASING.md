@@ -4,11 +4,11 @@ This checklist is for maintainers publishing EaW Localisation Hub releases.
 
 1. Confirm `VERSION` and the versions in `package.json` agree.
 2. Start from a clean checkout.
-3. Install exact JavaScript dependencies: `npm ci`.
+3. Use an approved patched Node.js runtime (22.23.4+, 24.22.1+ or 26.12.1+ within the corresponding major) and install exact JavaScript dependencies: `npm ci`. Run `node scripts/check-node-runtime.mjs`; client/deployer packaging and installer compilation repeat this check against the actual bundled executable.
 4. Run `npm run check`. This audits public files, runs tests, builds every Windows artifact and verifies the packages.
 5. Review the generated archives and matching `.sha256` files in `dist`.
    Before publication, run `npm run test:update-flow` after `npm run build:installer`. It verifies the actual installer and checksum, tests the updater's elevated, silent launch arguments, and stops a simulated Agent without changing the installed client. After publication, run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-updater.ps1 -PublishedRelease` to test GitHub's live asset delivery and SHA-256.
-6. Commit the release, create an annotated tag such as `v.0.8.8F10`, and push both commit and tag.
+6. Commit the release, create an annotated tag such as `v.0.8.8F11`, and push both commit and tag.
 7. Create a GitHub Release and attach the Windows installer and its SHA-256 file. The client, deployer and source archives may also be attached when needed; the auto-updater does not use them.
 8. Publish deployment credentials only through private channels. Never add `.env`, authentication state, recovery codes, backups or private server addresses to the repository or release assets.
 
@@ -17,3 +17,5 @@ The Windows client checks this repository's published GitHub Releases at startup
 The updater is included in client packages, so existing installations without it need one manual install of a package containing the updater. Older clients before F7 may still install a new release automatically; publishing F7 cannot change their behaviour before they receive it. Never publish an untrusted installer under this repository's Releases.
 
 Server deployment is deliberately separate from GitHub publication. A release or tag must not deploy to production automatically.
+
+F11 requires an online server build using the patched base and current CA package. The deployer preserves local Compose overrides and allows offline reuse only of an image carrying `org.eawhub.runtime-security=2026-10-21`. Do not remove custom trust mounts until their replacement has been checked. Review `deploy/README.md` before deployment.

@@ -1,7 +1,7 @@
 {
   "name": "eaw-localisation-hub",
   "private": true,
-  "version": "0.8.8-beta.10",
+  "version": "0.8.8-beta.11",
   "description": "EaW collaborative localisation early beta",
   "license": "GPL-2.0-only",
   "author": "EaW Localisation Hub contributors",
@@ -12,7 +12,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=22.18.0"
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
   },
   "scripts": {
     "server": "node apps/server/src/main.mjs",
@@ -57,8 +57,8 @@
     "yjs": "^13.6.27"
   },
   "eawHub": {
-    "displayVersion": "0.8.8F10",
-    "windowsFileVersion": "0.8.8.10"
+    "displayVersion": "0.8.8F11",
+    "windowsFileVersion": "0.8.8.11"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
@@ -67,6 +67,6 @@
     "typescript": "^7.0.2"
   },
   "overrides": {
-    "dompurify": "3.4.14"
+    "dompurify": "3.4.17"
   }
 }

@@ -4,8 +4,8 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
 $distRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
-$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F10'))
-$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F10.zip'))
+$packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F11'))
+$archivePath = [System.IO.Path]::GetFullPath((Join-Path $distRoot 'EaW-Localisation-Hub-Source-0.8.8F11.zip'))
 $checksumPath = "$archivePath.sha256"
 if (-not $packageRoot.StartsWith($distRoot + '\', [StringComparison]::OrdinalIgnoreCase) `
     -or -not $archivePath.StartsWith($distRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
@@ -34,7 +34,7 @@ foreach ($relative in $rootFiles) {
 
 $sourceDirectories = @('.github', 'apps', 'deploy', 'docs', 'installer', 'packages', 'scripts', 'test')
 $excludedDirectoryNames = @('.git', '.tools', 'backups', 'data', 'dist', 'node_modules', 'review-web', 'rollbacks')
-$excludedFileNames = @('.env', 'auth.json', 'bootstrap-invite.txt')
+$excludedFileNames = @('.env', 'auth.json', 'bootstrap-invite.txt', 'docker-compose.override.yml', 'docker-compose.override.yaml', 'compose.override.yml', 'compose.override.yaml')
 foreach ($directoryName in $sourceDirectories) {
     $sourceDirectory = Join-Path $projectRoot $directoryName
     if (-not (Test-Path -LiteralPath $sourceDirectory -PathType Container)) { continue }

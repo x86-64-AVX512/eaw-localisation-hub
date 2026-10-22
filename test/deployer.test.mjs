@@ -38,13 +38,18 @@ test('remote deployment verifies its payload, preserves state, checks health, an
     expectedDigest: 'a'.repeat(64),
   });
   assert.match(command, /sha256sum -c/);
-  assert.match(command, /! -name \.env ! -name backups ! -name rollbacks/);
+  assert.match(command, /! -name '\.env'/);
+  assert.match(command, /! -name 'docker-compose\.override\.yml'/);
+  assert.match(command, /! -name 'compose\.override\.yaml'/);
+  assert.match(command, /! -name rollbacks -exec rm -rf -- \{\} \+ 2>\/dev\/null \|\| true/);
   assert.match(command, /Deployment failed; restoring previous release/);
   assert.match(command, /trying the existing server image as an offline base/);
   assert.match(command, /Dockerfile\.incremental/);
   assert.match(command, /docker compose up -d --no-build server/);
   assert.match(command, /\/health/);
-  assert.match(command, /docker compose build server/);
+  assert.match(command, /docker compose build --pull server/);
+  assert.match(command, /org\.eawhub\.runtime-security/);
+  assert.match(command, /Offline base lacks the required Node\.js and CA security baseline/);
 });
 
 test('deployer packs with the Windows system tar, not whichever tar PATH finds first', () => {
@@ -66,7 +71,10 @@ test('server deployment payload excludes runtime secrets and data', async (conte
     writeFile(path.join(root, 'packages/shared/constants.mts'), 'export {}'),
     writeFile(path.join(root, 'deploy/docker-compose.yml'), 'services: {}'),
     writeFile(path.join(root, 'scripts/manage-server.mjs'), 'export {}'),
+    writeFile(path.join(root, 'scripts/check-node-runtime.mjs'), 'export {}'),
     writeFile(path.join(root, 'deploy/.env'), 'SECRET=yes'),
+    writeFile(path.join(root, 'deploy/docker-compose.override.yml'), 'LOCAL_TLS_POLICY=yes'),
+    writeFile(path.join(root, 'deploy/compose.override.yaml'), 'LOCAL_PATH=yes'),
     writeFile(path.join(root, 'deploy/backups/private.enc'), 'private'),
   ]);
   const payload = await createServerPayload(root, '0.8.6F4');
@@ -74,8 +82,9 @@ test('server deployment payload excludes runtime secrets and data', async (conte
   assert.match(payload.digest, /^[a-f0-9]{64}$/);
   const listing = spawnSync(systemTar(), ['-tzf', payload.archivePath], { encoding: 'utf8' });
   assert.equal(listing.status, 0, listing.stderr);
-  assert.doesNotMatch(listing.stdout, /\.env|private\.enc|backups\//);
+  assert.doesNotMatch(listing.stdout, /\.env|private\.enc|backups\/|compose\.override/);
   assert.match(listing.stdout, /apps\/server\/main\.mjs/);
   assert.match(listing.stdout, /scripts\/manage-server\.mjs/);
+  assert.match(listing.stdout, /scripts\/check-node-runtime\.mjs/);
   assert.equal(JSON.parse(await readFile(path.join(path.dirname(payload.archivePath), 'payload/deployment.json'), 'utf8')).version, '0.8.6F4');
 });

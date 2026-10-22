@@ -6,6 +6,7 @@ EaW Localisation Hub is licensed under GPL-2.0-only. It uses or redistributes th
 | --- | --- | --- | --- |
 | Node.js | Bundled JavaScript runtime | MIT and bundled third-party notices | <https://nodejs.org/> |
 | Monaco Editor | Review editor | MIT | <https://github.com/microsoft/monaco-editor> |
+| DOMPurify | HTML sanitization within Monaco | Apache-2.0 or MPL-2.0 | <https://github.com/cure53/DOMPurify> |
 | nspell | Local Hunspell-compatible spelling engine | MIT | <https://github.com/wooorm/nspell> |
 | dictionary-ru | Server-distributed Russian spelling dictionary for local Review checking | BSD-3-Clause | <https://github.com/wooorm/dictionaries/tree/main/dictionaries/ru> |
 | spell-checker-js Russian word lists | Supplemental Russian word forms and surnames, distributed as a compact probabilistic index | MIT | <https://github.com/danakt/russian-words> |

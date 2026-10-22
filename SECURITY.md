@@ -15,6 +15,8 @@ The project is an early beta, the program is still rough, and it is provided wit
 ## Deployment baseline
 
 - Terminate TLS before exposing the server to the internet.
+- Use the patched Node.js runtime accepted by `scripts/check-node-runtime.mjs`. Windows packages contain their own Node binary; updating only the operating system or system Node does not update it.
+- Preserve local Compose overrides and CA mounts during server upgrades. Offline image reuse requires the F11 runtime/CA security baseline.
 - Keep the Hub server bound to loopback behind the reverse proxy.
 - Prefer SSH keys for deployment, pin the host fingerprint and disable password login for `root`.
 - Store `deploy/.env`, backups and Docker volumes outside Git.

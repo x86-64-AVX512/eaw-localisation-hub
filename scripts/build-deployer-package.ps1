@@ -3,6 +3,10 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 . (Join-Path $PSScriptRoot 'hash-utils.ps1')
+$nodeExecutable = (Get-Command node.exe -ErrorAction Stop).Source
+$runtimeCheck = Join-Path $PSScriptRoot 'check-node-runtime.mjs'
+& $nodeExecutable $runtimeCheck
+if ($LASTEXITCODE -ne 0) { throw 'Refusing to package an unsafe Node.js runtime.' }
 $distRoot = Join-Path $projectRoot 'dist'
 $version = ([IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION'))).Trim()
 $packageRoot = Join-Path $distRoot "EaW-Hub-Deployer-$version"
@@ -16,10 +20,9 @@ if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath
 if (Test-Path -LiteralPath $checksumPath) { Remove-Item -LiteralPath $checksumPath -Force }
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 
-$nodeExecutable = (Get-Command node.exe -ErrorAction Stop).Source
-$nodeVersion = [version](& $nodeExecutable -p process.versions.node)
-if ($nodeVersion -lt [version]'22.18.0') { throw "Node.js 22.18.0 or newer is required for TypeScript source: $nodeVersion" }
 Copy-Item -LiteralPath $nodeExecutable -Destination (Join-Path $packageRoot 'node.exe')
+& (Join-Path $packageRoot 'node.exe') $runtimeCheck
+if ($LASTEXITCODE -ne 0) { throw 'Packaged Node.js failed the security baseline.' }
 $nodeLicense = Join-Path (Split-Path -Parent $nodeExecutable) 'LICENSE'
 if (-not (Test-Path -LiteralPath $nodeLicense -PathType Leaf)) { throw "Bundled Node.js license is missing: $nodeLicense" }
 Copy-Item -LiteralPath $nodeLicense -Destination (Join-Path $packageRoot 'THIRD-PARTY-NODE-LICENSE.txt')
@@ -34,11 +37,11 @@ foreach ($relative in @('apps\deployer', 'apps\server', 'packages\shared')) {
 $deployDestination = Join-Path $packageRoot 'deploy'
 New-Item -ItemType Directory -Path $deployDestination -Force | Out-Null
 foreach ($file in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'deploy') -File) {
-    if ($file.Name -eq '.env' -or $file.Name -like '*.log' -or $file.Name -like '*.tmp') { continue }
+    if (($file.Name -in @('.env', 'docker-compose.override.yml', 'docker-compose.override.yaml', 'compose.override.yml', 'compose.override.yaml')) -or $file.Name -like '*.log' -or $file.Name -like '*.tmp') { continue }
     Copy-Item -LiteralPath $file.FullName -Destination $deployDestination
 }
 New-Item -ItemType Directory -Path (Join-Path $packageRoot 'scripts') -Force | Out-Null
-foreach ($scriptName in @('deploy-server-ui.ps1', 'ui-language.ps1', 'manage-server.mjs')) {
+foreach ($scriptName in @('deploy-server-ui.ps1', 'ui-language.ps1', 'manage-server.mjs', 'check-node-runtime.mjs')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot "scripts\$scriptName") -Destination (Join-Path $packageRoot 'scripts')
 }
 New-Item -ItemType Directory -Path (Join-Path $packageRoot 'node_modules') -Force | Out-Null

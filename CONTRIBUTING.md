@@ -5,7 +5,7 @@ EaW Localisation Hub is an early Windows-focused project. Bug reports and narrow
 ## Development setup
 
 1. Clone the repository: `git clone <repository-url>`.
-2. Install Node.js 22, Visual Studio Build Tools with the C++ workload, PowerShell 5.1+ and Inno Setup 6.
+2. Install patched Node.js 22.23.4+ (or supported 24.22.1+/26.12.1+), Visual Studio Build Tools with the C++ workload, PowerShell 5.1+ and Inno Setup 6.
 3. Run `npm ci`.
 4. Run `npm test` while developing and `npm run check` before submitting a pull request.
 
