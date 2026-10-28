@@ -33,7 +33,7 @@ function discussionSummary(document, item, starts) {
     orphaned: Boolean(item.orphaned || !range),
     originalText: item.originalText ?? '',
     replacementText: item.replacementText ?? '',
-    messages: (item.messages ?? []).map((message) => ({
+    messages: (item.messages ?? []).filter((message) => !message.deleted).map((message) => ({
       id: message.id, author: message.author, body: message.body,
       createdAt: message.createdAt,
     })),

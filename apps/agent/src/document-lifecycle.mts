@@ -37,6 +37,7 @@ export interface LifecycleBinding {
   paused: boolean;
   closing: boolean;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  stopConnectionWatchdog?(): void;
   localUpdatePending: boolean;
   pendingUpdateSent: boolean;
   documentId: string;
@@ -179,6 +180,7 @@ async function preserveUnconfirmedTicketText(binding: LifecycleBinding,
 
 export async function closeDocument(binding: LifecycleBinding): Promise<void> {
   binding.closing = true;
+  binding.stopConnectionWatchdog?.();
   resetPersonalRequest(binding);
   if (binding.reconnectTimer) clearTimeout(binding.reconnectTimer);
   let pendingUpdate = null;

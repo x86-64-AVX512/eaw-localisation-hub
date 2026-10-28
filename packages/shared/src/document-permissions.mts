@@ -17,7 +17,7 @@ export function canDecideSuggestions(actor: DocumentActor | null | undefined): b
   return !isModContributorOnly(actor);
 }
 const DISCUSSION_CONTROLS = new Set(['presence', 'history-get', 'personal-projection-get', 'disk-merge-check', 'sync-flush',
-  'comment-create', 'comment-reply', 'suggestion-reply']);
+  'comment-create', 'comment-reply', 'suggestion-reply', 'discussion-message-update', 'discussion-message-delete']);
 const DECISION_CONTROLS = new Set(['suggestion-accept', 'suggestion-reject', 'suggestion-revert']);
 export function documentControlAllowed(actor: DocumentActor | null | undefined, documentId: string, type: string): boolean {
   if (!isModContributorOnly(actor)) return true;

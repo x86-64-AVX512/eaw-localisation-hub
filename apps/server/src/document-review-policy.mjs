@@ -1,16 +1,21 @@
 import { ProtocolLimitError, controlledString, controlledText } from './protocol-limits.mts';
 import { parseSuggestionTrace } from '../../../packages/shared/src/suggestion-trace.mts';
 
-const MAX_DISCUSSION_MESSAGES = 100;
+export const MAX_DISCUSSION_MESSAGES = 100;
+export const MAX_DELETED_MESSAGE_IDS = 4096;
 const MAX_DISCUSSION_TEXT_BYTES = 2048;
 const MAX_SUGGESTION_TEXT_BYTES = 16 * 1024;
 
 export function newDiscussionMessage(target, actor, message, createdAt = new Date().toISOString()) {
-  if (target.messages.length >= MAX_DISCUSSION_MESSAGES) {
+  const id = controlledString(message.messageId, 'Discussion message id', 128, { required: true });
+  if (target.messages.some((item) => item.id === id) || target.deletedMessageIds?.includes(id)) return null;
+  if (target.deletedMessageIdsRecovery?.includes(id)) return null;
+  if (target.deletionHistoryBlocked || target.deletedMessageIdsRecovery?.length) {
+    throw new ProtocolLimitError('This discussion has reached its deletion history limit');
+  }
+  if (target.messages.filter((item) => !item.deleted).length >= MAX_DISCUSSION_MESSAGES) {
     throw new ProtocolLimitError('This discussion has reached its message limit');
   }
-  const id = controlledString(message.messageId, 'Discussion message id', 128, { required: true });
-  if (target.messages.some((item) => item.id === id)) return null;
   const body = controlledText(message.body, 'Discussion message', MAX_DISCUSSION_TEXT_BYTES, { required: true });
   if (!body.trim()) throw new ProtocolLimitError('Discussion message must contain visible text');
   return {
@@ -21,6 +26,25 @@ export function newDiscussionMessage(target, actor, message, createdAt = new Dat
     body,
     createdAt,
   };
+}
+
+// Compact tombstones without forgetting their IDs. Never expire deletion history:
+// a local draft can retry long after the original message was deleted.
+export function withRoomForMessages(target, count) {
+  if (count && (target.deletionHistoryBlocked || target.deletedMessageIdsRecovery?.length)) {
+    throw new ProtocolLimitError('This discussion has reached its deletion history limit');
+  }
+  const messages = target.messages ?? [];
+  if (messages.filter((item) => !item.deleted).length + count > MAX_DISCUSSION_MESSAGES) return null;
+  const next = [...messages];
+  const deleted = new Set(target.deletedMessageIds ?? []);
+  while (next.length + count > MAX_DISCUSSION_MESSAGES) {
+    const index = next.findIndex((item) => item.deleted);
+    deleted.add(next[index].id);
+    next.splice(index, 1);
+  }
+  if (deleted.size > MAX_DELETED_MESSAGE_IDS) throw new ProtocolLimitError('This discussion has reached its deletion history limit');
+  return { messages: next, deletedMessageIds: [...deleted] };
 }
 
 export function newCommentThread(id, actor, message, createdAt = new Date().toISOString()) {

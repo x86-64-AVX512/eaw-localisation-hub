@@ -3,6 +3,8 @@ import { Buffer } from 'node:buffer';
 import * as Y from 'yjs';
 import { keysInsideRange, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mts';
 
+export { createComment, replyToDiscussion } from './discussion-actions.mjs';
+
 function encodeRelativePosition(position) {
   return Buffer.from(Y.encodeRelativePosition(position)).toString('base64');
 }
@@ -114,54 +116,6 @@ export function deleteReservation(binding, client, absolutePath, message) {
   }
   binding.socket.send(JSON.stringify({ type: 'reservation-delete', id }));
   client.send({ type: 'notice', message: 'Бронь удалена.' });
-}
-
-export function createComment(binding, client, absolutePath, message) {
-  const state = binding.requireState(client, absolutePath);
-  let startByte = Number(message.startByte);
-  let endByte = Number(message.endByte);
-  if (startByte > endByte) [startByte, endByte] = [endByte, startByte];
-  const start = utf8ByteOffsetToUtf16Index(state.mirror, startByte);
-  const end = utf8ByteOffsetToUtf16Index(state.mirror, endByte);
-  const body = Buffer.from(String(message.bodyBase64 ?? ''), 'base64').toString('utf8');
-  if (!body.trim()) {
-    client.send({ type: 'notice', message: 'Комментарий не может быть пустым.' });
-    return;
-  }
-  if (Buffer.byteLength(body, 'utf8') > 2048) {
-    client.send({ type: 'notice', message: 'Комментарий превышает лимит 2 КиБ.' });
-    return;
-  }
-  binding.socket.send(JSON.stringify({
-    type: 'comment-create',
-    id: crypto.randomUUID(),
-    messageId: crypto.randomUUID(),
-    author: binding.hub.options.user,
-    color: binding.hub.options.color,
-    body,
-    startRelative: encodeRelativePosition(Y.createRelativePositionFromTypeIndex(binding.text, start, -1)),
-    endRelative: encodeRelativePosition(Y.createRelativePositionFromTypeIndex(binding.text, end, 0)),
-  }));
-  client.send({ type: 'notice', message: 'Комментарий создан.' });
-}
-
-export function replyToDiscussion(binding, client, absolutePath, message, targetType) {
-  binding.requireState(client, absolutePath);
-  const collection = targetType === 'comment' ? binding.commentThreads : binding.suggestions;
-  const id = String(message.id ?? '');
-  if (!collection.has(id)) {
-    client.send({ type: 'notice', message: 'Обсуждение уже удалено.' });
-    return;
-  }
-  const body = Buffer.from(String(message.bodyBase64 ?? ''), 'base64').toString('utf8');
-  if (!body.trim() || Buffer.byteLength(body, 'utf8') > 2048) {
-    client.send({ type: 'notice', message: 'Ответ должен содержать текст и занимать не более 2 КиБ.' });
-    return;
-  }
-  binding.socket.send(JSON.stringify({
-    type: `${targetType}-reply`, id, messageId: crypto.randomUUID(),
-    author: binding.hub.options.user, color: binding.hub.options.color, body,
-  }));
 }
 
 export function setCommentStatus(binding, client, absolutePath, message) {

@@ -29,6 +29,7 @@ $required = @(
     'scripts\start-agent-ui.ps1',
     'scripts\start-hub.ps1',
     'scripts\agent-status.ps1',
+    'scripts\agent-network.ps1',
     'scripts\hash-utils.ps1',
     'scripts\update-client.ps1',
     'scripts\client-update-ui.ps1',

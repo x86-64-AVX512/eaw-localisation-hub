@@ -36,8 +36,13 @@ const clientSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Objec
     comment: text(2048, false),
   },
   reservationDelete: { path: pathField, id: idField },
-  commentCreate: { path: pathField, startByte: positionField, endByte: positionField, bodyBase64: base64Field },
-  commentReply: { path: pathField, id: idField, bodyBase64: base64Field },
+  commentCreate: { path: pathField, startByte: positionField, endByte: positionField, bodyBase64: base64Field,
+    id: text(128, false), messageId: text(128, false), requestId: text(128, false) },
+  commentReply: { path: pathField, id: idField, bodyBase64: base64Field, messageId: text(128, false), requestId: text(128, false) },
+  discussionMessageUpdate: { path: pathField, id: idField, messageId: text(128), requestId: text(128),
+    target: text(16), expectedRevision: integer(), bodyBase64: text(4096) },
+  discussionMessageDelete: { path: pathField, id: idField, messageId: text(128), requestId: text(128),
+    target: text(16), expectedRevision: integer() },
   commentStatus: { path: pathField, id: idField, status: text(32) },
   commentDelete: { path: pathField, id: idField },
   suggestionCreate: {
@@ -48,7 +53,7 @@ const clientSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Objec
     path: pathField, startByte: positionField, endByte: positionField,
     replacementBase64: base64Field, suggestionId: idField, traceJson: text(64 * 1024, false),
   },
-  suggestionReply: { path: pathField, id: idField, bodyBase64: base64Field },
+  suggestionReply: { path: pathField, id: idField, bodyBase64: base64Field, messageId: text(128, false), requestId: text(128, false) },
   suggestionAccept: { path: pathField, id: idField },
   suggestionRevert: { path: pathField, id: idField },
   suggestionReject: { path: pathField, id: idField },
@@ -186,6 +191,18 @@ function validateDiscussionMessage(value: unknown): void {
   serverString(message.author, 'Discussion author', 256);
   serverString(message.color, 'Discussion color', 32);
   serverString(message.body, 'Discussion body', 2048);
+  if (message.revision !== undefined) serverInteger(message.revision, 'Discussion revision', Number.MAX_SAFE_INTEGER);
+  if (message.deleted !== undefined && typeof message.deleted !== 'boolean') throw new TypeError('Invalid discussion deletion');
+  if (message.mergeConflict !== undefined && typeof message.mergeConflict !== 'boolean') throw new TypeError('Invalid discussion conflict marker');
+  if (message.editedAt !== undefined) serverString(message.editedAt, 'Discussion edit date', 64);
+  if (message.branchMergeBase !== undefined) {
+    const base = serverRecord(message.branchMergeBase, 'Discussion merge base');
+    for (const field of ['origin', 'source', 'target']) {
+      if (!/^[0-9a-f]{64}$/u.test(serverString(base[field], 'Discussion merge fingerprint', 64))) {
+        throw new TypeError('Invalid discussion merge fingerprint');
+      }
+    }
+  }
   serverString(message.createdAt ?? '', 'Discussion date', 64);
 }
 
@@ -199,6 +216,14 @@ function validateReviewItem(value: unknown, kind: string): void {
   serverString(item.startRelative, `${kind} start`, 4096);
   serverString(item.endRelative, `${kind} end`, 4096);
   for (const message of serverArray(item.messages ?? [], `${kind} messages`, 100)) validateDiscussionMessage(message);
+  if (item.deletedMessageIds !== undefined) {
+    for (const id of serverArray(item.deletedMessageIds, `${kind} deletion history`, 4096)) serverString(id, 'Deleted message id', 128);
+  }
+  if (item.deletionHistoryBlocked !== undefined && typeof item.deletionHistoryBlocked !== 'boolean') throw new TypeError('Invalid discussion history flag');
+  if (item.mergeOverflowIds !== undefined) {
+    for (const id of serverArray(item.mergeOverflowIds, `${kind} overflow history`, 4096)) serverString(id, 'Overflow message id', 128);
+  }
+  if (item.mergeOverflowBlocked !== undefined && typeof item.mergeOverflowBlocked !== 'boolean') throw new TypeError('Invalid discussion overflow flag');
   if (kind === 'Suggestion') {
     serverString(item.originalText, 'Suggestion original text', 16 * 1024);
     serverString(item.replacementText, 'Suggestion replacement text', 16 * 1024);
@@ -230,6 +255,7 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
     return message;
   }
   if (type === 'synced') {
+    if (message.discussionUpdates !== undefined && typeof message.discussionUpdates !== 'boolean') throw new TypeError('Invalid discussion capability');
     if (message.reservationUpdates !== undefined && typeof message.reservationUpdates !== 'boolean') {
       throw new TypeError('Reservation update capability must be boolean');
     }
@@ -328,6 +354,14 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
   if (type === 'reservations') {
     serverString(message.documentId, 'Server document id', 1024);
     for (const item of serverArray(message.reservations, 'Server reservations', 500)) validateReservation(item);
+    return message;
+  }
+  if (type === 'discussion-result') {
+    serverString(message.requestId, 'Discussion request id', 128);
+    serverString(message.id, 'Discussion id', 256);
+    if (!['saved', 'stale', 'deleted', 'error'].includes(String(message.status))) throw new TypeError('Invalid discussion result');
+    if (message.revision !== undefined) serverInteger(message.revision, 'Discussion revision', Number.MAX_SAFE_INTEGER);
+    serverString(message.message ?? '', 'Discussion error', 2048);
     return message;
   }
   if (type === 'review') {

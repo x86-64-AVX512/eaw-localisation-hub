@@ -43,6 +43,7 @@ foreach ($scriptName in @(
     'start-agent-ui.ps1',
     'start-hub.ps1',
     'agent-status.ps1',
+    'agent-network.ps1',
     'hash-utils.ps1',
     'check-node-runtime.mjs',
     'update-client.ps1',

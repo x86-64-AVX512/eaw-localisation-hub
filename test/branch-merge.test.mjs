@@ -11,6 +11,7 @@ import { resolveReviewRange } from '../apps/server/src/review-anchors.mjs';
 import { GitBranchCache } from '../apps/server/src/git-branch-cache.mjs';
 import { RoomRegistry } from '../apps/server/src/room-registry.mjs';
 import { TicketStore } from '../apps/server/src/ticket-store.mjs';
+import { minimalCommentThread } from '../apps/server/src/room-metadata.mjs';
 
 const file = 'localisation/russian/test_l_russian.yml';
 const commit = 'a'.repeat(40);
@@ -130,6 +131,107 @@ test('retry merges missing replies into an already copied thread without duplica
   await service.refresh();
   assert.equal(target.commentThreads.length, 1);
   assert.deepEqual(target.commentThreads[0].messages.map((message) => message.id), ['reply-1']);
+});
+
+test('retry carries source-only edits and deletions relative to the saved migration base', async () => {
+  const { service, source, target } = fixture();
+  const thread = source.commentThreads[0];
+  thread.messages = [
+    { id: 'root', body: 'Root', author: 'Translator', createdAt: '2026-10-01' },
+    { id: 'reply-1', body: 'Old', author: 'Reviewer', createdAt: '2026-10-02' },
+    { id: 'reply-2', body: 'Still here', author: 'Reviewer', createdAt: '2026-10-03' },
+  ];
+  target.flush = async () => { throw new Error('Simulated failed migration after copying'); };
+  await service.refresh();
+  target.flush = async () => {};
+  thread.messages[1] = { ...thread.messages[1], body: 'Edited in branch', revision: 2 };
+  thread.messages[2] = { ...thread.messages[2], body: '', deleted: true, revision: 1 };
+  thread.messages.push({id:'reply-3',body:'',deleted:true,revision:1,createdAt:'2026-10-04'});
+  await service.refresh();
+  const messages = target.commentThreads[0].messages;
+  assert.deepEqual(messages.map((message) => message.id), ['root', 'reply-1', 'reply-2']);
+  assert.equal(messages[0].body, 'Root');
+  assert.equal(messages[1].body, 'Edited in branch');
+  assert.equal(messages[2].deleted, true);
+  assert.deepEqual(target.commentThreads[0].deletedMessageIds,['reply-3']);
+});
+
+test('divergent edits after a partial migration keep both versions and do not block the branch', async () => {
+  const { service, source, target, ticket, registry } = fixture();
+  target.flush = async () => { throw new Error('Simulated failed migration after copying'); };
+  await service.refresh();
+  target.flush = async () => {};
+  Object.assign(source.commentThreads[0].messages[0],{body:'Earlier source edit',revision:2,editedAt:'2026-10-26T10:00:00Z'});
+  Object.assign(target.commentThreads[0].messages[0],{body:'Later target edit',revision:1,editedAt:'2026-10-26T11:00:00Z'});
+  await service.refresh();
+  assert.deepEqual(target.commentThreads[0].messages.map((message) => message.body), ['Later target edit', 'Earlier source edit']);
+  assert.equal(target.commentThreads[0].messages[0].revision, 1);
+  assert.equal(ticket.baseBranch, 'general-dev');assert.equal(registry.mergedBranches.size, 1);
+});
+
+test('a target-only edit made after a partial migration survives retry', async () => {
+  const {service,target}=fixture();
+  target.flush=async()=>{throw new Error('Simulated failed migration after copying');};
+  await service.refresh();target.flush=async()=>{};
+  Object.assign(target.commentThreads[0].messages[0],{body:'Target edit',revision:1});
+  await service.refresh();
+  assert.equal(target.commentThreads[0].messages[0].body,'Target edit');
+});
+
+test('a full discussion sends conflicts to an anchored overflow thread and retries survive its deletion', async () => {
+  const {service,source,target,ticket}=fixture();
+  const original=structuredClone(source.commentThreads[0]);
+  original.messages[0].body='Target';
+  original.messages.push(...Array.from({length:99},(_,i)=>({id:`target-${i}`,body:'Other',author:'Reviewer'})));
+  target.commentThreads=[original];
+  target.flush=async()=>{throw new Error('Simulated failed migration after copying');};
+  await service.refresh();
+  assert.equal(target.commentThreads.length,2);
+  assert.equal(target.commentThreads[0].messages.length,100);
+  const first=target.commentThreads[1];
+  assert.equal(first.messages[0].body,source.commentThreads[0].messages[0].body);
+  assert.equal(first.messages[0].mergeConflict,true);
+  assert.deepEqual(resolveReviewRange(target.document,first),resolveReviewRange(target.document,original));
+  await service.refresh();assert.equal(target.commentThreads.length,2);
+  target.commentThreads=[minimalCommentThread(JSON.parse(JSON.stringify(target.commentThreads[0])))];
+  await service.refresh();assert.equal(target.commentThreads.length,1);
+  Object.assign(source.commentThreads[0].messages[0],{body:'New source version',revision:1});
+  await service.refresh();assert.equal(target.commentThreads.length,2);
+  assert.notEqual(target.commentThreads[1].id,first.id);
+  assert.equal(target.commentThreads[1].messages[0].body,'New source version');
+  target.flush=async()=>{};await service.refresh();
+  assert.equal(ticket.baseBranch,'general-dev');assert.equal(target.commentThreads.length,2);
+});
+
+test('overflow respects room count and metadata budgets without deleting source work or logging success', async context => {
+  for(const limit of ['count','metadata']){
+    const {service,source,target,ticket,registry}=fixture();
+    const original=structuredClone(source.commentThreads[0]);original.messages[0].body='Target';
+    original.messages.push(...Array.from({length:99},(_,i)=>({id:`target-${i}`,body:'Other',author:'Reviewer'})));
+    target.commentThreads=[original];
+    if(limit==='count')target.commentThreads.push(...Array.from({length:499},(_,i)=>({...structuredClone(original),id:`thread-${i}`,messages:[]})));
+    else target.assertMetadataBudget=()=>{throw new Error('budget');};
+    const before=structuredClone(target.commentThreads);
+    const warning=context.mock.method(console,'warn',()=>{});
+    await assert.rejects(service.migrate('feature',targetCommit,commit),limit==='count'?/room limit/:/budget/);
+    assert.deepEqual(target.commentThreads,before);assert.equal(ticket.baseBranch,'feature');
+    assert.equal(registry.mergedBranches.size,0);assert.equal(warning.mock.callCount(),0);warning.mock.restore();
+  }
+});
+
+test('merge evicts old tombstones instead of rejecting a thread within the live message limit', async () => {
+  const { service, source, target } = fixture();
+  const reply = (index, deleted = false) => ({ id: `reply-${index}`, body: deleted ? '' : 'Text',
+    ...(deleted ? { deleted: true } : {}), author: 'Reviewer', createdAt: `2026-10-01T00:${String(index).padStart(3, '0')}` });
+  target.commentThreads.push({ ...structuredClone(source.commentThreads[0]),
+    messages: Array.from({ length: 100 }, (_, index) => reply(index + 10, index < 2)) });
+  source.commentThreads[0].messages = [reply(1)];
+  await service.refresh();
+  const messages = target.commentThreads[0].messages;
+  assert.equal(messages.length, 100);
+  assert.equal(messages[0].id, 'reply-1');
+  assert.equal(messages.filter((message) => message.deleted).length, 1);
+  assert.deepEqual(target.commentThreads[0].deletedMessageIds,['reply-10']);
 });
 
 test('deleted branch is redirected only by an exact merged pull request, not by deletion alone', async () => {

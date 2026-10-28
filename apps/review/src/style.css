@@ -921,5 +921,24 @@ dialog :is(.simple-dialog-shell, .key-replace-shell) { gap:12px; }
 .review-card .card-actions button.danger { border-color:transparent; }
 @media (max-width:760px) { .ticket-catalog-shell { grid-template-columns:1fr; grid-template-rows:34% minmax(0,1fr); } .ticket-catalog-list { border-right:0; border-bottom:1px solid var(--wb-border); } .ticket-details { padding:14px; } .history-shell { grid-template-columns:190px minmax(0,1fr); } .personal-selection-heading { flex-direction:column; gap:6px; } .personal-selection-heading span { text-align:left; } }
 .readonly-workbench .workbench-menus { display:none; }
+.discussion-composer { display:flex; flex-direction:column; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid var(--wb-border); min-width:0; }
+.discussion-composer label { display:flex; flex-direction:column; gap:7px; font-size:11px; color:var(--wb-muted); }
+.discussion-composer textarea { box-sizing:border-box; display:block; width:100%; min-width:0; min-height:88px; max-height:240px; resize:vertical; padding:9px; border:1px solid var(--wb-border); border-radius:5px; background:var(--wb-bg); color:var(--wb-text); font-family:inherit; font-size:13px; line-height:1.5; white-space:pre-wrap; }
+.discussion-composer textarea:focus { outline:1px solid var(--author-color,var(--wb-accent)); border-color:var(--author-color,var(--wb-accent)); }
+.discussion-hint { color:var(--wb-muted); font-size:10px; line-height:1.5; }
+.discussion-error, .discussion-hint.error { color:#ed9292; font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.discussion-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:5px; }
+.discussion-actions button { padding:5px 7px; font-size:11px; }
+.discussion-actions button:first-child { margin-right:auto; }
+.discussion-actions button.primary { color:#fff; background:#2867ba; border-color:#2867ba; }
+.discussion-actions button:disabled { opacity:.45; }
+.comment-draft-card { border-left:2px solid var(--author-color) !important; }
+.comment-draft-card > strong { font-size:12px; color:var(--wb-text); }
+.message-actions { grid-column:2; display:flex; flex-wrap:wrap; gap:4px; margin-top:2px; }
+.message-actions:empty { display:none; }
+.message-actions button { padding:2px 4px; font-size:10px; background:transparent; border-color:transparent; color:var(--wb-muted); }
+.message-actions button:hover:not(:disabled) { color:var(--wb-text); background:var(--wb-hover); }
+.message-edited { font-size:9px; font-style:italic; color:var(--wb-muted); }
+.thread-message > .discussion-composer { grid-column:2; width:100%; }
 @media (max-width:960px) { .workbench-topline { gap:10px; } .workbench-brand strong { display:none; } .review-workbench .ticket-switcher #ticket-select { max-width:210px; } .workspace { --collaboration-width:180px; --discussions-width:270px; } .workspace.collaboration-collapsed { --collaboration-width:0px; } .workspace.discussions-collapsed { --discussions-width:0px; } }
 @media (max-width:640px) { .workbench-topline { padding:0 7px; gap:6px; } .review-menu summary { padding:5px 6px; } .review-workbench .ticket-switcher #ticket-select { max-width:150px; } .review-workbench .ticket-switcher #ticket-status { max-width:100px; } .review-workbench .brand { padding-left:10px; } .review-statusbar { gap:8px; } .status-format { display:none; } }

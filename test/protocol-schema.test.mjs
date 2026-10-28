@@ -60,7 +60,7 @@ test('every dispatched Review command has an explicit schema', () => {
   assert.deepEqual(clientMessageTypes, [
     'open', 'activate', 'deactivate', 'close', 'edit', 'snapshot', 'reviewUpdate', 'cursor', 'undo', 'redo',
     'reservationCreate', 'reservationDeleteAt', 'reservationUpdate', 'reservationDelete', 'commentCreate', 'commentReply',
-    'commentStatus', 'commentDelete', 'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
+    'discussionMessageUpdate', 'discussionMessageDelete', 'commentStatus', 'commentDelete', 'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
     'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'avatarSet', 'avatarDelete',
     'recoveryIssue', 'recoveryConfirm', 'recoveryDiscard', 'externalConflictResolve',
     'historyRequest', 'historyRestore', 'personalFileMaterialize', 'personalFileSelectionSet',

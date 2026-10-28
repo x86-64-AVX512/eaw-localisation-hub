@@ -53,7 +53,11 @@ export function attachDocumentSocket({
   };
   socket.messageQueue = Promise.resolve();
   const respondError = (control: Record<string, unknown> | null, message: string) => {
-    if (control?.type === 'reservation-update' && typeof control.requestId === 'string'
+    if (typeof control?.requestId === 'string' && control.requestId.length > 0 && control.requestId.length <= 128
+      && ['comment-create', 'comment-reply', 'suggestion-reply', 'discussion-message-update', 'discussion-message-delete'].includes(String(control.type))) {
+      sendWithBackpressure(socket, JSON.stringify({ type: 'discussion-result', requestId: control.requestId,
+        id: control.id, status: 'error', message }));
+    } else if (control?.type === 'reservation-update' && typeof control.requestId === 'string'
       && control.requestId.length > 0 && control.requestId.length <= 128
       && typeof control.id === 'string' && control.id.length > 0 && control.id.length <= 128) {
       sendWithBackpressure(socket, JSON.stringify({ type: 'reservation-update-result', requestId: control.requestId,

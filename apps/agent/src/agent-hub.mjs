@@ -12,11 +12,12 @@ import {
 } from '../../../packages/shared/src/constants.mts';
 import { normaliseTrackedPath, withoutUtf8Bom } from '../../../packages/shared/src/text.mts';
 import { DocumentBinding } from './document-binding.mjs';
+import { mutateDiscussion, rejectDiscussionRequest } from './discussion-actions.mjs';
 import * as ticketContext from './git-ticket-context.mts';
 import { TicketWorkflow } from './ticket-workflow.mjs';
 import { KeyReplacementWorkflow } from './key-replacement-workflow.mjs';
 import { resolveReviewAnchors } from './review-document.mjs';
-import { serverHttpUrl } from './server-http-url.mts';
+import { requestAgentJson, SLOW_SERVER_OPERATION_MILLISECONDS } from './agent-http.mjs';
 import { transitionWorkspace } from './workspace-transition.mjs';
 import { runGitAsync, runGitSync } from './git-executable.mts';
 import { DiffCache } from './diff-cache.mjs';
@@ -56,6 +57,7 @@ function removeLegacyCommitGuard(repository) {
 export class AgentHub {
   constructor(options) {
     this.options = options;
+    this.requestController = new AbortController();
     this.diffCache = new DiffCache(path.join(options.state, 'diff-cache'));
     this.clients = new Set();
     this.clientsById = new Map();
@@ -153,6 +155,7 @@ export class AgentHub {
       // authenticated server response has supplied the account identity.
       trainingProgressConfirmed: this.identity?.trainingProgressConfirmed === true,
       serverVersion: this.serverVersion ?? '',
+      draftScope: crypto.createHash('sha256').update(JSON.stringify([this.options.server, this.options.repo])).digest('hex'),
     });
   }
 
@@ -480,7 +483,10 @@ export class AgentHub {
   }
 
   async ticketRequest(route, options = {}) {
-    return this.authRequest(route, options);
+    // Ticket writes upload file texts and do Git work before the server answers. Reads
+    // keep the short header deadline; their bodies only time out when stalled.
+    const write = (options.method ?? 'GET') !== 'GET';
+    return this.authRequest(route, write ? { timeoutMilliseconds: SLOW_SERVER_OPERATION_MILLISECONDS, ...options } : options);
   }
 
   async assertCanonicalGitHead() {
@@ -625,6 +631,7 @@ export class AgentHub {
       const anchoredCommand = message;
       message = resolveReviewAnchors(state.binding, client, message);
       if (!message) {
+        rejectDiscussionRequest(client, absolutePath, anchoredCommand, 'Привязка комментария больше недоступна. Выберите место ещё раз.');
         if (anchoredCommand.type === 'reservationUpdate') client.send({ type: 'reservationUpdateResult',
           path: absolutePath, id: anchoredCommand.id, requestId: anchoredCommand.requestId, status: 'error',
           message: 'Выделенный текст изменился. Выделите новый диапазон брони ещё раз.' });
@@ -636,7 +643,7 @@ export class AgentHub {
     }
     const gitMutations = new Set([
       'edit', 'snapshot', 'reviewUpdate', 'undo', 'redo', 'reservationCreate', 'reservationDeleteAt',
-      'reservationDelete', 'reservationUpdate', 'commentCreate', 'commentReply', 'commentStatus', 'commentDelete',
+      'reservationDelete', 'reservationUpdate', 'commentCreate', 'commentReply', 'commentStatus', 'commentDelete', 'discussionMessageUpdate', 'discussionMessageDelete',
       'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
       'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'historyRestore',
       'externalConflictResolve', 'personalFileMaterialize', 'personalConflictResolve',
@@ -645,6 +652,7 @@ export class AgentHub {
     if (gitMutations.has(message.type) && message.type !== 'documentVariantRequest') {
       const control = message.type.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
       if (!documentControlAllowed(this.identity, state.binding.relativePath, control)) {
+        rejectDiscussionRequest(client, absolutePath, message, 'Недостаточно прав для изменения обсуждения.');
         if (message.type === 'reservationUpdate') client.send({ type: 'reservationUpdateResult',
           path: absolutePath, id: message.id, requestId: message.requestId, status: 'error',
           message: 'Недостаточно прав для изменения брони в этом документе.' });
@@ -657,6 +665,7 @@ export class AgentHub {
     if (gitMutations.has(message.type)) this.repositoryEditEpoch += 1;
     if (!state.binding.gitWritable && gitMutations.has(message.type)
       && !(message.type === 'externalConflictResolve' && state.binding.gitState?.status === 'conflict')) {
+      rejectDiscussionRequest(client, absolutePath, message, 'Документ недоступен для изменений. Черновик сохранён.');
       if (message.type === 'reservationUpdate') client.send({ type: 'reservationUpdateResult',
         path: absolutePath, id: message.id, requestId: message.requestId, status: 'error',
         message: 'Документ доступен только для чтения. Обновите Git-версию файла.' });
@@ -708,6 +717,7 @@ export class AgentHub {
     else if (message.type === 'reservationDeleteAt') state.binding.deleteReservationAt(client, absolutePath, message);
     else if (message.type === 'reservationDelete') state.binding.deleteReservation(client, absolutePath, message);
     else if (message.type === 'commentCreate') state.binding.createComment(client, absolutePath, message);
+    else if (['discussionMessageUpdate', 'discussionMessageDelete'].includes(message.type)) mutateDiscussion(state.binding, client, absolutePath, message);
     else if (message.type === 'commentReply') state.binding.replyToDiscussion(client, absolutePath, message, 'comment');
     else if (message.type === 'commentStatus') state.binding.setCommentStatus(client, absolutePath, message);
     else if (message.type === 'commentDelete') state.binding.deleteReviewItem(client, absolutePath, message, 'comment');
@@ -795,31 +805,19 @@ export class AgentHub {
   }
 
   async authRequest(route, options = {}) {
-    const endpoint = serverHttpUrl(this.options.server, route);
-    const response = await fetch(endpoint, {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${this.options.token}`,
-        'Content-Type': 'application/json',
-        ...(options.headers ?? {}),
-      },
-    });
-    const rawPayload = await response.json().catch(() => ({}));
-    if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
-      throw new TypeError('Authentication API returned a non-object response');
-    }
-    const payload = /** @type {Record<string, unknown>} */ (rawPayload);
-    if (!response.ok) throw new Error(String(payload.error || `Authentication API failed with HTTP ${response.status}`));
-    return payload;
+    return requestAgentJson(this.options, route, options, this.requestController?.signal);
   }
 
-  async refreshAccountStatus() {
-    const [payload, health] = await Promise.all([
-      this.authRequest('/api/auth/me', { method: 'GET' }),
-      this.authRequest('/health', { method: 'GET' }),
-    ]);
-    this.serverVersion = String(health.version ?? '');
-    this.updateIdentity(payload.user);
+  refreshAccountStatus() {
+    if (this.closing) return Promise.resolve();
+    this.accountRefreshPromise ??= (async () => {
+      const [payload, health] = await Promise.all([
+        this.authRequest('/api/auth/me', { method: 'GET' }), this.authRequest('/health', { method: 'GET' }),
+      ]);
+      if (this.closing) return;
+      this.serverVersion = String(health.version ?? ''); this.updateIdentity(payload.user);
+    })().finally(() => { this.accountRefreshPromise = null; });
+    return this.accountRefreshPromise;
   }
 
   async issueRecoveryCode(client) {
@@ -872,6 +870,7 @@ export class AgentHub {
 
   async close() {
     this.closing = true;
+    this.requestController?.abort();
     clearInterval(this.accountRefreshTimer);
     clearInterval(this.gitCommitTimer);
     if (this.branchDebounce) clearTimeout(this.branchDebounce);

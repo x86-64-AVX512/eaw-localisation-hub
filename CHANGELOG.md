@@ -1,6 +1,22 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.8F11` form; package metadata uses `0.8.8-beta.11`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.9F1` form; package metadata uses `0.8.9-beta.1`.
+
+## 0.8.9F1 – 2026-10-26
+
+- Compose comments and replies inline in the discussion panel; keep working in the file and return to an unsent draft. Send explicitly with the button or Ctrl+Enter.
+- Keep local drafts across tab reloads, scoped by account, server, repository, branch, file and ticket. Anchor new drafts to Yjs positions so preceding text edits preserve their location.
+- Let authors edit their messages and delete individual replies; let admins and senior translators delete replies for moderation. Preserve message authorship and creation time, mark edits, and reject stale revisions without dropping draft text.
+- Confirm sends and changes only after server persistence. Correlate acknowledgements with the requesting window, retain drafts on errors or lost acknowledgements, and use stable IDs for safe retries. Persist deletion tombstones to prevent delayed reply replay.
+- Add Russian/English controls and negotiate the optional discussionUpdates capability. Update both client and server to enable these features; EHSP remains 21.
+- Keep compacted deletion IDs durably so late retries cannot restore removed replies; retain the limit of 100 live messages and bound deletion history without dropping old IDs.
+- Persist message migration bases for branch merge retries. Apply source-only changes and preserve target-only changes. On divergent edits, or legacy copies without a provable base, keep the target message and add the source version beside it, so the branch migration still completes.
+- Preserve excess valid deletion IDs in server-only recovery metadata instead of truncating them. Keep the affected discussion readable and block new replies until repaired; other discussions remain writable.
+- Put conflicting versions and new branch replies in an anchored overflow discussion when the original already has 100 live messages or a damaged deletion ledger; neither stops the branch migration. Retries apply later branch edits and deletions to moved replies without restoring copies that users deleted. Persist transfer receipts so retries do not recreate deleted copies or deleted overflow discussions. Respect room quotas and log successful conflict preservation only after persistence.
+- Label preserved conflict copies as transferred versions in Review.
+- Cancel pending account preflight when Agent is stopped, the server changes or a different session is saved; ignore late callbacks from a cancelled start. Report completed logout and password-change requests for their original server after an address change without applying stale account or credential callbacks.
+- Keep the Desktop Agent window responsive while the server is unavailable: run health and account requests in the background, bound header/body waits, cancel requests on exit or server changes, and distinguish an unknown token state from a confirmed authorization refusal. Start Agent locally without waiting for the server and open Review through a separate launcher process.
+- Bound Agent HTTP requests and WebSocket handshake/sync/heartbeat waits. Time out stalls rather than slow transfers: body and WebSocket limits restart on every received byte, and ticket writes wait up to 120 seconds for the server. Reconnect stalled document connections with backoff, retain unconfirmed local changes, and cancel account requests on shutdown. Never automatically retry account mutations whose outcome is unknown.
 
 ## 0.8.8F11 – 2026-10-22
 
@@ -241,3 +257,8 @@ All notable public changes to EaW Localisation Hub are recorded here. Version na
 
 This is an early beta and the program is still rough. Back up project and server data before upgrades.
 - Render U+2014 em dashes longer in Review and comparisons using an original single-glyph display font. U+2013 en dashes, copied text and saved localisation bytes are unchanged.
+- Add an opt-in experimental text-language mode to key replacement while keeping Classic as the default. Ignore comments and filter values dominated by the other script before checking input duplicates. Exclude technical insertions from Cyrillic/Latin counts, retain neutral values and duplicate errors, recognise English-original/Russian-translation review headings, and show skipped keys with their reasons. Recompute the same filter on apply and invalidate stale previews after changing input, language or mode.
+- Raise only key-replacement preview/apply JSON request limits to 1 MiB, including source text and file metadata. Keep the 500 selected-key limit and other endpoint budgets unchanged; explain the limit in Review and localise oversize errors.
+- Reject ambiguous value/comment quote boundaries in experimental key replacement instead of silently truncating text at an internal quote before #. Preserve Classic parsing and existing empty-value/duplicate rules. Show skipped and empty value counts in experimental apply confirmation; translate parser errors in Review.
+- Respect escaped quotes when reading existing replacement values, so a later replacement removes the complete previous value rather than leaving a tail after #.
+- Block key replacement in both modes when a selected repository value has ambiguous quote/comment boundaries. Report its file, key and source line, refuse the entire batch before writing, and protect direct low-level replacements. Unselected ambiguous keys remain untouched and do not block unrelated replacements.

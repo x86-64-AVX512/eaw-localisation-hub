@@ -1,5 +1,6 @@
 import { PROTOCOL_VERSION } from '../../../packages/shared/src/constants.mts';
 import * as actions from './document-actions.mjs';
+import { receiveDiscussionResult } from './discussion-actions.mjs';
 import * as disk from './disk-reconciliation.mjs';
 import * as diskRequests from './disk-merge-request.mjs';
 import * as gitState from './git-document-state.mjs';
@@ -9,6 +10,7 @@ import * as personalDocument from './personal-document.mjs';
 // Applies one validated server control message to a DocumentBinding. Kept apart
 // from the binding lifecycle so new message types do not grow the coordinator.
 export function receiveServerMessage(binding, message) {
+  if (message.type === 'discussion-result') { receiveDiscussionResult(binding, message); return; }
   if (message.type === 'reservation-update-result') {
     actions.receiveReservationUpdateResult(binding, message);
     return;

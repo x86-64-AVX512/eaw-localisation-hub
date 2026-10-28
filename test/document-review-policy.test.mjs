@@ -28,7 +28,8 @@ test('review discussion policy keeps canonical authors and idempotent message id
   assert.throws(() => newDiscussionMessage(target, alice, { messageId: 'message-2', body: 'x'.repeat(2049) }),
     /protocol limit/u);
   target.messages = Array.from({ length: 100 }, (_, index) => ({ id: String(index) }));
-  assert.throws(() => newDiscussionMessage(target, alice, { messageId: '0' }), /message limit/u);
+  assert.equal(newDiscussionMessage(target, alice, { messageId: '0' }), null);
+  assert.throws(() => newDiscussionMessage(target, alice, { messageId: 'new' }), /message limit/u);
 });
 
 test('review policy creates comments and validates anchors without trusting message author', () => {

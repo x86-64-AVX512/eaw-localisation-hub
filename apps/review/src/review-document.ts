@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { singleReplacement } from './editing-mode.ts';
-import { byteToUtf16 } from './review-utilities.ts';
+import { byteToUtf16, utf16ToByte } from './review-utilities.ts';
 
 const REMOTE = Symbol('agent');
 const encode = (bytes: Uint8Array): string => {
@@ -43,6 +43,19 @@ export function createReviewDocument({ send, onText, beforeChange = () => {} }: 
     send({ type: 'reviewUpdate', path, documentId, updateBase64: encode(update) });
   }
   return {
+    resolveAnchors(encoded: string): {startByte:number;endByte:number} | null {
+      if (!document) return null;
+      try {
+        const anchors = JSON.parse(encoded);
+        if (anchors.documentId !== documentId) return null;
+        const text = document.getText('content');
+        const source = text.toString();
+        const positions = ['startByte','endByte'].map(field => Y.createAbsolutePositionFromRelativePosition(
+          Y.decodeRelativePosition(decode(anchors.positions[field])),document!));
+        if (positions.some(position=>!position || position.type !== text)) return null;
+        return { startByte:utf16ToByte(source,positions[0]!.index),endByte:utf16ToByte(source,positions[1]!.index) };
+      } catch { return null; }
+    },
     anchor<T extends ReviewDocumentMessage>(message: T): T | (T & { reviewAnchors: string }) {
       if (!document || message.type === 'edit') return message;
       const text = document.getText('content');

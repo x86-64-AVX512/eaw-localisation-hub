@@ -1,8 +1,5 @@
-import { WebSocket } from 'ws';
 import * as Y from 'yjs';
 import { LocalPresenceMux } from './local-presence.mts';
-import { MAX_MESSAGE_BYTES } from '../../../packages/shared/src/constants.mts';
-import { validateServerMessage } from '../../../packages/shared/src/protocol-schema.mts';
 import * as actions from './document-actions.mjs';
 import * as disk from './disk-reconciliation.mjs';
 import * as diskRequests from './disk-merge-request.mjs';
@@ -13,8 +10,8 @@ import * as delivery from './document-delivery.mts';
 import { normaliseLineEndings } from '../../../packages/shared/src/text.mts';
 import * as personalDocument from './personal-document.mjs';
 import * as serverMessages from './document-server-messages.mjs';
+import { connectDocument, scheduleDocumentReconnect } from './document-connection.mjs';
 import { broadcastReviewUpdate, applyReviewUpdate } from './review-document.mjs';
-import { handleMergedBranchClose, handleUnavailableTicketClose } from './document-lifecycle.mts';
 const REMOTE_ORIGIN = Symbol('remote-server-update');
 export class DocumentBinding {
   constructor(hub, documentId, relativePath, ticketId = '') {
@@ -31,6 +28,7 @@ export class DocumentBinding {
     this.suggestions = new Map();
     this.reservationRevision = 0; this.reviewRevision = 0;
     this.reservationUpdates = false;
+    this.discussionUpdates = false;
     this.history = [];
     this.historyHeadId = '';
     this.presences = new Map();
@@ -43,6 +41,7 @@ export class DocumentBinding {
     this.closing = false;
     this.paused = false;
     this.reconnectTimer = null;
+    this.stopConnectionWatchdog = null;
     this.refreshScheduled = false;
     this.baseWrites = new Set();
     this.localUpdatePending = false; this.pendingUpdateSent = false;
@@ -71,67 +70,9 @@ export class DocumentBinding {
     this.connect();
   }
 
-  connect() {
-    if (this.paused || this.closing) return;
-    const url = new URL(this.hub.options.server);
-    url.searchParams.set('document', this.documentId);
-    gitState.appendGitHead(this, url);
-    const headers = this.hub.options.token
-      ? { Authorization: `Bearer ${this.hub.options.token}` }
-      : undefined;
-    this.serverStateVector = null;
-    this.socket = new WebSocket(url, { maxPayload: MAX_MESSAGE_BYTES, headers });
-    const socket = this.socket; socket.binaryType = 'arraybuffer';
-    this.socket.on('open', () => {
-      console.log('[agent] document connected');
-      this.emitDocumentStatus('syncing');
-    });
-    this.socket.on('message', (data, isBinary) => {
-      if (this.socket !== socket) return;
-      try {
-        if (isBinary) {
-          const update = new Uint8Array(data);
-          if (!this.synced) this.serverStateVector = Y.encodeStateVectorFromUpdate(update);
-          Y.applyUpdate(this.document, update, REMOTE_ORIGIN);
-        } else {
-          this.receiveServerMessage(validateServerMessage(JSON.parse(data.toString('utf8'))));
-        }
-      } catch (error) {
-        console.error('[agent] server message failed');
-      }
-    });
-    this.socket.on('close', (code, reason) => {
-      if (this.socket !== socket) return;
-      diskRequests.rejectDiskMergeRequests(this);
-      delivery.handleSocketClose(this);
-      this.synced = false;
-      personalDocument.resetPersonalRequest(this);
-      console.warn('[agent] document disconnected');
-      const closeReason = reason?.toString('utf8') || '';
-      if (handleMergedBranchClose(this, code)) return;
-      if (handleUnavailableTicketClose(this, code, closeReason)) return;
-      if (code === 1008) {
-        this.paused = true;
-        this.emitDocumentStatus('unauthorized');
-        const detail = closeReason || 'Authentication failed';
-        for (const client of this.clients) {
-          client.send({ type: 'notice', message: `Сервер отклонил авторизацию: ${detail}. Перезапустите Agent после входа.` });
-        }
-        return;
-      }
-      this.emitDocumentStatus('offline');
-      if (!this.closing && !this.paused) this.scheduleReconnect();
-    });
-    this.socket.on('error', () => console.error('[agent] websocket error'));
-  }
+  connect() { return connectDocument(this, REMOTE_ORIGIN); }
 
-  scheduleReconnect() {
-    if (this.reconnectTimer) return;
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.connect();
-    }, 1000);
-  }
+  scheduleReconnect() { return scheduleDocumentReconnect(this); }
 
   reconnectForGitHead() {
     return gitState.reconnectForGitHead(this);
@@ -331,7 +272,8 @@ export class DocumentBinding {
     this.synced = false;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
-    this.socket?.close();
+    this.stopConnectionWatchdog?.();
+    this.socket?.terminate();
     for (const client of this.clients) {
       client.send({
         type: 'workspaceChanged',

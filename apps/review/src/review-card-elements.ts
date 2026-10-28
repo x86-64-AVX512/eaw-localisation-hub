@@ -17,6 +17,11 @@ export interface ReviewCardItem {
 }
 
 export interface ReviewCardMessage {
+  messageId?: string;
+  authorId?: string;
+  revision?: number;
+  editedAt?: string;
+  mergeConflict?: boolean;
   author?: string;
   color?: string;
   avatarBase64?: string;
@@ -88,6 +93,12 @@ function messageElement(message: ReviewCardMessage, fallback: ReviewCardItem,
   date.dateTime = message.createdAt || fallback.createdAt || '';
   date.textContent = formatDate(message.createdAt || fallback.createdAt);
   meta.append(author, date);
+  if (message.mergeConflict) {
+    const mark = document.createElement('span'); mark.className = 'message-edited';
+    mark.textContent = uiText('Перенесённая версия');
+    mark.title = uiText('Версия сообщения из другой ветки, сохранённая при конфликте.');
+    meta.append(mark);
+  }
   const body = document.createElement('div');
   body.className = 'message-body';
   body.tabIndex = 0;

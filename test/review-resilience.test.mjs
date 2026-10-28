@@ -66,7 +66,9 @@ test('ticket navigation closes the active presence before reloading Review', () 
 });
 
 test('a deleted ticket releases its tab and redirects only if it is the active document', () => {
-  assert.match(documentBinding, /handleUnavailableTicketClose\(this, code, closeReason\)/u);
+  assert.match(documentBinding, /connectDocument\(this, REMOTE_ORIGIN\)/u);
+  const connection = fs.readFileSync(new URL('../apps/agent/src/document-connection.mjs', import.meta.url), 'utf8');
+  assert.match(connection, /handleUnavailableTicketClose\(binding,code,detail\)/u);
   assert.match(documentLifecycle, /code !== 1001 \|\| !binding\.ticketId[\s\S]*type: 'ticketUnavailable'/u);
   assert.match(documentLifecycle, /binding\.paused = true/u);
   assert.match(reviewApp, /message\.type === 'ticketUnavailable'[\s\S]*ticketPanel\.leaveUnavailable/u);

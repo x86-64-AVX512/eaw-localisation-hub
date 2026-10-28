@@ -47,6 +47,9 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/server/src/document-room.mjs',
     'apps/server/src/room-metadata.mjs',
     'apps/server/src/reservation-update.mjs',
+    'apps/server/src/discussion-control.mjs',
+    'apps/server/src/branch-discussion-merge.mjs',
+    'apps/server/src/branch-discussion-overflow.mjs',
     'apps/server/src/room-registry.mjs',
     'apps/server/src/ticket-store.mjs',
     'apps/server/src/ticket-http.mjs',
@@ -57,6 +60,9 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/server/src/git-commit-verifier.mjs',
     'apps/server/src/document-history.mjs',
     'apps/agent/src/document-actions.mjs',
+    'apps/agent/src/agent-http.mjs',
+    'apps/agent/src/document-connection.mjs',
+    'apps/agent/src/discussion-actions.mjs',
     'apps/agent/src/document-server-messages.mjs',
     'apps/agent/src/document-view.mjs',
     'apps/agent/src/disk-reconciliation.mjs',
@@ -92,6 +98,9 @@ test('security and collaboration boundaries have dedicated modules', () => {
     'apps/review/src/presence-controller.ts',
     'apps/review/src/review-cards.ts',
     'apps/review/src/comment-actions.ts',
+    'apps/review/src/discussion-editor.ts',
+    'apps/review/src/discussion-drafts.ts',
+    'apps/review/src/discussion-form.ts',
     'apps/review/src/review-card-layout.ts',
     'apps/review/src/review-navigation.ts',
     'apps/review/src/review-card-elements.ts',
@@ -134,6 +143,7 @@ test('local prototype exercises the production canonical Git path', () => {
 
 test('Review owns the complete collaboration UI without a native editor plugin', () => {
   const reviewSources = [
+    'apps/review/src/discussion-editor.ts',
     'apps/review/src/app.ts',
     'apps/review/src/comment-actions.ts',
     'apps/review/src/collaboration-panel.ts',
@@ -144,7 +154,7 @@ test('Review owns the complete collaboration UI without a native editor plugin',
   ].map(source).join('\n');
   for (const command of [
     'undo', 'redo', 'reservationCreate', 'reservationDeleteAt', 'reservationDelete',
-    'commentCreate', 'commentReply', 'commentStatus', 'commentDelete',
+    'commentCreate', 'commentReply', 'commentStatus', 'commentDelete', 'discussionMessageUpdate', 'discussionMessageDelete',
     'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept', 'suggestionReject',
     'suggestionDelete', 'avatarSet', 'avatarDelete', 'recoveryIssue', 'recoveryConfirm',
     'recoveryDiscard', 'externalConflictResolve',

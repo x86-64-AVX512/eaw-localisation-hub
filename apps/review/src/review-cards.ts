@@ -23,7 +23,7 @@ export function reviewCardFingerprint(item: { id: string; startByte: number; end
 }
 
 export function createReviewCards({
-  state, editor, rangeFromBytes, send, askText, showToast = () => {}, onEditSuggestion = (_item) => false,
+  state, editor, rangeFromBytes, send, discussionEditor, showToast = () => {}, onEditSuggestion = (_item) => false,
   onAcceptSuggestion = (_item) => {}, onRevertSuggestion = (_item) => {},
 }: ReviewCardsOptions) {
   const cards = requiredElement<HTMLElement>('#cards');
@@ -35,12 +35,6 @@ export function createReviewCards({
   const cardLayout = createReviewCardLayout({ state, editor, rangeFromBytes, cards, connectors, lane });
   const cardCache = new Map<string, { card: HTMLElement; fingerprint: string; item: CardItem }>();
   let focusTimer: ReturnType<typeof setTimeout> | undefined;
-
-  async function reply(type: CardItem['kind'], item: CardItem): Promise<void> {
-    const body = await askText(uiText("Ответить"), uiText("Сообщение"));
-    const command = type === 'comment' ? 'commentReply' : 'suggestionReply';
-    if (body?.trim()) send({ type: command, path: state.path, id: item.id, bodyBase64: encodeBase64(body.trim()) });
-  }
 
   function createCard(item: CardItem, messages: ReviewCardMessage[] | undefined): HTMLElement {
     const card = document.createElement('article');
@@ -75,9 +69,10 @@ export function createReviewCards({
       card.append(comparison);
     }
     renderMessages(card, item, messages, showToast);
+    discussionEditor.enhance(card,item,messages);
     const actions = document.createElement('div');
     actions.className = 'card-actions';
-    actions.append(cardButton(uiText("Ответить"), (value) => reply(item.kind, value), item));
+    actions.append(cardButton(uiText("Ответить"), value => discussionEditor.reply(value), item));
     if (item.kind === 'suggestion' && item.status === 'open') {
       const ownSuggestion = item.authorId ? item.authorId === state.userId : item.author === state.user;
       if (ownSuggestion && canEditDocument(state, state.relativePath ?? '')) actions.append(cardButton(
@@ -119,10 +114,12 @@ export function createReviewCards({
   }
 
   function render() {
+    const restoreFocus=discussionEditor.preserveFocus();
     const items = [
       ...[...state.comments.values()].map((item) => ({ ...item, kind: 'comment' as const })),
       ...[...state.suggestions.values()].map((item) => ({ ...item, kind: 'suggestion' as const })),
-    ].filter((item) => item.kind !== 'suggestion' || item.status !== 'accepted' || showAccepted.checked)
+    ].filter((item) => item.kind !== 'suggestion' || item.status !== 'accepted' || showAccepted.checked
+      || discussionEditor.hasDraftFor(item.kind,item.id))
       .sort((left, right) => left.startByte - right.startByte);
     count.textContent = String(items.length);
     empty.hidden = items.length !== 0;
@@ -132,19 +129,24 @@ export function createReviewCards({
       const messages = item.kind === 'suggestion'
         ? state.suggestionMessages.get(item.id) : state.commentMessages.get(item.id);
       const fingerprint = reviewCardFingerprint(item, messages, state.editingSuggestionId, state.userId)
-        + JSON.stringify(state.roles ?? []);
+        + JSON.stringify([state.roles ?? [],state.discussionUpdates]);
       liveKeys.add(key);
       const cached = cardCache.get(key);
       if (cached?.fingerprint === fingerprint) {
         cached.item.startByte = item.startByte;
         cached.item.endByte = item.endByte;
         cached.card.dataset.startByte = String(item.startByte);
+        discussionEditor.mount(cached.card,item);
         return cached.card;
       }
       const card = createCard(item, messages);
+      discussionEditor.mount(card,item);
       cardCache.set(key, { card, fingerprint, item });
       return card;
     });
+    nodes.push(...discussionEditor.newCards());
+    nodes.sort((left,right)=>Number(left.dataset.startByte)-Number(right.dataset.startByte));
+    empty.hidden = nodes.length !== 0;
     for (const key of cardCache.keys()) if (!liveKeys.has(key)) cardCache.delete(key);
     nodes.forEach((node, index) => {
       const current = cards.children[index] ?? null;
@@ -152,6 +154,7 @@ export function createReviewCards({
     });
     while (cards.children.length > nodes.length) cards.lastElementChild?.remove();
     cardLayout.layout();
+    restoreFocus();
   }
 
   showAccepted.addEventListener('change', render);

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { requireDocumentEdit } from '../../../packages/shared/src/document-permissions.mts';
 import {
-  localisationEntries, parseKeyReplacementBatch, replaceLocalisationValues,
+  AMBIGUOUS_QUOTE_MESSAGE, scanLocalisationEntries, parseKeyReplacementBatch, replaceLocalisationValues,
 } from '../../../packages/shared/src/localisation-replace.mts';
 import {
   readTrackedTextFile, withoutUtf8Bom, withUtf8Bom, writeTrackedTextFile,
@@ -49,22 +49,28 @@ function digest(text) {
 export class KeyReplacementWorkflow {
   constructor(hub) { this.hub = hub; }
 
-  async preview(input, language = 'russian') {
+  async preview(input, language = 'russian', mode = 'classic') {
+    const parsed = parseKeyReplacementBatch(input, { language, mode });
     if (this.hub.assertCanonicalGitHead) await this.hub.assertCanonicalGitHead();
-    const parsed = parseKeyReplacementBatch(input);
     if (parsed.entries.length > MAX_BATCH_ENTRIES) {
       parsed.errors.push({ line: 0, message: `За один раз допускается не более ${MAX_BATCH_ENTRIES} ключей.` });
     }
-    if (parsed.errors.length || parsed.duplicateKeys.length) {
-      return { ...parsed, missingKeys: [], duplicateMatches: [], changes: [], files: [] };
+    if (parsed.errors.length || parsed.duplicateKeys.length || !parsed.entries.length) {
+      return { ...parsed, missingKeys: [], duplicateMatches: [], changes: [], files: [], language, mode };
     }
     const wanted = new Map(parsed.entries.map((entry) => [entry.key, entry.text]));
     const found = new Map(parsed.entries.map((entry) => [entry.key, []]));
     const fileValues = [];
+    const sourceErrors = [];
     for (const absolutePath of await localisationFiles(this.hub.options.repo, language)) {
       const text = withoutUtf8Bom(await readTrackedTextFile(this.hub.options.repo, absolutePath));
       const relativePath = path.relative(this.hub.options.repo, absolutePath).replaceAll('\\', '/');
-      const matches = localisationEntries(text).filter((entry) => wanted.has(entry.key));
+      const scanned = scanLocalisationEntries(text);
+      for (const entry of scanned.ambiguousEntries) {
+        if (wanted.has(entry.key)) sourceErrors.push({ file: relativePath, key: entry.key,
+          line: entry.line, message: AMBIGUOUS_QUOTE_MESSAGE });
+      }
+      const matches = scanned.entries.filter((entry) => wanted.has(entry.key));
       if (!matches.length) continue;
       for (const match of matches) found.get(match.key).push({
         file: relativePath, line: match.line, oldText: match.text,
@@ -73,6 +79,8 @@ export class KeyReplacementWorkflow {
         path: relativePath, hash: digest(text), text, matches,
       });
     }
+    if (sourceErrors.length) return { ...parsed, errors: sourceErrors,
+      missingKeys: [], duplicateMatches: [], changes: [], files: [], language, mode };
     const missingKeys = [...found].filter(([, matches]) => matches.length === 0).map(([key]) => key);
     const duplicateMatches = [...found].filter(([, matches]) => matches.length > 1)
       .map(([key, matches]) => ({ key, matches }));
@@ -84,14 +92,13 @@ export class KeyReplacementWorkflow {
       && file.text !== replaceLocalisationValues(file.text, safeWanted).text)
       .map(({ path: filePath, hash }) => ({ path: filePath, hash }));
     return {
-      entries: parsed.entries, errors: [], duplicateKeys: [], missingKeys,
-      duplicateMatches, changes, files, language,
+      ...parsed, missingKeys, duplicateMatches, changes, files, language, mode,
     };
   }
 
-  async apply(input, expectedFiles, language = 'russian') {
+  async apply(input, expectedFiles, language = 'russian', mode = 'classic') {
     requireDocumentEdit(this.hub.identity, `localisation/${language}/batch.yml`);
-    const preview = await this.preview(input, language);
+    const preview = await this.preview(input, language, mode);
     if (preview.errors.length || preview.duplicateKeys.length || preview.missingKeys.length
       || preview.duplicateMatches.length) throw new Error('Предпросмотр содержит ошибки; применение остановлено.');
     const expected = new Map((Array.isArray(expectedFiles) ? expectedFiles : [])

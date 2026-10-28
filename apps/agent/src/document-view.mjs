@@ -159,6 +159,7 @@ export function resolveAnchoredItem(binding, item) {
 
 export function discussionText(_binding, item) {
   return (item.messages ?? [])
+    .filter(message => !message.deleted)
     .map((message) => `${message.author ?? 'Unknown'}: ${message.body ?? ''}`)
     .join('\n\n');
 }
@@ -199,9 +200,10 @@ export function emitReview(binding, onlyClient = null) {
     }
   }
   if (!targets.length) return;
-  const messages = [{ type: 'commentReset' }];
+  /** @type {Array<{type: string; [key: string]: any}>} */
+  const messages = [{ type: 'commentReset', canUpdate: binding.discussionUpdates === true }];
   for (const { thread, resolved, status } of threads) {
-        const lastMessage = thread.messages?.at(-1);
+        const lastMessage = thread.messages?.findLast(item => !item.deleted);
         messages.push({
           type: 'commentThread',
           id: thread.id,
@@ -211,7 +213,7 @@ export function emitReview(binding, onlyClient = null) {
           color: thread.color ?? '#8a8a8a',
           createdAt: thread.createdAt ?? thread.messages?.[0]?.createdAt ?? '',
           status,
-          messageCount: thread.messages?.length ?? 0,
+          messageCount: thread.messages?.filter(item => !item.deleted).length ?? 0,
           summaryAuthor: lastMessage?.author ?? thread.author,
           summaryColor: lastMessage?.color ?? thread.color ?? '#8a8a8a',
           summaryBase64: Buffer.from(lastMessage?.body ?? '', 'utf8').toString('base64'),
@@ -220,8 +222,10 @@ export function emitReview(binding, onlyClient = null) {
           endByte: resolved ? byteOffsetFor(binding, canonical, resolved.end) : 0,
         });
         for (const discussionMessage of thread.messages ?? []) {
+          if (discussionMessage.deleted) continue;
           messages.push({
             type: 'commentMessage',
+            messageId: discussionMessage.id, revision: discussionMessage.revision ?? 0, editedAt: discussionMessage.editedAt ?? '', mergeConflict: discussionMessage.mergeConflict === true,
             id: thread.id,
             author: discussionMessage.author,
             authorId: discussionMessage.authorId ?? '',
@@ -253,8 +257,10 @@ export function emitReview(binding, onlyClient = null) {
           endByte: resolved ? byteOffsetFor(binding, canonical, resolved.end) : 0,
         });
         for (const discussionMessage of suggestion.messages ?? []) {
+          if (discussionMessage.deleted) continue;
           messages.push({
             type: 'suggestionMessage',
+            messageId: discussionMessage.id, revision: discussionMessage.revision ?? 0, editedAt: discussionMessage.editedAt ?? '', mergeConflict: discussionMessage.mergeConflict === true,
             id: suggestion.id,
             author: discussionMessage.author,
             authorId: discussionMessage.authorId ?? '',

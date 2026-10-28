@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor';
 import type { ReviewCardItem, ReviewCardMessage } from './review-card-elements.ts';
+import type { createDiscussionEditor } from './discussion-editor.ts';
 
 export interface ReviewItemBase extends Omit<ReviewCardItem, 'kind'> {
   startByte: number;
@@ -20,6 +21,7 @@ export interface ReviewSuggestion extends ReviewItemBase {
 export type CardItem = (ReviewComment & { kind: 'comment' }) | (ReviewSuggestion & { kind: 'suggestion' });
 
 export interface ReviewCardsState {
+  discussionUpdates?: boolean;
   roles?: string[];
   relativePath?: string;
   path: string;
@@ -37,7 +39,7 @@ export interface ReviewCardsOptions {
   editor: Monaco.editor.IStandaloneCodeEditor;
   rangeFromBytes: (startByte: number, endByte: number) => Monaco.Range;
   send: (message: { type: string; path: string; id: string; bodyBase64?: string; status?: string }) => void;
-  askText: (title: string, placeholder: string) => Promise<string | null | undefined>;
+  discussionEditor: ReturnType<typeof createDiscussionEditor>;
   showToast?: (text: string, error?: boolean) => void;
   onEditSuggestion?: (item: ReviewSuggestion & { kind: 'suggestion' }) => unknown;
   onAcceptSuggestion?: (item: ReviewSuggestion & { kind: 'suggestion' }) => void;

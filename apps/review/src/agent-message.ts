@@ -10,7 +10,7 @@ type AgentMessageBody =
   | { type: 'ticketUnavailable'; ticketId: string; reason?: string }
   | { type: 'agentHello'; user: string; userId?: string; color?: string; avatarBase64?: string;
       recoveryStatus?: string; temporaryPassword?: boolean; workspace: string; version?: string; roles?: string[];
-      serverVersion?: string; trainingProgress?: Record<string, number>; trainingProgressConfirmed?: boolean }
+      draftScope?: string; serverVersion?: string; trainingProgress?: Record<string, number>; trainingProgressConfirmed?: boolean }
   | { type: 'documentStatus'; status: string; reason?: string; branch?: string; changedFiles?: string[]; message?: string }
   | { type: 'documentReady' }
   | ({ type: 'documentSync' } & ReviewDocumentUpdate)
@@ -19,11 +19,12 @@ type AgentMessageBody =
   | { type: 'documentVariant'; variantEpoch: string; authorId: string; textBase64: string }
   | { type: 'personalFileStatus'; message: string }
   | { type: 'reviewBatchStart' | 'reviewBatchEnd' | 'presenceReset' | 'reservationReset'
-      | 'reservationTargetReset' | 'commentReset' | 'suggestionReset' }
+      | 'reservationTargetReset' | 'commentReset' | 'suggestionReset'; canUpdate?:boolean }
   | ({ type: 'presence' } & ReviewPresence)
   | { type: 'presenceSnapshot'; presences?: ReviewPresence[] }
   | ({ type: 'reservation' } & ReviewReservation)
   | { type: 'reservationSnapshot'; reservations?: ReviewReservation[]; canUpdate?: boolean }
+  | {type:'discussionResult';requestId:string;id:string;status:string;revision?:number;message?:string}
   | ({ type: 'reservationUpdateResult' } & ReservationUpdateResult)
   | ({ type: 'reservationTarget' } & ReviewReservationTarget)
   | { type: 'reservationTargetSnapshot'; targets?: ReviewReservationTarget[] }
@@ -57,6 +58,7 @@ const requiredFields: Readonly<Record<AgentMessage['type'], Shape>> = {
   presenceSnapshot: {}, reservationReset: {},
   reservation: { id: 'string', startByte: 'number', endByte: 'number', keyCount: 'number', status: 'string', assignee: 'string', assigneeId: 'string', color: 'string' },
   reservationSnapshot: {}, reservationTargetReset: {},
+  discussionResult: {requestId:'string',id:'string',status:'string'},
   reservationUpdateResult: { requestId: 'string', id: 'string', status: 'string' },
   reservationTarget: { id: 'string', displayName: 'string', color: 'string' },
   reservationTargetSnapshot: {}, externalConflictReset: {}, externalConflict: { key: 'string', label: 'string', conflictId: 'string' },
@@ -70,7 +72,11 @@ const requiredFields: Readonly<Record<AgentMessage['type'], Shape>> = {
 
 const optionalFields: Partial<Readonly<Record<AgentMessage['type'], Shape>>> = {
   ticketCatalogChanged: { revision: 'string' }, ticketUnavailable: { reason: 'string' },
-  agentHello: { userId: 'string', color: 'string', avatarBase64: 'string', recoveryStatus: 'string',
+  commentReset: {canUpdate:'boolean'},
+  discussionResult: {revision:'number',message:'string'},
+  commentMessage: {messageId:'string',authorId:'string',revision:'number',editedAt:'string',mergeConflict:'boolean'},
+  suggestionMessage: {messageId:'string',authorId:'string',revision:'number',editedAt:'string',mergeConflict:'boolean'},
+  agentHello: { draftScope:'string', userId: 'string', color: 'string', avatarBase64: 'string', recoveryStatus: 'string',
     temporaryPassword: 'boolean', version: 'string', serverVersion: 'string', trainingProgressConfirmed: 'boolean', roles: 'array' },
   documentStatus: { reason: 'string', branch: 'string', changedFiles: 'array', message: 'string' },
   documentVariants: { sharedBase64: 'string', mineBase64: 'string', gitBase64: 'string',
@@ -119,6 +125,8 @@ export function parseAgentMessage(value: unknown): AgentMessage | null {
   if (value.type === 'reservationSnapshot' && (value.reservations as Record<string, unknown>[] | undefined)?.some((item) =>
     item.revision !== undefined && (!Number.isSafeInteger(item.revision) || Number(item.revision) < 0))) return null;
   if (value.type === 'reservationUpdateResult' && !['saved', 'stale', 'deleted', 'error'].includes(String(value.status))) return null;
+  if (value.type === 'discussionResult' && (!['saved','stale','deleted','error'].includes(String(value.status))
+    || (value.revision !== undefined && (!Number.isSafeInteger(value.revision) || Number(value.revision)<0)))) return null;
   if (value.type === 'reservationUpdateResult' && (value.status === 'saved' || value.revision !== undefined)
     && (!Number.isSafeInteger(value.revision) || Number(value.revision) < 0)) return null;
   if (value.type === 'reservationTargetSnapshot' && !optionalArray(value, 'targets', requiredFields.reservationTarget)) return null;

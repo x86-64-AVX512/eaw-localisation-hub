@@ -28,6 +28,7 @@ export function applyCollaborationMessage(state: AppState, message: AgentMessage
     case 'externalConflictReset': resetExternalConflicts(state, message.source); return true;
     case 'externalConflict': storeExternalConflict(state, message); return true;
     case 'commentReset':
+      state.discussionUpdates = message.canUpdate === true;
       state.comments.clear();
       state.commentMessages.clear();
       return true;

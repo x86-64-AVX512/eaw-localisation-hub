@@ -1,9 +1,49 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { Buffer } from 'node:buffer';
+import { MAX_DELETED_MESSAGE_IDS } from './document-review-policy.mjs';
 
-const MAX_COMMENT_THREADS_PER_ROOM = 500;
+export const MAX_COMMENT_THREADS_PER_ROOM = 500;
 const MAX_SUGGESTIONS_PER_ROOM = 500;
 const MAX_DISCUSSION_MESSAGES = 100;
+
+// Like the other minimal* readers, drop malformed entries instead of refusing the
+// whole metadata file: a throw here would stop the server at startup.
+function deletionHistory(item) {
+  const ids = [...new Set([
+    ...(Array.isArray(item.deletedMessageIds) ? item.deletedMessageIds : []),
+    ...(Array.isArray(item.deletedMessageIdsRecovery) ? item.deletedMessageIdsRecovery : []),
+  ].filter(id => typeof id === 'string' && id && Buffer.byteLength(id, 'utf8') <= 128))];
+  return {
+    ...(ids.length ? { deletedMessageIds: ids.slice(0, MAX_DELETED_MESSAGE_IDS) } : {}),
+    ...(ids.length > MAX_DELETED_MESSAGE_IDS ? { deletedMessageIdsRecovery: ids.slice(MAX_DELETED_MESSAGE_IDS) } : {}),
+    ...(ids.length > MAX_DELETED_MESSAGE_IDS || item.deletionHistoryBlocked === true ? {deletionHistoryBlocked:true} : {}),
+  };
+}
+
+// Recovery IDs remain on disk and in the room, but never enlarge the wire ledger.
+export function publicDiscussionItems(items) {
+  return items.map(({ deletedMessageIdsRecovery, mergeOverflowIdsRecovery, ...item }) => item);
+}
+
+function mergeOverflowMetadata(thread) {
+  const result = {};
+  if (Array.isArray(thread.mergeOverflowIds) || Array.isArray(thread.mergeOverflowIdsRecovery)) {
+    const ids = [...new Set([
+      ...(Array.isArray(thread.mergeOverflowIds) ? thread.mergeOverflowIds : []),
+      ...(Array.isArray(thread.mergeOverflowIdsRecovery) ? thread.mergeOverflowIdsRecovery : []),
+    ].filter(id => typeof id === 'string' && id && Buffer.byteLength(id,'utf8') <= 128))];
+    if (ids.length) result.mergeOverflowIds = ids.slice(0,MAX_DELETED_MESSAGE_IDS);
+    if (ids.length > MAX_DELETED_MESSAGE_IDS) {
+      result.mergeOverflowIdsRecovery = ids.slice(MAX_DELETED_MESSAGE_IDS);
+      result.mergeOverflowBlocked = true;
+    }
+  }
+  if (thread.mergeOverflowBlocked === true) result.mergeOverflowBlocked = true;
+  if (typeof thread.mergeOverflowParent === 'string') result.mergeOverflowParent = thread.mergeOverflowParent;
+  if (/^[0-9a-f]{64}$/u.test(thread.mergeOverflowOrigin)) result.mergeOverflowOrigin = thread.mergeOverflowOrigin;
+  return result;
+}
 
 export function minimalReservation(reservation) {
   const assignee = String(reservation.assignee ?? reservation.createdBy ?? 'Unknown');
@@ -30,7 +70,14 @@ export function minimalDiscussionMessage(message) {
     authorId: message.authorId ? String(message.authorId) : null,
     author: String(message.author ?? 'Unknown'),
     color: String(message.color ?? '#8a8a8a'),
-    body: String(message.body ?? ''),
+    body: message.deleted === true ? '' : String(message.body ?? ''),
+    revision: Number.isSafeInteger(message.revision) && message.revision >= 0 ? message.revision : 0,
+    ...(message.editedAt ? { editedAt: String(message.editedAt) } : {}),
+    ...(message.deleted === true ? { deleted: true } : {}),
+    ...(message.mergeConflict === true ? { mergeConflict: true } : {}),
+    ...(message.lastMutationId ? { lastMutationId: String(message.lastMutationId).slice(0, 128) } : {}),
+    ...(message.branchMergeBase && ['origin', 'source', 'target'].every(key => /^[0-9a-f]{64}$/u.test(message.branchMergeBase[key]))
+      ? { branchMergeBase: { origin: message.branchMergeBase.origin, source: message.branchMergeBase.source, target: message.branchMergeBase.target } } : {}),
     createdAt: String(message.createdAt ?? ''),
   };
 }
@@ -63,6 +110,8 @@ export function minimalCommentThread(thread) {
       .slice(0, MAX_DISCUSSION_MESSAGES)
       .map(minimalDiscussionMessage),
   };
+  Object.assign(result, deletionHistory(thread));
+  Object.assign(result, mergeOverflowMetadata(thread));
   const anchorLocator = minimalAnchorLocator(thread.anchorLocator);
   if (anchorLocator) result.anchorLocator = anchorLocator;
   if (thread.orphaned === true) result.orphaned = true;
@@ -89,6 +138,7 @@ export function minimalSuggestion(suggestion) {
       .slice(0, MAX_DISCUSSION_MESSAGES)
       .map(minimalDiscussionMessage),
   };
+  Object.assign(result, deletionHistory(suggestion));
   const anchorLocator = minimalAnchorLocator(suggestion.anchorLocator);
   if (anchorLocator) result.anchorLocator = anchorLocator;
   if (suggestion.orphaned === true) result.orphaned = true;

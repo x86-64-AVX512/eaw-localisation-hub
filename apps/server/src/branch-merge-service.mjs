@@ -1,8 +1,10 @@
 import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mts';
 import { captureReviewAnchor, repairReviewAnchors } from './review-anchors.mjs';
+import { discussionMergeOrigin, mergeDiscussionMessages } from './branch-discussion-merge.mjs';
+import { MAX_COMMENT_THREADS_PER_ROOM } from './room-metadata.mjs';
+import { createDiscussionOverflow } from './branch-discussion-overflow.mjs';
 
 const TARGET_BRANCH = 'general-dev';
-const MAX_COMMENTS_PER_ROOM = 500;
 const PROTECTED_BRANCHES = new Set(['general-dev', 'master', 'main']);
 
 function hasUnmergedWork(source, targetGitText) {
@@ -23,21 +25,16 @@ function copyComments(source, target) {
   const previous = target.commentThreads;
   const next = previous.map((thread) => structuredClone(thread));
   const existing = new Map(next.map((thread) => [thread.id, thread]));
+  const origin = discussionMergeOrigin(source.documentId);
   let changed = false;
+  const notices = [];
   for (const thread of source.commentThreads) {
     const current = existing.get(thread.id);
     if (current) {
-      current.messages ??= [];
-      const messageIds = new Set((current.messages ?? []).map((message) => message.id));
-      const missing = (thread.messages ?? []).filter((message) => !messageIds.has(message.id));
-      if (current.messages.length + missing.length > 100) {
-        throw new Error('Merged discussion exceeds the target message limit');
-      }
-      if (missing.length) {
-        current.messages.push(...structuredClone(missing));
-        current.messages.sort((left, right) => String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? '')));
-        changed = true;
-      }
+      if (mergeDiscussionMessages(thread, current, origin, {
+        overflow: createDiscussionOverflow(next, current, origin),
+        onConflict: id => notices.push(`${thread.id}/${id}`),
+      })) changed = true;
       if (thread.status === 'resolved' && current.status !== 'resolved') {
         current.status = 'resolved';
         changed = true;
@@ -46,13 +43,14 @@ function copyComments(source, target) {
     }
     captureReviewAnchor(source.document, thread);
     const copy = structuredClone(thread);
+    mergeDiscussionMessages(thread, copy, origin);
     repairReviewAnchors(target.document, [copy], { force: true });
     next.push(copy);
     existing.set(copy.id, copy);
     changed = true;
   }
-  if (!changed) return false;
-  if (next.length > MAX_COMMENTS_PER_ROOM) {
+  if (!changed) return [];
+  if (next.length > MAX_COMMENT_THREADS_PER_ROOM) {
     throw new Error('Merged comments exceed the target room limit');
   }
   target.commentThreads = next;
@@ -64,7 +62,7 @@ function copyComments(source, target) {
   }
   target.schedulePersist();
   target.broadcastReview();
-  return true;
+  return notices;
 }
 
 export class BranchMergeService {
@@ -148,10 +146,12 @@ export class BranchMergeService {
         });
       }
       for (const { source, target } of roomPairs) {
+        let notices = [];
         await this.roomRegistry.withRoomsLocked([source, target], async () => {
-          copyComments(source, target);
+          notices = copyComments(source, target);
         });
         await target.flush();
+        for (const id of notices) console.warn(`[server] discussion merge conflict in ${id}: kept both versions`);
       }
       const currentTarget = await this.canonicalSource.head(this.targetBranch);
       if (!currentTarget || currentTarget.stale || currentTarget.commit !== targetCommit) {

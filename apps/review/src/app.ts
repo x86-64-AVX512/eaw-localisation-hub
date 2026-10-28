@@ -1,3 +1,4 @@
+import { createDiscussionEditor } from './discussion-editor.ts';
 import { uiText, uiMessage } from '../../../packages/shared/src/ui-language.mts';
 import { createTextStatisticsAction } from './text-statistics.ts';
 import { createSuggestionContextMenu } from './suggestion-context-menu.ts';
@@ -73,8 +74,10 @@ function send(message: { type: string; [field: string]: unknown }): void {
 }
 const { rangeFromBytes, selectionBytes, jumpToBytes, positionByteAt } = createEditorCoordinates({ monaco, state, editor });
 let editingMode!: ReturnType<typeof createEditingModeController>;
-const reviewCards = createReviewCards({
-  state, editor, rangeFromBytes, send, askText, showToast,
+let reviewCards!: ReturnType<typeof createReviewCards>;
+const discussionEditor = createDiscussionEditor({state,editor,rangeFromBytes,send,showToast,refresh:()=>reviewCards?.render()});
+reviewCards = createReviewCards({
+  state, editor, rangeFromBytes, send, discussionEditor, showToast,
   onEditSuggestion: (item) => editingMode?.editSuggestion(item),
   onAcceptSuggestion: (item) => editingMode?.acceptSuggestion(item),
   onRevertSuggestion: (item) => editingMode?.revertSuggestion(item),
@@ -130,6 +133,7 @@ function handleMessage(raw: unknown): void {
     ticketPanel.leaveUnavailable(message.reason); return;
   }
   if (message.path && message.path.toLowerCase() !== state.path.toLowerCase()) return;
+  if (message.type === 'discussionResult') { discussionEditor.receive(message); return; }
   if (reviewRefresh.handleBatch(message.type)) return;
   if (applyCollaborationMessage(state, message, collaborationPanel.receiveReservationUpdate)) {
     scheduleRefresh(message.type);
@@ -138,7 +142,7 @@ function handleMessage(raw: unknown): void {
   if (message.type === 'agentHello') {
     applyAgentIdentity(state, message);
     setStatus(`${message.user} · ${message.workspace}`);
-    collaborationPanel.refresh();
+    collaborationPanel.refresh(); discussionEditor.refresh();
     avatarProfile.refresh();
     recoveryBanner.refresh();
     helpPanel.refresh();
@@ -147,9 +151,10 @@ function handleMessage(raw: unknown): void {
   } else if (message.type === 'documentStatus') {
     applyDocumentStatus(message, state, editor, setStatus);
     if (['offline', 'unauthorized', 'syncing'].includes(message.status)) state.reservationUpdates = false;
-    collaborationPanel.refresh();
+    collaborationPanel.refresh(); discussionEditor.refresh();
   } else if (message.type === 'documentReady') {
     state.ready = true; spellcheck.start();
+    discussionEditor.refresh();
     collaborationPanel.refresh();
     state.reviewDocument?.replay();
     send({ type: 'activate', path: state.path, positionByte: 0, anchorByte: 0 });
@@ -213,12 +218,12 @@ editor.onDidScrollChange(reviewCards.syncScroll);
 requiredElement('#review-lane').addEventListener('scroll', reviewCards.layout);
 window.addEventListener('resize', reviewCards.layout);
 const commentActions = createCommentActions({ monaco, editor, state,
-  button: requiredButton('#comment-create'), selectionBytes, askText, send, showToast,
+  button: requiredButton('#comment-create'), selectionBytes, openDraft:discussionEditor.create, showToast,
   anchor,
 });
 const textStatistics = createTextStatisticsAction({ editor, showToast });
 const suggestionContextMenu = createSuggestionContextMenu(editor);
-const hasDraft = () => editingMode.hasDraft() || collaborationPanel.hasDraft();
+const hasDraft = () => editingMode.hasDraft() || collaborationPanel.hasDraft() || discussionEditor.hasDraft();
 const workspaceRuntime = createWorkspaceRuntime({ state, editor, hasDraft, send, close:closeActiveDocument,
   onVisible:() => { presenceController.publish(); syntaxDiagnostics.refresh(); reviewRefresh.schedule(); } });
 async function start() {
@@ -266,6 +271,7 @@ async function start() {
     },
     onWaiting: (_delay, error = '') => {
       state.ready = false;
+      discussionEditor.refresh();
       collaborationPanel.refresh();
       editor.updateOptions({ readOnly: true });
       setStatus(error || uiText("Desktop Agent отключён – ожидается автоматическое переподключение…"), true);
@@ -282,5 +288,5 @@ window.addEventListener('beforeunload', () => {
   historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();
   scrollSync.dispose(); reviewRefresh.dispose(); refreshDecorations.dispose(); themedSelects.dispose(); collaborationRefresh.dispose(); spellcheck.dispose(); syntaxDiagnostics.dispose();
   workspaceRuntime.dispose(); reviewNavigation.dispose(); commentActions.dispose(); textStatistics.dispose(); suggestionContextMenu.dispose(); appbarLayout.dispose(); agentConnection?.dispose(); gitConflictDiff.dispose();
-  collaborationPanel.dispose();
+  discussionEditor.dispose(); collaborationPanel.dispose();
 });

@@ -299,11 +299,18 @@
     <div class="key-replace-shell">
       <h2>Изменить по ключам</h2>
       <p class="dialog-hint">По одному значению в строке: <code>key:0 "текст"</code> или <code>key: "текст"</code>. Внутренние кавычки можно вводить как обычно – Hub экранирует их при записи.</p>
+      <p class="dialog-hint">До 500 выбранных ключей. Общий размер запроса – до 1 МиБ, включая оригиналы, комментарии и служебные данные.</p>
       <label for="key-replace-language">Где искать и изменять ключи</label>
       <select id="key-replace-language">
         <option value="russian">Русская локализация</option>
         <option value="english">Английская локализация</option>
       </select>
+      <label for="key-replace-mode">Режим обработки</label>
+      <select id="key-replace-mode" aria-describedby="key-replace-mode-hint">
+        <option value="classic">Классический</option>
+        <option value="language-filtered">По языку текста (экспериментальный)</option>
+      </select>
+      <p id="key-replace-mode-hint" class="dialog-hint" hidden>Пропускает комментарии и значения с преобладанием букв другого языка. Ключи и технические вставки не учитываются при подсчёте. Значения без букв или с равным количеством кириллицы и латиницы остаются. Для русской локализации распознаёт блоки #Оригинал: / #Перевод:. Проверьте список пропущенных ключей перед применением.</p>
       <textarea id="key-replace-input" spellcheck="false" placeholder='example_key:0 "Новый текст"'></textarea>
       <div class="dialog-actions">
         <button id="key-replace-preview">Предпросмотр</button>

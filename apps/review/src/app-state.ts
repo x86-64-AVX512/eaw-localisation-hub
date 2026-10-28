@@ -29,6 +29,7 @@ export function createAppState() {
     reservationTargets: [] as ReviewReservationTarget[], externalConflicts: new Map<string, ReviewExternalConflict>(),
     selectedReservation: '', selectedConflict: '',
     reservationUpdates: false,
+    discussionUpdates: false, draftScope: '',
     suggestionMessages: new Map<string, ReviewCardMessage[]>(), commentMessages: new Map<string, ReviewCardMessage[]>(),
     recoveryStatus: '', temporaryPassword: false,
     history: [] as HistoryEntry[], historyHeadId: '', editingSuggestionId: '',

@@ -9,6 +9,7 @@ export function applyAgentIdentity(state: ReturnType<typeof createAppState>,
     // A banner must reflect confirmed account state, not a local guess.
     recoveryStatus: message.recoveryStatus ?? '', temporaryPassword: message.temporaryPassword === true,
     workspace: message.workspace || state.workspace,
+    draftScope: message.draftScope ?? state.draftScope,
     version: message.version || state.version, serverVersion: message.serverVersion || state.serverVersion,
     trainingProgress: message.trainingProgress ?? state.trainingProgress,
     trainingProgressConfirmed: message.trainingProgressConfirmed === true,

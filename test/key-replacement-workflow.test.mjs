@@ -105,3 +105,111 @@ test('key replacement workflow replaces the whole legacy value with inner quotes
     await fs.rm(repository, { recursive: true, force: true });
   }
 });
+
+async function experimentalFixture(t) {
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-key-filter-'));
+  t.after(()=>fs.rm(repository,{recursive:true,force:true}));
+  const file=path.join(repository,'localisation/russian/a.yml');
+  await fs.mkdir(path.dirname(file),{recursive:true});
+  await fs.mkdir(path.join(repository,'localisation/english'),{recursive:true});
+  const original='\uFEFFl_russian:\r\n key:0 "Старое" # заметка\r\n neutral: "123"\r\n';
+  await fs.writeFile(file,original);
+  const english=path.join(repository,'localisation/english/a.yml');
+  await fs.writeFile(english,'l_english:\n key:0 "Untouched"\n');
+  return {repository,file,original,english,workflow:new KeyReplacementWorkflow({options:{repo:repository}})};
+}
+
+test('experimental apply reuses the filter and keeps destination formatting and other languages', async t=>{
+  const s=await experimentalFixture(t);
+  const input='#Оригинал:\nkey: "Original"\n#Перевод:\nkey: "Новый текст" # comment\nabsent: "Foreign ignored"\nneutral: "456"';
+  const preview=await s.workflow.preview(input,'russian','language-filtered');
+  assert.deepEqual(preview.errors,[]); assert.deepEqual(preview.missingKeys,[]);
+  assert.equal(preview.ignoredEntries.length,2); assert.equal(preview.changes.length,2);
+  await s.workflow.apply(input,preview.files,'russian','language-filtered');
+  assert.equal(await fs.readFile(s.file,'utf8'),s.original.replace('Старое','Новый текст').replace('123','456'));
+  assert.match(await fs.readFile(s.english,'utf8'),/Untouched/u);
+});
+
+test('same-language and neutral duplicates block the whole experimental batch',async t=>{
+  const s=await experimentalFixture(t);
+  for(const input of ['key: "Первый"\nkey: "Второй"','neutral: "123"\nneutral: "456"']){
+    const preview=await s.workflow.preview(input,'russian','language-filtered');
+    assert.equal(preview.duplicateKeys.length,1);
+    await assert.rejects(s.workflow.apply(input,preview.files,'russian','language-filtered'),/Предпросмотр содержит ошибки/u);
+    assert.equal(await fs.readFile(s.file,'utf8'),s.original);
+  }
+});
+
+test('experimental filtering never hides destination duplicates or stale file hashes', async t=>{
+  const s=await experimentalFixture(t);
+  const input='key: "English original"\nkey: "Новый текст"';
+  const preview=await s.workflow.preview(input,'russian','language-filtered');
+  await fs.appendFile(s.file,' key:0 "Ещё вхождение"\r\n');
+  await assert.rejects(s.workflow.apply(input,preview.files,'russian','language-filtered'),/Предпросмотр содержит ошибки/u);
+  await fs.writeFile(s.file,s.original+' # intervening change\r\n');
+  await assert.rejects(s.workflow.apply(input,preview.files,'russian','language-filtered'),/Файлы изменились/u);
+});
+
+test('empty filtered batches are no-ops and classic apply cannot accidentally reuse an experimental batch', async t=>{
+  const s=await experimentalFixture(t);
+  const empty=await s.workflow.preview('# comment\nmissing: "English"','russian','language-filtered');
+  assert.deepEqual(empty.files,[]); assert.deepEqual(empty.missingKeys,[]);
+  assert.deepEqual(await s.workflow.apply('missing: "English"',[],'russian','language-filtered'),{changedKeys:0,changedFiles:0});
+  const mixed='key: "English"\nkey: "Новый"';
+  const preview=await s.workflow.preview(mixed,'russian','language-filtered');
+  await assert.rejects(s.workflow.apply(mixed,preview.files),/Предпросмотр содержит ошибки/u);
+  assert.equal(await fs.readFile(s.file,'utf8'),s.original);
+});
+
+test('an ambiguous input blocks every experimental write and escaped input applies intact', async t => {
+  const s=await experimentalFixture(t);
+  const input='key: "Цвет "#1" лучший"\nneutral: "456"';
+  const preview=await s.workflow.preview(input,'russian','language-filtered');
+  assert.equal(preview.errors.length,1); assert.equal(preview.errors[0].line,1);
+  assert.deepEqual(preview.files,[]);
+  await assert.rejects(s.workflow.apply(input,[],'russian','language-filtered'),/Предпросмотр содержит ошибки/u);
+  assert.equal(await fs.readFile(s.file,'utf8'),s.original);
+  const fixed='key: "Цвет \\"#1\\" лучший"';
+  const safe=await s.workflow.preview(fixed,'russian','language-filtered');
+  await s.workflow.apply(fixed,safe.files,'russian','language-filtered');
+  assert.equal(await fs.readFile(s.file,'utf8'),s.original.replace('Старое','Цвет \\"#1\\" лучший'));
+  const again=await s.workflow.preview('key: "Повторная замена"','russian','language-filtered');
+  assert.equal(again.changes[0].oldText,'Цвет \\"#1\\" лучший');
+  await s.workflow.apply('key: "Повторная замена"',again.files,'russian','language-filtered');
+  assert.equal(await fs.readFile(s.file,'utf8'),s.original.replace('Старое','Повторная замена'));
+});
+
+for(const mode of ['classic','language-filtered']) test(`${mode} reports a selected ambiguous repository value and leaves the entire batch unchanged`,async t=>{
+  const s=await experimentalFixture(t);
+  const bad=s.original.replace('Старое','Цвет "#1" лучший');
+  const second=path.join(path.dirname(s.file),'b.yml'),other='\uFEFFl_russian:\n other:0 "Прежнее"\n';
+  await fs.writeFile(s.file,bad);await fs.writeFile(second,other);
+  const input='key: "Новое"\nneutral: "456"\nother: "Другой текст"';
+  const preview=await s.workflow.preview(input,'russian',mode);
+  assert.equal(preview.errors.length,1);
+  assert.deepEqual({file:preview.errors[0].file,key:preview.errors[0].key,line:preview.errors[0].line},
+    {file:'localisation/russian/a.yml',key:'key',line:2});
+  assert.match(preview.errors[0].message,/Неоднозначные кавычки/u);
+  assert.deepEqual(preview.missingKeys,[]);assert.deepEqual(preview.changes,[]);assert.deepEqual(preview.files,[]);
+  await assert.rejects(s.workflow.apply(input,[],'russian',mode),/Предпросмотр содержит ошибки/u);
+  assert.equal(await fs.readFile(s.file,'utf8'),bad);assert.equal(await fs.readFile(second,'utf8'),other);
+});
+
+test('an unrelated ambiguous key in a repository file does not block a selected safe key',async t=>{
+  const s=await experimentalFixture(t);
+  const original=s.original+' unused:0 "Цвет "#1" лучший"\r\n';
+  await fs.writeFile(s.file,original);
+  const preview=await s.workflow.preview('key: "Новое"');
+  assert.deepEqual(preview.errors,[]);
+  await s.workflow.apply('key: "Новое"',preview.files);
+  assert.equal(await fs.readFile(s.file,'utf8'),original.replace('Старое','Новое'));
+});
+
+test('an external change introducing ambiguous quotes after preview is not overwritten',async t=>{
+  const s=await experimentalFixture(t);
+  const preview=await s.workflow.preview('key: "Новое"');
+  const changed=s.original.replace('Старое','Цвет "#1" лучший');
+  await fs.writeFile(s.file,changed);
+  await assert.rejects(s.workflow.apply('key: "Новое"',preview.files),/Предпросмотр содержит ошибки/u);
+  assert.equal(await fs.readFile(s.file,'utf8'),changed);
+});

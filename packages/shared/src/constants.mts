@@ -1,5 +1,5 @@
-export const DISPLAY_VERSION = '0.8.8F11';
-export const SEMVER_VERSION = '0.8.8-beta.11';
+export const DISPLAY_VERSION = '0.8.9F1';
+export const SEMVER_VERSION = '0.8.9-beta.1';
 export const PROTOCOL_VERSION = 21;
 export const PROTOCOL_NAME = 'EaW Hub Sync Protocol';
 export const PROTOCOL_ABBREVIATION = 'EHSP';
@@ -10,6 +10,8 @@ export const PROTOCOL_METADATA = Object.freeze({ protocol: PROTOCOL_VERSION,
 // seed is larger than an ordinary edit, while the in-memory Yjs state must stay
 // comfortably below the 384 MiB container limit even when several rooms exist.
 export const MAX_MESSAGE_BYTES = 12 * 1024 * 1024;
+// Total UTF-8 JSON body, including source text and preview file metadata.
+export const MAX_KEY_REPLACEMENT_REQUEST_BYTES = 1024 * 1024;
 export const MAX_CRDT_UPDATE_BYTES = 8 * 1024 * 1024;
 export const MAX_ROOM_STATE_BYTES = 12 * 1024 * 1024;
 export const MAX_TOTAL_ROOM_STATE_BYTES = 48 * 1024 * 1024;

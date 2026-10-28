@@ -28,17 +28,19 @@ import {
   minimalDiscussionMessage,
   minimalReservation,
   minimalSuggestion,
+  publicDiscussionItems,
 } from './room-metadata.mjs';
 import { expiredPresenceIds } from '../../../packages/shared/src/presence.mts';
 import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mts';
 import { computeSingleReplace } from '../../../packages/shared/src/text.mts';
 import { textChangeSummary } from './notification-summary.mjs';
 import { auditDocumentControl, auditDocumentEdit } from './document-audit.mjs';
+import { applyDiscussionControl, isDiscussionWrite, receiveDiscussionWrite } from './discussion-control.mjs';
 import {
   editableSuggestionDraft,
-  newCommentThread,
   newDiscussionMessage,
   newSuggestion,
+  withRoomForMessages,
 } from './document-review-policy.mjs';
 import { projectedSuggestionStateBytes } from './document-suggestion-projection.mjs';
 import { repairReservationAnchors } from './reservation-anchors.mjs';
@@ -270,8 +272,9 @@ export class DocumentRoom {
         : null,
       reservations: this.activeReservations(),
       reservationUpdates: true,
-      commentThreads: this.commentThreads,
-      suggestions: this.suggestions,
+      discussionUpdates: true,
+      commentThreads: publicDiscussionItems(this.commentThreads),
+      suggestions: publicDiscussionItems(this.suggestions),
       history: this.history.summaries(),
       historyHeadId: this.history.headId(),
       presences: [...this.presences.values()],
@@ -573,11 +576,17 @@ export class DocumentRoom {
   appendDiscussionMessage(target, actor, message) {
     const next = newDiscussionMessage(target, actor, message);
     if (!next) return false;
-    target.messages.push(next);
+    const previous = target.messages;
+    const previousDeletedIds = target.deletedMessageIds;
+    const compacted = withRoomForMessages(target, 1);
+    target.messages = [...compacted.messages, next];
+    target.deletedMessageIds = compacted.deletedMessageIds;
     try {
       this.assertMetadataBudget();
     } catch (error) {
-      target.messages.pop();
+      target.messages = previous;
+      if (previousDeletedIds === undefined) delete target.deletedMessageIds;
+      else target.deletedMessageIds = previousDeletedIds;
       throw error;
     }
     return true;
@@ -658,6 +667,7 @@ export class DocumentRoom {
         throw new ProtocolLimitError('Branch merge is in progress or complete',
           this.registry.mergedBranches.has(branch) ? 4002 : 1013);
       }
+      if (isDiscussionWrite(message) && message.requestId) return receiveDiscussionWrite(this, socket, message, authorise);
       if (message?.type === 'reservation-update') {
         const requestId = controlledString(message.requestId, 'Reservation request id', 128, { required: true });
         const id = controlledString(message.id, 'Reservation id', 128, { required: true });
@@ -878,69 +888,8 @@ export class DocumentRoom {
       return;
     }
 
-    if (message.type === 'comment-create') {
-      const id = controlledString(message.id, 'Comment thread id', 128, { required: true });
-      if (!this.commentThreads.some((thread) => thread.id === id)) {
-        if (this.commentThreads.length >= MAX_COMMENT_THREADS_PER_ROOM) {
-          throw new ProtocolLimitError('This document has reached its comment limit');
-        }
-        const actor = this.actorFor(socket, message, 'Comment');
-        const thread = newCommentThread(id, actor, message);
-        captureReviewAnchor(this.document, thread);
-        this.commentThreads.push(thread);
-        try {
-          this.appendDiscussionMessage(thread, actor, message);
-          this.assertMetadataBudget();
-        } catch (error) {
-          this.commentThreads.pop();
-          throw error;
-        }
-        this.schedulePersist();
-        this.notifyTicketOwner('comment-created', actor, { discussionId: thread.id });
-      }
-      this.broadcastReview();
-      return;
-    }
-
-    if (message.type === 'comment-reply') {
-      const id = controlledString(message.id, 'Comment thread id', 128, { required: true });
-      const thread = this.commentThreads.find((item) => item.id === id);
-      if (!thread) throw new Error('Comment thread no longer exists');
-      const actor = this.actorFor(socket, message, 'Comment');
-      if (this.appendDiscussionMessage(thread, actor, message)) {
-        this.registry.eventJournal?.append('comment-reply', actor, [thread.authorId], {
-          documentId: this.documentId, discussionId: thread.id,
-        });
-        this.notifyTicketOwner('comment-replied', actor, { discussionId: thread.id });
-        this.schedulePersist();
-      }
-      this.broadcastReview();
-      return;
-    }
-
-    if (message.type === 'comment-status') {
-      const id = controlledString(message.id, 'Comment thread id', 128, { required: true });
-      const status = controlledString(message.status, 'Comment status', 16, { required: true });
-      if (!['open', 'resolved'].includes(status)) throw new ProtocolLimitError('Invalid comment status');
-      const thread = this.commentThreads.find((item) => item.id === id);
-      if (thread && thread.status !== status) {
-        const actor = this.actorFor(socket, message, 'Comment');
-        thread.status = status;
-        this.notifyTicketOwner('comment-status', actor, { discussionId: thread.id, status });
-        this.schedulePersist();
-      }
-      this.broadcastReview();
-      return;
-    }
-
-    if (message.type === 'comment-delete') {
-      const id = controlledString(message.id, 'Comment thread id', 128, { required: true });
-      const previousLength = this.commentThreads.length;
-      this.commentThreads = this.commentThreads.filter((item) => item.id !== id);
-      if (this.commentThreads.length !== previousLength) this.schedulePersist();
-      this.broadcastReview();
-      return;
-    }
+    const discussion = applyDiscussionControl(this, socket, message);
+    if (discussion !== false) return discussion;
 
     if (message.type === 'suggestion-create') {
       const id = controlledString(message.id, 'Suggestion id', 128, { required: true });
@@ -960,22 +909,6 @@ export class DocumentRoom {
         }
         this.schedulePersist();
         this.notifyTicketOwner('suggestion-created', actor, { suggestionId: id });
-      }
-      this.broadcastReview();
-      return;
-    }
-
-    if (message.type === 'suggestion-reply') {
-      const id = controlledString(message.id, 'Suggestion id', 128, { required: true });
-      const suggestion = this.suggestions.find((item) => item.id === id);
-      if (!suggestion) throw new Error('Suggestion no longer exists');
-      const actor = this.actorFor(socket, message, 'Suggestion');
-      if (this.appendDiscussionMessage(suggestion, actor, message)) {
-        this.registry.eventJournal?.append('comment-reply', actor, [suggestion.authorId], {
-          documentId: this.documentId, discussionId: suggestion.id,
-        });
-        this.notifyTicketOwner('suggestion-replied', actor, { suggestionId: suggestion.id });
-        this.schedulePersist();
       }
       this.broadcastReview();
       return;
@@ -1241,8 +1174,8 @@ export class DocumentRoom {
     this.broadcastJson({
       type: 'review',
       documentId: this.documentId,
-      commentThreads: this.commentThreads,
-      suggestions: this.suggestions,
+      commentThreads: publicDiscussionItems(this.commentThreads),
+      suggestions: publicDiscussionItems(this.suggestions),
     });
   }
 

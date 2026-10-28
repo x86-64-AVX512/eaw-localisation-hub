@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
 const ACTIONS = new Set([
+  'discussion-message-update', 'discussion-message-delete',
   'comment-create', 'comment-reply', 'comment-status', 'comment-delete',
   'suggestion-create', 'suggestion-update', 'suggestion-reply', 'suggestion-accept',
   'suggestion-revert', 'suggestion-reject', 'suggestion-delete',
@@ -17,10 +18,11 @@ export function auditDocumentControl(room, socket, message, operation) {
   const item = [...room.commentThreads, ...room.suggestions, ...room.reservations]
     .find((entry) => entry.id === message.id);
   const details = { documentId: room.documentId, objectId: short(message.id, 128) };
+  if (message.messageId) details.messageId = short(message.messageId, 128);
   if (item) {
     details.ownerId = short(item.authorId || item.createdById, 256);
     details.previousStatus = short(item.status, 64);
-    details.excerpt = short(item.messages?.[0]?.body || item.originalText || item.comment);
+    details.excerpt = short((message.messageId ? item.messages?.find(entry => entry.id === message.messageId)?.body : item.messages?.[0]?.body) || item.originalText || item.comment);
   }
   for (const field of ['status', 'choice', 'key']) {
     if (typeof message[field] === 'string') details[field] = short(message[field]);

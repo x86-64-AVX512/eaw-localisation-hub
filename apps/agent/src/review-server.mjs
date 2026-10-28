@@ -7,7 +7,7 @@ import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
-import { MAX_MESSAGE_BYTES } from '../../../packages/shared/src/constants.mts';
+import { MAX_MESSAGE_BYTES, MAX_KEY_REPLACEMENT_REQUEST_BYTES } from '../../../packages/shared/src/constants.mts';
 import {
   normaliseTrackedPath,
   readTrackedTextFile,
@@ -103,12 +103,12 @@ async function writeLastReview(options, value) {
   } finally { await fsPromises.rm(temporary, { force: true }).catch(() => {}); }
 }
 
-async function readJsonBody(request, maximumBytes = 64 * 1024) {
+async function readJsonBody(request, maximumBytes = 64 * 1024, tooLargeMessage = 'Request body is too large') {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > maximumBytes) throw new Error('Request body is too large');
+    if (size > maximumBytes) throw new Error(tooLargeMessage);
     chunks.push(chunk);
   }
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
@@ -632,8 +632,8 @@ export async function startReviewServer(hub, options) {
     if (requestUrl.pathname === '/api/key-replacements/preview' && request.method === 'POST') {
       if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
       try {
-        const body = await readJsonBody(request);
-        const payload = await hub.keyReplacementWorkflow.preview(body.input ?? '', body.language ?? 'russian');
+        const body = await readJsonBody(request, MAX_KEY_REPLACEMENT_REQUEST_BYTES, 'Общий размер запроса замены превышает 1 МиБ.');
+        const payload = await hub.keyReplacementWorkflow.preview(body.input ?? '', body.language ?? 'russian', body.mode ?? 'classic');
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify(payload));
       } catch (error) {
@@ -645,9 +645,9 @@ export async function startReviewServer(hub, options) {
     if (requestUrl.pathname === '/api/key-replacements/apply' && request.method === 'POST') {
       if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
       try {
-        const body = await readJsonBody(request);
+        const body = await readJsonBody(request, MAX_KEY_REPLACEMENT_REQUEST_BYTES, 'Общий размер запроса замены превышает 1 МиБ.');
         const payload = await hub.keyReplacementWorkflow.apply(
-          body.input ?? '', body.files, body.language ?? 'russian',
+          body.input ?? '', body.files, body.language ?? 'russian', body.mode ?? 'classic',
         );
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify(payload));

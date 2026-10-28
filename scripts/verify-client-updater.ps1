@@ -57,6 +57,11 @@ $selected = Find-NewClientRelease -InstalledVersion '0.8.8F10'
 if ($selected.Version -cne '0.8.8F11') { throw 'F11 security update was not offered to an F10 client.' }
 $selected = Find-NewClientRelease -InstalledVersion '0.8.8F11'
 if ($null -ne $selected) { throw 'F11 must not reinstall itself as a newer release.' }
+$script:mockReleases = @((New-TestRelease '0.8.8F11'), (New-TestRelease '0.8.9F1'))
+$selected = Find-NewClientRelease -InstalledVersion '0.8.8F11'
+if ($selected.Version -cne '0.8.9F1') { throw '0.8.9F1 was not offered after 0.8.8F11.' }
+$selected = Find-NewClientRelease -InstalledVersion '0.8.9F1'
+if ($null -ne $selected) { throw '0.8.9F1 must not reinstall itself.' }
 Remove-Item Function:Invoke-RestMethod
 
 $rejected = $false
