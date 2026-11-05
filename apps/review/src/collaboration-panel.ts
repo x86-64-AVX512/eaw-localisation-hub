@@ -1,6 +1,7 @@
 import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { byteToUtf16, utf16ToByte } from './review-utilities.ts';
-import { emptyList, listButton } from './list-items.ts';
+import { listButton } from './list-items.ts';
+import { createReservationList } from './reservation-list.ts';
 import { createReservationEditor } from './reservation-editor.ts';
 import { requiredElement } from './dom-elements.ts';
 import type { CollaborationPanelOptions, ReviewExternalConflict } from './review-state.ts';
@@ -13,18 +14,17 @@ export function createCollaborationPanel({
   });
   const presenceList = requiredElement<HTMLElement>('#presence-list');
   const presenceCount = requiredElement<HTMLElement>('#presence-count');
-  const reservationList = requiredElement<HTMLElement>('#reservation-list');
-  const reservationCount = requiredElement<HTMLElement>('#reservation-count');
   const reservationTarget = requiredElement<HTMLSelectElement>('#reservation-target');
   const reservationComment = requiredElement<HTMLInputElement>('#reservation-comment');
   const conflictSection = requiredElement<HTMLElement>('.conflicts-section');
   const conflictList = requiredElement<HTMLElement>('#conflict-list');
   const conflictCount = requiredElement<HTMLElement>('#conflict-count');
   const deleteReservation = requiredElement<HTMLButtonElement>('#reservation-delete');
+  const renderReservations = createReservationList({
+    state, jumpToBytes, showToast, deleteReservation, onSelect: reservationEditor.refresh,
+  });
   const keepCollaborative = requiredElement<HTMLButtonElement>('#conflict-collaborative');
   const useExternal = requiredElement<HTMLButtonElement>('#conflict-external');
-  const reservationNodes = new Map<string, { fingerprint: string; button: HTMLButtonElement }>();
-
   function jumpToConflict(conflict: ReviewExternalConflict): void {
     const model = editor.getModel();
     if (!conflict || conflict.key.startsWith('__')) {
@@ -71,61 +71,6 @@ export function createCollaborationPanel({
       reservationTarget.append(option);
     });
     if ([...reservationTarget.options].some((option) => option.value === previous)) reservationTarget.value = previous;
-  }
-
-  function renderReservations() {
-    const previousScrollTop = reservationList.scrollTop;
-    const values = [...state.reservations.values()].sort((left, right) => left.startByte - right.startByte);
-    const live = new Set<string>();
-    const nodes: HTMLButtonElement[] = [];
-    for (const item of values) {
-      live.add(item.id);
-      const details = [
-        uiText("{0} ключ(а/ей)", item.keyCount), item.status === 'orphaned' ? uiText("границы потеряны") : item.status,
-        item.createdBy && item.createdBy !== item.assignee ? uiText("создал {0}", item.createdBy) : '', item.comment,
-      ].filter(Boolean).join(' · ');
-      const fingerprint = JSON.stringify([
-        item.assignee, details, item.color, state.selectedReservation === item.id,
-        state.reservationTargets.find((target) => target.id === item.assigneeId)?.avatarBase64 ?? '',
-      ]);
-      let cached = reservationNodes.get(item.id);
-      if (!cached || cached.fingerprint !== fingerprint) {
-        const button = listButton(item.assignee, details, item.color,
-          state.selectedReservation === item.id, () => {
-          const current = state.reservations.get(item.id);
-          if (!current) return;
-          state.selectedReservation = item.id;
-          deleteReservation.disabled = false;
-          renderReservations();
-          reservationEditor.refresh();
-          if (current.status !== 'orphaned') {
-            try { jumpToBytes(current.startByte, current.endByte); }
-            catch { showToast(uiText("Границы брони обновляются."), true); }
-          }
-        }, state.reservationTargets.find((target) => target.id === item.assigneeId)?.avatarBase64 ?? '');
-        cached = { fingerprint, button };
-        reservationNodes.set(item.id, cached);
-      }
-      nodes.push(cached.button);
-    }
-    for (const id of reservationNodes.keys()) if (!live.has(id)) reservationNodes.delete(id);
-    if (!nodes.length) {
-      if (!reservationList.firstElementChild?.classList.contains('empty-list')) {
-        reservationList.replaceChildren(); emptyList(reservationList, uiText("Броней нет."));
-      }
-    } else {
-      nodes.forEach((node, index) => {
-        const current = reservationList.children[index] ?? null;
-        if (current !== node) reservationList.insertBefore(node, current);
-      });
-      while (reservationList.children.length > nodes.length) reservationList.lastElementChild?.remove();
-    }
-    reservationList.scrollTop = previousScrollTop;
-    reservationCount.textContent = String(values.length);
-    if (!state.reservations.has(state.selectedReservation)) {
-      state.selectedReservation = '';
-      deleteReservation.disabled = true;
-    }
   }
 
   function renderConflicts() {
@@ -181,7 +126,9 @@ export function createCollaborationPanel({
       positionByte: utf16ToByte(editor.getValue(), offset) });
   });
   deleteReservation.addEventListener('click', () => {
-    if (state.selectedReservation) send({ type: 'reservationDelete', path: state.path, id: state.selectedReservation });
+    if (state.selectedReservation && renderReservations.selectedVisible()) {
+      send({ type: 'reservationDelete', path: state.path, id: state.selectedReservation });
+    }
   });
   function resolveConflict(choice: 'collaborative' | 'external'): void {
     const conflict = state.externalConflicts.get(state.selectedConflict);

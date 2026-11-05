@@ -1,6 +1,10 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.9F1` form; package metadata uses `0.8.9-beta.1`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.9F2` form; package metadata uses `0.8.9-beta.2`.
+
+## 0.8.9F2 – 2026-11-06
+
+- Review groups reservations by assignee and lets users expand or collapse each participant’s list.
 
 ## 0.8.9F1 – 2026-10-26
 

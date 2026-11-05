@@ -776,6 +776,30 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .pane-close { margin-left:auto; padding:0 3px; border:0; color:var(--wb-muted); background:transparent; font-size:17px; line-height:18px; }
 .list-item { padding:7px 4px; border-radius:3px; font-size:12px; }
 .list-item small { font-size:10px; }
+.reservation-group > summary {
+  display: flex; align-items: center; gap: 7px; padding: 4px 5px;
+  border-radius: 3px; list-style: none; cursor: pointer; font-size: 12px;
+}
+.reservation-group > summary::-webkit-details-marker { display: none; }
+.reservation-group > summary::before {
+  content: ''; width: 5px; height: 5px; flex: 0 0 auto;
+  border-right: 1px solid var(--wb-muted); border-bottom: 1px solid var(--wb-muted);
+  transform: rotate(-45deg);
+}
+.reservation-group[open] > summary::before { transform: rotate(45deg); }
+.reservation-group > summary:hover, .reservation-group > summary:focus-visible { background: var(--wb-hover); }
+.reservation-group-profile { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; }
+.reservation-group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reservation-group-count { flex: 0 0 auto; color: var(--wb-muted); font-size: 10px; }
+.reservation-group-entries { display: grid; gap: 2px; margin: 2px 0 3px 17px; padding-left: 5px; border-left: 1px solid var(--wb-border); }
+#reservation-list .reservation-entry {
+  padding: 4px 5px; border: 1px solid transparent; background: transparent;
+  color: var(--wb-text); text-align: left; font-size: 11px; overflow-wrap: anywhere;
+}
+#reservation-list .reservation-entry:hover { background: var(--wb-hover); }
+#reservation-list .reservation-entry[aria-pressed="true"] {
+  border-color: var(--item-color, var(--wb-accent)); background: var(--wb-selected);
+}
 .side-section .profile-actions button { border-color:transparent; color:var(--wb-muted); background:transparent; padding:2px 4px; }
 .side-section input, .side-section select { border-color:var(--wb-border); border-radius:3px; padding:5px 6px; color:var(--wb-text); background:var(--wb-header); font-size:12px; }
 .side-actions { gap:3px; }
