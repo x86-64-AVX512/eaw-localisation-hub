@@ -16,11 +16,11 @@ $winget = Get-Command winget.exe -CommandType Application -ErrorAction SilentlyC
 if ($winget) {
     try {
         & $winget.Source install --id OpenAI.Codex --exact --source winget --scope user --no-upgrade
-        if ($LASTEXITCODE -eq 0) { exit 0 }
     } catch {
         Write-Warning $_.Exception.Message
     }
-    # WinGet can return a nonzero exit code for an existing installation.
+    # Verify discovery even if WinGet reported success. Conversely, an existing
+    # installation can be usable even when WinGet returns a nonzero exit code.
     & $node --input-type=module -e $probe $resolver
     if ($LASTEXITCODE -eq 0) { exit 0 }
 }
