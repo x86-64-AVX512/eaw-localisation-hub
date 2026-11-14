@@ -39,6 +39,8 @@ $required = @(
     'scripts\start-review.ps1',
     'scripts\credential-store.ps1',
     'scripts\install-client.ps1',
+    'scripts\install-codex.ps1',
+    'apps\agent\src\codex-executable.mjs',
     'scripts\server-admin-ui.ps1',
     'scripts\admin-audit-ui.ps1',
     'scripts\backup-server.ps1',

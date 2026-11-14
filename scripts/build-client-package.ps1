@@ -55,6 +55,7 @@ foreach ($scriptName in @(
     'start-review.ps1',
     'credential-store.ps1',
     'install-client.ps1',
+    'install-codex.ps1',
     'server-admin-ui.ps1',
     'admin-audit-ui.ps1',
     'backup-server.ps1',

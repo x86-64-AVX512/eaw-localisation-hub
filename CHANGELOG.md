@@ -1,6 +1,11 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.9F2` form; package metadata uses `0.8.9-beta.2`.
+All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.9F3` form; package metadata uses `0.8.9-beta.3`.
+
+## 0.8.9F3 – Unreleased
+
+- Review adds opt-in Russian and English spelling and grammar checking with GPT-6 Luna via a personal Codex account. English article corrections require a clear local error. Background checks batch fully visible edited sentences after 15 seconds without edits, reuse recent results and continue the same Codex conversation within a bounded context.
+- Windows Setup offers optional per-user installation of Codex CLI through WinGet for Review proofreading.
 
 ## 0.8.9F2 – 2026-11-06
 

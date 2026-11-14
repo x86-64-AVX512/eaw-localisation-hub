@@ -22,6 +22,10 @@ foreach ($pattern in $requiredPatterns) {
 if ($definition -match '(?i)notepad\+\+|EawLocalisationHub\.dll') {
     throw 'Installer must not depend on the removed Notepad++ plugin.'
 }
+$codexEntry = $definition -split '\r?\n' | Where-Object { $_ -like '*install-codex.ps1*' }
+if (@($codexEntry).Count -ne 1 -or $codexEntry -notmatch 'Flags: postinstall runasoriginaluser skipifsilent unchecked\s*$') {
+    throw 'Codex setup must be optional, interactive, and run as the original user.'
+}
 
 $output = Join-Path $projectRoot "dist\EaW-Localisation-Hub-Setup-$displayVersion.exe"
 if ($RequireBuilt -and -not (Test-Path -LiteralPath $output -PathType Leaf)) {

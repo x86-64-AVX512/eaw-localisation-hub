@@ -255,10 +255,10 @@ test('Review editor preferences and spelling remain explicit user-controlled aid
   assert.match(settings, /localStorage\.setItem/u);
   assert.match(spelling, /registerCodeActionProvider/u);
   assert.match(spelling, /kind: 'quickfix'/u);
-  assert.match(spelling, /editor\.action\.quickFix/u);
+  assert.match(spelling, /editor\.action\.codeAction/u);
   assert.match(spelling, /KeyCode\.Period/u);
-  assert.match(spelling, /browserEvent[\s\S]*key\.key !== '\.'/u,
-    'the quick-fix shortcut must also work when a non-English layout reports another physical key');
+  assert.match(spelling, /event\.key !== '\.'/u,
+    'the quick-fix shortcut must recognise the period on a different physical key');
   assert.match(spelling, /MAX_CHECKED_LINES = 240/u);
   assert.match(spelling, /\/api\/spelling\/dictionary/u);
   assert.match(spelling, /общий словарь сервера/u);

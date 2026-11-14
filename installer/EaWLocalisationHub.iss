@@ -1,11 +1,11 @@
 #ifndef AppVersion
-  #define AppVersion "0.8.9F2"
+  #define AppVersion "0.8.9F3"
 #endif
 #ifndef PayloadDir
   #define PayloadDir "..\dist\EaW-Hub-Client-" + AppVersion
 #endif
 #ifndef WindowsFileVersion
-  #define WindowsFileVersion "0.8.9.2"
+  #define WindowsFileVersion "0.8.9.3"
 #endif
 
 #define AppGuid "{{B84E4DE8-27A1-4DC2-ACF7-AB7779F76FC8}"
@@ -53,6 +53,8 @@ english.DesktopIcon=Create a Review shortcut on the desktop
 russian.DesktopIcon=Создать ярлык Review на рабочем столе
 english.LaunchAgent=Launch EaW Localisation Hub Agent
 russian.LaunchAgent=Запустить EaW Localisation Hub Agent
+english.InstallCodex=Install Codex CLI for proofreading (requires internet)
+russian.InstallCodex=Установить Codex CLI для проверки текста (нужен интернет)
 english.WebViewPrompt=Review requires Microsoft Edge WebView2 Runtime. Open the official Microsoft installer?
 russian.WebViewPrompt=Для Review необходим Microsoft Edge WebView2 Runtime. Открыть официальный установщик Microsoft?
 english.WebViewRequired=Install WebView2 Runtime and run EaW Hub Setup again.
@@ -78,6 +80,7 @@ Name: "{autodesktop}\EaW Localisation Hub Review"; Filename: "{app}\Launch EaW H
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "EaWLocalisationHubAgent"; ValueData: "{app}\Launch EaW Hub Agent.cmd"; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install-codex.ps1"" -Language {language}"; Description: "{cm:InstallCodex}"; WorkingDir: "{app}"; Flags: postinstall runasoriginaluser skipifsilent unchecked
 Filename: "{app}\Launch EaW Hub Agent.cmd"; Description: "{cm:LaunchAgent}"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent unchecked
 
 [Code]

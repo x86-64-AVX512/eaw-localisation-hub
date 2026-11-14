@@ -24,6 +24,7 @@
           <button data-review-command="redo">Повторить <kbd>Ctrl+Y</kbd></button>
           <hr><button data-review-command="comment-create">Комментарий</button>
           <button id="key-replace-open">Изменить по ключам</button>
+          <button id="ai-localisation-open">Орфография и грамматика (тест)</button>
         </div></details>
         <details class="review-menu"><summary>Вид</summary><div class="menu-popover">
           <button data-review-command="toggle-collaboration">Участники и брони</button>
@@ -154,9 +155,45 @@
     </aside>
     <svg id="connectors" aria-hidden="true"></svg>
   </main>
+  <dialog id="ai-localisation-dialog" class="ai-localisation-dialog" aria-labelledby="ai-localisation-title">
+    <h2 id="ai-localisation-title">Орфография и грамматика · GPT-6 Luna</h2>
+    <p class="dialog-hint">Проверка отправляет видимый текст русской или английской локализации в OpenAI и расходует лимит личного аккаунта Codex.</p>
+    <p class="dialog-hint">Выделите до 8 ключей и нажмите Ctrl+Alt+R. Замечания появятся под текстом. Наведите на подчёркивание для объяснения, нажмите Ctrl+. для исправления.</p>
+    <p id="ai-localisation-account" role="status"></p>
+    <div class="ai-localisation-actions">
+      <button id="ai-localisation-login" type="button">Войти через браузер</button>
+      <button id="ai-localisation-cancel-login" type="button" hidden>Отменить вход</button>
+      <button id="ai-localisation-logout" type="button" hidden>Выйти из Codex</button>
+      <button id="ai-localisation-connect" type="button">Проверить подключение</button>
+    </div>
+    <label><input id="ai-localisation-automatic" type="checkbox" aria-describedby="ai-localisation-automatic-hint"> Проверять орфографию и грамматику в фоне</label>
+    <p class="dialog-hint" id="ai-localisation-automatic-hint">Через 15 секунд без правок видимые изменённые предложения проверяются одним запросом. При включении проверяется фрагмент под курсором. Для текста без точки границей служит закрывающая кавычка.</p>
+    <div class="ai-localisation-actions">
+      <button id="ai-localisation-check">Проверить выделение</button>
+      <button id="ai-localisation-cancel">Отменить запрос</button>
+      <button id="ai-localisation-close">Закрыть</button>
+    </div>
+    <p id="ai-localisation-status" role="status" aria-live="polite"></p>
+    <div id="ai-localisation-results"></div>
+  </dialog>
   <footer class="review-statusbar">
     <div id="status" class="status" role="status">Подключение к Desktop Agent…</div>
     <span id="editor-position"></span><span class="status-format">YAML</span>
+    <div class="ai-localisation-usage">
+      <button id="ai-limits-trigger" type="button" popovertarget="ai-limits-details" popovertargetaction="show" aria-expanded="false"><span class="ai-usage-ring" id="ai-limits-ring" aria-hidden="true"></span><span>Лимиты Codex</span><span id="ai-limits-percent" class="ai-usage-percent">—</span></button>
+      <div id="ai-limits-details" class="ai-usage-details" popover="auto" role="tooltip">
+        <p id="ai-limits-plan" class="dialog-hint" hidden></p>
+        <ul id="ai-limits-windows" class="ai-limits-windows" hidden></ul>
+        <p id="ai-limits-cached" class="dialog-hint" hidden>Последние полученные данные. Обновятся при запуске проверки или проверке подключения.</p>
+        <p id="ai-limits-unavailable" class="dialog-hint">Лимиты пока недоступны.</p>
+      </div>
+      <button id="ai-context-trigger" type="button" popovertarget="ai-context-details" popovertargetaction="show" aria-expanded="false"><span class="ai-usage-ring" id="ai-context-ring" aria-hidden="true"></span><span>Контекст чата</span><span id="ai-context-percent" class="ai-usage-percent">—</span></button>
+      <div id="ai-context-details" class="ai-usage-details" popover="auto" role="tooltip">
+        <p id="ai-context-count">Аккаунт Codex для Review не подключён.</p>
+        <p id="ai-context-rollover" class="dialog-hint" hidden></p>
+        <p id="ai-context-idle" class="dialog-hint" hidden></p>
+      </div>
+    </div>
     <button id="notifications-open" title="Локальные уведомления">Уведомления <span id="notifications-count">0</span></button>
   </footer>
   <div id="toast" role="status" aria-live="polite"></div>

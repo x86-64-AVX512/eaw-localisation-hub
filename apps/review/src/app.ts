@@ -16,6 +16,7 @@ import { createDecorationRenderer } from './editor-decorations.ts'; import { app
 import { createEditingModeController } from './editing-mode.ts'; import { createEditorCoordinates } from './editor-coordinates.ts';
 import { createEnglishOriginal } from './english-original.ts'; import { createGitHistoryPanel, createHistoryPanel } from './history-panel.ts';
 import { createKeyReplacementPanel } from './key-replacement-panel.ts';
+import { createAiLocalisationPanel } from './ai-localisation-panel.ts';
 import { createPresenceController } from './presence-controller.ts'; import { createReviewCards } from './review-cards.ts';
 import { createReviewNavigation } from './review-navigation.ts'; import { createCollaborationRefresh, createReviewRefresh } from './review-refresh.ts';
 import { createRecoveryBanner } from './recovery-banner.ts';
@@ -110,6 +111,7 @@ const ticketPanel = createTicketPanel({
 });
 const deletedBranchesPanel = createDeletedBranchesPanel({ monaco, token, showToast });
 const keyReplacementPanel = createKeyReplacementPanel({ state, token, showToast }); const localisationAuditPanel = createLocalisationAuditPanel({ monaco, state, token, showToast });
+const aiLocalisationPanel = createAiLocalisationPanel({ monaco, editor, state, token, showToast });
 const helpPanel = createHelpPanel({ state, token, showToast }); const notificationCenter = createNotificationCenter({ token, showToast });
 const repositorySyncPanel = createRepositorySyncPanel({ token, showToast }); const scrollSync = createScrollSync({ editor, initialPair: requestedPair });
 createEnglishOriginal({ state, editor, token, showToast, onOpened: (pair) => scrollSync.setPair(pair) });
@@ -283,6 +285,7 @@ window.addEventListener('beforeunload', () => {
   workspaceTabs.remember(editor);
   void closeActiveDocument({ flush: false });
   ticketPanel.dispose(); deletedBranchesPanel.dispose(); keyReplacementPanel.dispose(); localisationAuditPanel.dispose(); helpPanel.dispose();
+  aiLocalisationPanel.dispose();
   notificationCenter.dispose(); repositorySyncPanel.dispose(); editingMode.flushSuggestion(); editingMode.dispose();
   state.reviewDocument?.dispose(); presenceController.dispose();
   historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();

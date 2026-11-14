@@ -30,6 +30,8 @@ import { handleRepositorySyncApi } from './repository-sync-api.mjs';
 import { canEditDocument } from '../../../packages/shared/src/document-permissions.mts';
 import { handleUiLanguageApi } from './ui-language.mjs';
 import { attachReviewMultiplexer } from './review-multiplexer.mjs';
+import { CodexLocalisationAssistant } from './codex-localisation.mjs';
+import { handleAiReviewApi } from './ai-review-api.mjs';
 
 const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -309,6 +311,7 @@ export async function startReviewServer(hub, options) {
   const diffCache = hub.diffCache ?? new DiffCache(path.join(options.state, 'diff-cache'));
   await diffCache.initialise();
   let spellingDictionaryPromise = null;
+  const localisationAssistant = new CodexLocalisationAssistant({ profileDirectory: path.resolve(options.state, 'review-codex') });
   let keyIndexSnapshot = null; let keyIndexTag = '';
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'review-web');
   const server = http.createServer(async (request, response) => {
@@ -323,6 +326,14 @@ export async function startReviewServer(hub, options) {
       requestUrl = new URL(request.url ?? '/', `http://127.0.0.1:${port}`);
     } catch {
       response.writeHead(400).end();
+      return;
+    }
+    if (requestUrl.pathname.startsWith('/api/ai-localisation/')) {
+      if ((request.headers.origin && request.headers.origin !== `http://127.0.0.1:${port}`)
+        || !tokenMatches(bearerToken(request), token)) { response.writeHead(403).end(); return; }
+      await handleAiReviewApi(request, response, requestUrl, {
+        assistant: localisationAssistant, readJsonBody, secureHeaders,
+      });
       return;
     }
     if (requestUrl.pathname === '/api/ui-language') {
@@ -759,6 +770,7 @@ export async function startReviewServer(hub, options) {
     discoveryPath,
     open,
     async close() {
+      localisationAssistant.close();
       for (const client of websocketServer.clients) client.terminate();
       websocketServer.close();
       await new Promise((resolve) => server.close(resolve));

@@ -157,16 +157,23 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
     if (!event.scrollTopChanged && !event.scrollHeightChanged) return;
     schedule();
   });
-  const runQuickFix = () => editor.trigger('eaw-spelling', 'editor.action.quickFix', {});
-  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period, runQuickFix);
-  const quickFixKey = editor.onKeyDown((event) => {
-    const key = event.browserEvent;
-    if (!(key.ctrlKey || key.metaKey) || key.altKey || key.key !== '.') return;
+  const runQuickFix = () => editor.trigger('eaw-spelling', 'editor.action.codeAction', { kind: 'quickfix', apply: 'never' });
+  const quickFixKey = editor.addAction({
+    id: 'eaw.spelling.quickFix', label: uiText("Открыть быстрые исправления"),
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period], run: runQuickFix,
+  });
+  const editorNode = editor.getDomNode();
+  const quickFixByCharacter = (event: KeyboardEvent) => {
+    if (event.key !== '.' || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey
+      || event.isComposing || !editor.hasTextFocus()) return;
     event.preventDefault();
     event.stopPropagation();
-    runQuickFix();
-  });
-  const provider = monaco.languages.registerCodeActionProvider('eaw-yaml', {
+    if (!event.repeat) runQuickFix();
+  };
+  // A layout may put the period on another physical key. Capture it before
+  // Monaco dispatches keybindings so the same event cannot open two menus.
+  editorNode?.addEventListener('keydown', quickFixByCharacter, true);
+  const codeActions: Monaco.languages.CodeActionProvider = {
     async provideCodeActions(model, range) {
       const actions: Monaco.languages.CodeAction[] = [];
       for (const issue of issues.values()) {
@@ -187,6 +194,14 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
       }
       return { actions, dispose() {} };
     },
+  };
+  let provider = monaco.languages.registerCodeActionProvider('eaw-yaml', codeActions);
+  const writableChanged = editor.onDidChangeConfiguration(event => {
+    if (!event.hasChanged(monaco.editor.EditorOption.readOnly) || editor.getOption(monaco.editor.EditorOption.readOnly)) return;
+    // Monaco can initialise its code-action model while Review is still read-only.
+    // Notify the registry when the shared document becomes writable.
+    provider.dispose();
+    provider = monaco.languages.registerCodeActionProvider('eaw-yaml', codeActions);
   });
   async function addWord(word: string): Promise<void> {
     try {
@@ -320,10 +335,11 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
     started = true;
     schedule();
   }, refresh: schedule, dispose() {
+    editorNode?.removeEventListener('keydown', quickFixByCharacter, true);
     window.removeEventListener('workspacevisibilitychange',schedule);
     clearTimeout(timer); closeQuickFixPanel(); worker.terminate(); pending.clear(); decorations.clear();
     if ('dispose' in decorations && typeof decorations.dispose === 'function') decorations.dispose();
-    content.dispose(); scrolling.dispose(); quickFixKey.dispose(); provider.dispose(); command.dispose();
+    content.dispose(); scrolling.dispose(); quickFixKey.dispose(); writableChanged.dispose(); provider.dispose(); command.dispose();
     rightClick.dispose(); contextAction.dispose(); quickFixAction.dispose(); contextKey.reset();
   } };
 }
