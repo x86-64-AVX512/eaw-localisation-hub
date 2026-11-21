@@ -101,6 +101,29 @@ test('external comments combine with collaborative key edits', () => {
   assert.match(merged.text, /key_one:0 "Совместный"/);
 });
 
+test('additions keep their positions when the other side supplies the file structure', () => {
+  const original = 'l_russian:\n a:0 "A"\n b:0 "B"\n c:0 "C"\n';
+  const withAddition = original.replace(' c:0', ' n:0 "New"\n c:0');
+  const withComment = original.replace(' b:0', ' # note\n b:0');
+  const expected = withAddition.replace(' b:0', ' # note\n b:0');
+
+  for (const [collaborative, external] of [[withAddition, withComment], [withComment, withAddition]]) {
+    const merged = mergeLocalisationThreeWay(original, collaborative, external);
+    assert.deepEqual(merged.conflicts, []);
+    assert.equal(merged.text, expected);
+  }
+});
+
+test('independent additions at opposite ends stay behind their own anchors', () => {
+  const original = 'l_russian:\n a:0 "A"\n b:0 "B"\n c:0 "C"\n';
+  const collaborative = original.replace(' a:0', ' head:0 "Head"\n a:0');
+  const external = original + ' tail:0 "Tail"\n';
+  const merged = mergeLocalisationThreeWay(original, collaborative, external);
+
+  assert.deepEqual(merged.conflicts, []);
+  assert.equal(merged.text, collaborative + ' tail:0 "Tail"\n');
+});
+
 test('duplicate keys require choosing one complete side', () => {
   const external = base.replace(
     ' key_two:0 "Второй"',

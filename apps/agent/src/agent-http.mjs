@@ -37,7 +37,8 @@ export async function requestAgentJson(options, route, init = {}, lifetimeSignal
     try { payload = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
     catch { payload = {}; }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new TypeError('Authentication API returned a non-object response');
-    if (!response.ok) throw new Error(String(payload.error || `Authentication API failed with HTTP ${response.status}`));
+    if (!response.ok) throw Object.assign(new Error(String(payload.error || `Authentication API failed with HTTP ${response.status}`)),
+      { status: response.status, code: payload.code });
     return payload;
   } catch (error) {
     if (deadline.signal.aborted) {

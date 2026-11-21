@@ -436,11 +436,12 @@ test('Git history, document history, and localisation audit share the compact wr
 test('English original uses one reusable foreground native window', () => {
   const host = source('apps/review-host/src/main.cpp');
   assert.match(host, /kEnglishWindowTitle/u);
-  assert.match(host, /readOnly=english/u);
+  assert.match(host, /FragmentParameter\(fragment, L"readOnly"\) == L"english"/u);
   assert.match(host, /kEnglishMutexName/u);
-  assert.match(host, /FindWindowW\(kWindowClass, kEnglishWindowTitle\)/u);
+  assert.match(host, /EnumWindows\(FindEnglishWindow/u);
   assert.match(host, /SendMessageTimeoutW\(window, WM_COPYDATA/u);
   assert.match(host, /case WM_COPYDATA/u);
+  assert.match(host, /SameSignature\(payload\.substr\(0, separator\), SignWindowMessage\(L"navigate", fragment\)\)/u);
   assert.match(host, /g_webview->Navigate\(g_url\.c_str\(\)\)/u);
   assert.match(host, /SetWindowPos\(window, HWND_TOPMOST/u);
 });

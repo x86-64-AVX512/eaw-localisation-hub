@@ -1,4 +1,5 @@
 import { createDiscussionEditor } from './discussion-editor.ts';
+import { readLaunchToken } from './launch-session.ts';
 import { uiText, uiMessage } from '../../../packages/shared/src/ui-language.mts';
 import { createTextStatisticsAction } from './text-statistics.ts';
 import { createSuggestionContextMenu } from './suggestion-context-menu.ts';
@@ -22,7 +23,7 @@ import { createReviewNavigation } from './review-navigation.ts'; import { create
 import { createRecoveryBanner } from './recovery-banner.ts';
 import { createTicketPanel } from './ticket-panel.ts'; import { createDeletedBranchesPanel } from './deleted-branches-panel.ts';
 import { createScrollSync } from './scroll-sync.ts'; import { createSyntaxDiagnostics } from './syntax-diagnostics.ts';
-import { configureReadOnlyReview } from './read-only-review.ts';
+import { configureReadOnlyReview, reportReadOnlyOpen } from './read-only-review.ts';
 import { createAgentConnection } from './agent-connection.ts';
 import { createGitConflictDiff } from './git-conflict-diff.ts'; import { resetExternalConflicts } from './git-conflict-state.ts';
 import { applyCollaborationMessage } from './collaboration-messages.ts';
@@ -40,10 +41,10 @@ import {
   createDialogController, decodeBase64, encodeBase64,
 } from './review-utilities.ts';
 (self as typeof self & { MonacoEnvironment?: { getWorker: () => Worker } }).MonacoEnvironment = { getWorker: () => new Worker('/editor.worker.js', { type: 'module' }) };
-const hash = new URLSearchParams(location.hash.slice(1)), token = hash.get('token') ?? '';
+const hash = new URLSearchParams(location.hash.slice(1)), token = readLaunchToken(hash);
 const languageSettings = await initialiseUiLanguage(token);
 const themedSelects = createThemedSelects();
-const requestedPath = hash.get('path') ?? '', requestedTicket = hash.get('ticket') ?? '', readOnlyMode = hash.get('readOnly') ?? '', requestedPair = hash.get('pair') ?? '', requestedCommit = hash.get('commit') ?? '', requestedLine = Number(hash.get('line') ?? 0);
+const requestedPath = hash.get('path') ?? '', requestedTicket = hash.get('ticket') ?? '', readOnlyMode = hash.get('readOnly') ?? hash.get('readonly') ?? '', requestedPair = hash.get('pair') ?? '', requestedCommit = hash.get('commit') ?? '', requestedLine = Number(hash.get('line') ?? 0);
 const state = createAppState(), statusElement = requiredElement('#status'), toastElement = requiredElement('#toast');
 const appbarLayout = createAppbarLayout(requiredElement('.appbar'));
 const askText = createDialogController(); let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -69,9 +70,9 @@ appbarLayout.connectEditor(editor);
 createEditorSettings({ monaco, editor, showToast });
 const spellcheck = createSpellcheck({ monaco, editor, token, showToast }); const syntaxDiagnostics = createSyntaxDiagnostics({ monaco, editor, token, showToast, getFilePath: () => state.relativePath });
 const anchor = <T extends { type: string }>(message: T): T => state.reviewDocument?.anchor(message) ?? message;
-function send(message: { type: string; [field: string]: unknown }): void {
-  if (!isWorkspaceVisible() && ['activate','cursor'].includes(message.type)) return;
-  agentConnection?.send(message.reviewAnchors ? message : anchor(message));
+function send(message: { type: string; [field: string]: unknown }): boolean {
+  if (!isWorkspaceVisible() && ['activate','cursor'].includes(message.type)) return false;
+  return agentConnection?.send(message.reviewAnchors ? message : anchor(message)) ?? false;
 }
 const { rangeFromBytes, selectionBytes, jumpToBytes, positionByteAt } = createEditorCoordinates({ monaco, state, editor });
 let editingMode!: ReturnType<typeof createEditingModeController>;
@@ -173,7 +174,7 @@ function handleMessage(raw: unknown): void {
   else if (message.type === 'notice') showToast(uiMessage(message.message));
   else if (message.type === 'history') historyPanel.update(message.entries ?? [], message.headId ?? '');
   else if (message.type === 'historyVersion') historyPanel.receiveVersion(message);
-  else if (message.type === 'recoveryCode') recoveryBanner.save(message.recoveryCode);
+  else if (message.type === 'recoveryCode') recoveryBanner.receive(message.recoveryCode);
   else if (message.type === 'workspaceChanged') {
     state.workspace = message.workspace || state.workspace;
     const ready = message.phase === 'ready';
@@ -187,6 +188,7 @@ function handleMessage(raw: unknown): void {
     setStatus(uiMessage(message.message), !ready);
     showToast(uiMessage(message.message), !ready);
   } else if (message.type === 'error') {
+    recoveryBanner.handleError(message.message);
     setStatus(uiMessage(message.message), true);
     showToast(uiMessage(message.message), true);
   }
@@ -225,10 +227,17 @@ const commentActions = createCommentActions({ monaco, editor, state,
 });
 const textStatistics = createTextStatisticsAction({ editor, showToast });
 const suggestionContextMenu = createSuggestionContextMenu(editor);
-const hasDraft = () => editingMode.hasDraft() || collaborationPanel.hasDraft() || discussionEditor.hasDraft();
+const hasDraft = () => editingMode.hasDraft() || collaborationPanel.hasDraft() || discussionEditor.hasDraft()
+  || recoveryBanner.hasDraft();
 const workspaceRuntime = createWorkspaceRuntime({ state, editor, hasDraft, send, close:closeActiveDocument,
   onVisible:() => { presenceController.publish(); syntaxDiagnostics.refresh(); reviewRefresh.schedule(); } });
 async function start() {
+  if (readOnlyMode) {
+    agentConnection = createAgentConnection({
+      token, multiplex: true,
+      onMessage() {}, onOpen() {}, onWaiting() {},
+    });
+  }
   if (!token || !requestedPath) throw new Error(uiText("Review-приложение запущено без локальной сессии или файла."));
   const bootstrapQuery = new URLSearchParams({ path: requestedPath });
   if (hash.has('session')) bootstrapQuery.set('workspace','1');
@@ -258,6 +267,7 @@ async function start() {
   if (!requestedLine) workspaceTabs.restore(editor, data.path);
   if (data.readOnly) {
     configureReadOnlyReview({ data, editor, requestedLine, setStatus });
+    reportReadOnlyOpen(token, hash.get('launch'), 'opened');
     return;
   }
   collaborationPanel.refresh();
@@ -273,6 +283,7 @@ async function start() {
     },
     onWaiting: (_delay, error = '') => {
       state.ready = false;
+      recoveryBanner.retry();
       discussionEditor.refresh();
       collaborationPanel.refresh();
       editor.updateOptions({ readOnly: true });
@@ -280,7 +291,10 @@ async function start() {
     },
   });
 }
-start().catch((error: unknown) => setStatus(error instanceof Error ? error.message : String(error), true));
+start().catch((error: unknown) => {
+  if (readOnlyMode) reportReadOnlyOpen(token, hash.get('launch'), 'failed');
+  setStatus(error instanceof Error ? error.message : String(error), true);
+});
 window.addEventListener('beforeunload', () => {
   workspaceTabs.remember(editor);
   void closeActiveDocument({ flush: false });

@@ -1,18 +1,15 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { WebSocket, WebSocketServer } from 'ws';
 import { AuthError, AuthStore, bearerToken } from './auth.mjs';
 import { AdminSessionStore } from './admin-session.mjs';
 import { handleAdminHttp } from './admin-http.mjs';
+import { attachServerWebSockets } from './server-websocket.mjs';
 import { DocumentRoom, closeDocumentRoomValidator } from './document-room.mjs';
-import { sendStartupChangedFiles } from './document-startup.mjs';
-import { attachDocumentSocket } from './document-socket.mts';
-import {
-  ProtocolLimitError, createInboundBudget, validDocumentId,
-} from './protocol-limits.mts';
+import { validDocumentId } from './protocol-limits.mts';
 import { minimisePersistedDocumentMetadata } from './room-metadata.mjs';
 import { RoomRegistry } from './room-registry.mjs';
 import { TicketStore } from './ticket-store.mjs'; import { handleTicketHttp } from './ticket-http.mjs';
@@ -26,9 +23,6 @@ import { AuditLog } from './audit-log.mjs';
 import { handleSpellingHttp } from './spelling-http.mjs';
 import {
   DISPLAY_VERSION,
-  MAX_CONNECTIONS_PER_USER,
-  MAX_CONNECTIONS_TOTAL,
-  MAX_MESSAGE_BYTES,
   PROTOCOL_METADATA,
 } from '../../../packages/shared/src/constants.mts';
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -58,15 +52,29 @@ function parseArguments(argv) {
   return result;
 }
 async function atomicWrite(targetPath, data) {
-  await fs.mkdir(path.dirname(targetPath), { recursive: true });
-  const temporary = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(temporary, data, { mode: 0o600 });
+  const directory = path.dirname(targetPath);
+  await fs.mkdir(directory, { recursive: true });
+  const temporary = `${targetPath}.${randomUUID()}.tmp`;
+  const file = await fs.open(temporary, 'wx', 0o600);
   try {
+    try {
+      await file.writeFile(data);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
     await fs.rename(temporary, targetPath);
   } catch (error) {
-    if (error.code !== 'EEXIST' && error.code !== 'EPERM') throw error;
-    await fs.rm(targetPath, { force: true });
-    await fs.rename(temporary, targetPath);
+    await fs.rm(temporary, { force: true }).catch(() => {});
+    throw error;
+  }
+  if (process.platform !== 'win32') {
+    const parent = await fs.open(directory, 'r');
+    try {
+      await parent.sync();
+    } finally {
+      await parent.close();
+    }
   }
 }
 const options = parseArguments(process.argv.slice(2));
@@ -130,6 +138,8 @@ function sendJson(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
+const authenticatedRequests = new WeakMap();
+
 async function readJsonBody(request, maximumBytes = 64 * 1024) {
   const chunks = [];
   let size = 0;
@@ -137,6 +147,12 @@ async function readJsonBody(request, maximumBytes = 64 * 1024) {
     size += chunk.length;
     if (size > maximumBytes) throw new AuthError('Request body is too large', 413, 'body_too_large');
     chunks.push(chunk);
+  }
+  const access = authenticatedRequests.get(request);
+  if (access) {
+    const { user } = authStore.requireActiveSession(access.sessionId);
+    if (!access.allowTemporaryPassword) authStore.requirePermanentPassword(user);
+    if (access.admin) authStore.requireAdmin(user);
   }
   if (chunks.length === 0) return {};
   try {
@@ -150,6 +166,7 @@ async function authenticatedUser(request, { admin = false, allowTemporaryPasswor
   const user = await authStore.authenticate(bearerToken(request));
   if (!allowTemporaryPassword) authStore.requirePermanentPassword(user);
   if (admin) authStore.requireAdmin(user);
+  if (user.sessionId) authenticatedRequests.set(request, { sessionId: user.sessionId, admin, allowTemporaryPassword });
   return user;
 }
 
@@ -188,16 +205,6 @@ async function flushRooms() {
   await authStore.flush();
   await eventJournal.flush();
   await auditLog.flush();
-}
-
-async function disconnectAuthenticatedSockets(predicate, reason, closeCode = 1008) {
-  for (const room of await Promise.all([...rooms.values()])) {
-    for (const socket of room.clients) {
-      if (predicate(socket.identity) && socket.readyState === WebSocket.OPEN) {
-        socket.close(closeCode, reason);
-      }
-    }
-  }
 }
 
 async function handleHttp(request, response) {
@@ -263,7 +270,10 @@ async function handleHttp(request, response) {
     return;
   }
   if (request.method === 'GET' && url.pathname === '/api/auth/me') {
-    sendJson(response, 200, { user: await authenticatedUser(request, { allowTemporaryPassword: true }) });
+    const user = await authenticatedUser(request, { allowTemporaryPassword: true });
+    const active = authStore.requireActiveSession(user.sessionId);
+    const remaining = active ? Date.parse(active.session.expiresAt) - authStore.now() : null;
+    sendJson(response, 200, { user, sessionRemainingMs: remaining });
     return;
   }
   if (request.method === 'PUT' && url.pathname === '/api/auth/training') {
@@ -368,57 +378,10 @@ const httpServer = http.createServer((request, response) => {
   });
 });
 
-const websocketServer = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
 let shuttingDown = false;
-websocketServer.on('connection', async (socket, request) => {
-  try {
-    if (websocketServer.clients.size > MAX_CONNECTIONS_TOTAL) {
-      throw new ProtocolLimitError('Server connection limit reached', 1013);
-    }
-    socket.identity = await authStore.authenticate(bearerToken(request));
-    authStore.requirePermanentPassword(socket.identity);
-    const userConnections = [...websocketServer.clients].filter(
-      (client) => client !== socket && client.identity?.id === socket.identity.id,
-    ).length;
-    if (userConnections >= MAX_CONNECTIONS_PER_USER) {
-      throw new ProtocolLimitError('Account connection limit reached', 1013);
-    }
-    const url = new URL(request.url, `http://${request.headers.host ?? 'localhost'}`);
-    const documentId = url.searchParams.get('document');
-    if (!validDocumentId(documentId)) throw new ProtocolLimitError('Missing or invalid document id');
-    if (roomRegistry.isUnavailableBranch(documentId)) {
-      const branch = documentId.split(':', 1)[0];
-      throw new ProtocolLimitError(roomRegistry.mergedBranches.has(branch)
-        ? 'Branch merged into general-dev' : 'Branch merge is in progress',
-      roomRegistry.mergedBranches.has(branch) ? 4002 : 1013);
-    }
-    ticketStore.assertDocumentAccess(documentId);
-    await ticketStore.noteParticipant(documentId, socket.identity);
-    socket.localHead = String(url.searchParams.get('head') ?? '').toLowerCase();
-    socket.localBlob = String(url.searchParams.get('blob') ?? '').toLowerCase();
-    const canonicalSnapshot = canonicalSource.enabled
-      ? await canonicalSource.snapshot(documentId, { force: true })
-      : null;
-    socket.changedFiles = [];
-    const room = await getRoom(documentId, canonicalSnapshot);
-    if (canonicalSnapshot) await room.applyCanonicalSnapshot(canonicalSnapshot);
-    socket.room = room;
-    socket.inboundBudget = createInboundBudget();
-    room.addClient(socket);
-
-    attachDocumentSocket({
-      socket, documentId, room, ticketStore, isShuttingDown: () => shuttingDown,
-    });
-    socket.on('close', () => room.removeClient(socket));
-    socket.on('error', () => console.error('[server] websocket error'));
-    void sendStartupChangedFiles(canonicalSource, documentId, socket, room, canonicalSnapshot);
-  } catch (error) {
-    if (!(error instanceof AuthError)) console.error('[server] connection failed');
-    const closeCode = error instanceof ProtocolLimitError
-      ? error.closeCode
-      : error instanceof AuthError ? 1008 : 1011;
-    socket.close(closeCode, error.message || 'Server error');
-  }
+const { websocketServer, disconnectAuthenticatedSockets } = attachServerWebSockets({
+  httpServer, authStore, ticketStore, roomRegistry, canonicalSource, getRoom,
+  isShuttingDown: () => shuttingDown,
 });
 
 await new Promise((resolve) => httpServer.listen(options.port, options.host, () => resolve(undefined)));

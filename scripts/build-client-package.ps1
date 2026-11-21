@@ -8,7 +8,7 @@ $runtimeCheck = Join-Path $PSScriptRoot 'check-node-runtime.mjs'
 & $node $runtimeCheck
 if ($LASTEXITCODE -ne 0) { throw 'Refusing to package an unsafe Node.js runtime.' }
 $version = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw -Encoding utf8).Trim()
-if ($version -notmatch '^\d+\.\d+\.\d+F\d+$') { throw "Invalid client version: $version" }
+if ($version -cnotmatch '^\d+\.\d+\.\d+-beta\.\d+$') { throw "Invalid client version: $version" }
 $distRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
 $packageRoot = [System.IO.Path]::GetFullPath((Join-Path $distRoot "EaW-Hub-Client-$version"))
 if (-not $packageRoot.StartsWith($distRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -49,7 +49,6 @@ foreach ($scriptName in @(
     'update-client.ps1',
     'client-update-ui.ps1',
     'client-update-transfer.ps1',
-    'client-update-restart.ps1',
     'repository-sync-ui.ps1',
     'ui-language.ps1',
     'start-review.ps1',

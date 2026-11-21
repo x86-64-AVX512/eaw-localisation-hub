@@ -43,6 +43,7 @@ test('sync flush acknowledgement follows the queued edit and durable room flush'
   attachDocumentSocket({
     socket, documentId: 'main:localisation/russian/a.yml',
     ticketStore: { documentWritable: () => true }, isShuttingDown: () => false,
+    authoriseSession() {},
     room: {
       clientWritable: () => true,
       async receiveBinary() { received.resolve(); await durable.promise; },
@@ -70,6 +71,7 @@ test('document socket rejects non-object control JSON before passing it to the r
   attachDocumentSocket({
     socket, documentId: 'main:localisation/russian/a.yml',
     ticketStore: { documentWritable: () => true }, isShuttingDown: () => false,
+    authoriseSession() {},
     room: {
       clientWritable: () => true, flush() {}, receiveBinary() {},
       receiveJson() { dispatched = true; },

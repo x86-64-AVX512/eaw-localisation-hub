@@ -7,7 +7,7 @@ function Get-EawHubClientStatusMetadata {
     $version = (Get-Content -LiteralPath $versionPath -Raw -Encoding utf8).Trim()
     $constants = Get-Content -LiteralPath $constantsPath -Raw -Encoding utf8
     $protocolMatch = [regex]::Match($constants, 'PROTOCOL_VERSION\s*=\s*(\d+)')
-    if ($version -notmatch '^\d+\.\d+\.\d+F\d+$' -or -not $protocolMatch.Success) {
+    if ($null -eq (ConvertTo-EawHubVersionParts -Version $version) -or -not $protocolMatch.Success) {
         throw (Get-EawUiText -Text 'Не удалось определить локальную версию клиента или протокола.')
     }
     [pscustomobject]@{
@@ -17,8 +17,8 @@ function Get-EawHubClientStatusMetadata {
 }
 
 function ConvertTo-EawHubVersionParts {
-    param([Parameter(Mandatory = $true)][string]$Version)
-    $match = [regex]::Match($Version.Trim(), '^(\d+)\.(\d+)\.(\d+)F(\d+)$')
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Version)
+    $match = [regex]::Match($Version.Trim(), '^(\d+)\.(\d+)\.(\d+)(?:F|-beta\.)(\d+)$')
     if (-not $match.Success) { return $null }
     @(
         [int64]$match.Groups[1].Value,

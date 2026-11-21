@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import http from 'node:http';
+import { once } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { WebSocket } from 'ws';
 import { queueMaterialisation, startReviewServer } from '../apps/agent/src/review-server.mjs';
-import { persistentReviewEndpoint } from '../apps/agent/src/review-endpoint.mts';
+import { listenReviewEndpoint, loadReviewEndpoint } from '../apps/agent/src/review-endpoint.mts';
 import { DiffCache } from '../apps/agent/src/diff-cache.mjs';
 
 function waitForOpen(socket) {
@@ -50,31 +52,132 @@ test('materialisation waits for an older write before saving a newer personal pr
   assert.deepEqual(order, ['old-start', 'old-finish', 'new-finish']);
 });
 
-test('review endpoint keeps its loopback port and capability across Agent restarts', async () => {
-  const state = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-review-endpoint-'));
-  try {
-    const first = await persistentReviewEndpoint({ state });
-    const second = await persistentReviewEndpoint({ state });
-    assert.equal(second.port, first.port);
-    assert.equal(second.token, first.token);
-    assert.match(first.token, /^[A-Za-z0-9_-]{43}$/u);
-    assert.equal(JSON.parse(await fs.readFile(first.endpointPath, 'utf8')).port, first.port);
-  } finally {
+async function reviewEndpointFixture(t) {
+  const temp = await fs.realpath(os.tmpdir());
+  const state = await fs.mkdtemp(path.join(temp, 'eaw-review-endpoint-'));
+  t.after(async () => {
+    assert.equal(path.dirname(await fs.realpath(state)), temp);
     await fs.rm(state, { recursive: true, force: true });
+  });
+  const options = { state, repo: state, workspace: 'test' };
+  const endpointPath = path.join(state, 'review-endpoint.json');
+  return { options, endpointPath };
+}
+
+async function readJsonFile(target) {
+  return JSON.parse(await fs.readFile(target, 'utf8'));
+}
+
+test('review endpoint keeps its loopback port and capability across Agent restarts', async t => {
+  const { options, endpointPath } = await reviewEndpointFixture(t);
+  const first = await startReviewServer({}, options);
+  let original;
+  try {
+    original = await readJsonFile(first.discoveryPath);
+    await assert.rejects(async () => {
+      const duplicate = await startReviewServer({}, options);
+      await duplicate.close();
+    }, /Desktop Agent is already running/u);
+    assert.deepEqual(await readJsonFile(first.discoveryPath), original);
+  } finally {
+    await first.close();
+  }
+  const second = await startReviewServer({}, options);
+  try {
+    const current = await readJsonFile(second.discoveryPath);
+    assert.equal(current.origin, original.origin);
+    assert.equal(current.token, original.token);
+    assert.match(current.token, /^[A-Za-z0-9_-]{43}$/u);
+    assert.equal((await readJsonFile(endpointPath)).port, Number(new URL(current.origin).port));
+  } finally {
+    await second.close();
   }
 });
 
-test('review endpoint replaces a malformed persisted capability', async () => {
-  const state = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-review-endpoint-invalid-'));
+test('review endpoint replaces a malformed persisted capability', async t => {
+  const { options, endpointPath } = await reviewEndpointFixture(t);
+  await fs.writeFile(endpointPath, JSON.stringify({ schema: 1, port: '49152', token: 'invalid' }));
+  const review = await startReviewServer({}, options);
   try {
-    const endpointPath = path.join(state, 'review-endpoint.json');
-    await fs.writeFile(endpointPath, JSON.stringify({ schema: 1, port: '49152', token: 'invalid' }));
-    const endpoint = await persistentReviewEndpoint({ state });
-    assert.equal(Number.isInteger(endpoint.port), true);
+    const endpoint = await readJsonFile(endpointPath);
+    assert.ok(endpoint.port > 0);
     assert.match(endpoint.token, /^[A-Za-z0-9_-]{43}$/u);
-    assert.equal(JSON.parse(await fs.readFile(endpointPath, 'utf8')).port, endpoint.port);
+    assert.equal((await readJsonFile(review.discoveryPath)).origin, `http://127.0.0.1:${endpoint.port}`);
   } finally {
-    await fs.rm(state, { recursive: true, force: true });
+    await review.close();
+  }
+});
+
+test('review endpoint relocates when another application owns the saved port', async t => {
+  const { options, endpointPath } = await reviewEndpointFixture(t);
+  const oldToken = 'A'.repeat(43);
+  const probes = [];
+  const occupant = http.createServer((request, response) => {
+    probes.push(request.headers.authorization);
+    response.writeHead(404).end();
+  });
+  occupant.listen(0, '127.0.0.1');
+  await once(occupant, 'listening');
+  try {
+    const { port: oldPort } = occupant.address();
+    await fs.writeFile(endpointPath, JSON.stringify({ schema: 1, port: oldPort, token: oldToken }));
+    const warning = t.mock.method(console, 'warn', () => {});
+    const review = await startReviewServer({}, options);
+    let discovery;
+    try {
+      discovery = await readJsonFile(review.discoveryPath);
+      const endpoint = await readJsonFile(endpointPath);
+      assert.notEqual(endpoint.port, oldPort);
+      assert.notEqual(endpoint.token, oldToken);
+      assert.deepEqual(probes, [undefined]);
+      assert.equal(discovery.origin, `http://127.0.0.1:${endpoint.port}`);
+      assert.equal(discovery.token, endpoint.token);
+      assert.match(warning.mock.calls[0].arguments[0], /browser storage.*old address/u);
+
+      const checkAccess = token => fetch(discovery.origin + '/api/review-access', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      assert.equal((await checkAccess(oldToken)).status, 403);
+      assert.deepEqual(await (await checkAccess(endpoint.token)).json(), { allowed: true });
+    } finally {
+      await review.close();
+    }
+    const restarted = await startReviewServer({}, options);
+    try {
+      assert.deepEqual(await readJsonFile(restarted.discoveryPath), discovery);
+      assert.equal(warning.mock.calls.length, 1);
+    } finally {
+      await restarted.close();
+    }
+  } finally {
+    await new Promise(resolve => occupant.close(resolve));
+  }
+});
+
+test('review endpoint retries a reserved port using the OS-assigned port', async t => {
+  const { options, endpointPath } = await reviewEndpointFixture(t);
+  const saved = { schema: 1, port: 59637, token: 'A'.repeat(43) };
+  await fs.writeFile(endpointPath, JSON.stringify(saved));
+  const server = http.createServer();
+  const listen = server.listen;
+  const originalListeningHandlers = server.listeners('listening');
+  const attempts = [];
+  t.mock.method(server, 'listen', function (port, host) {
+    attempts.push(port);
+    if (port === saved.port) {
+      queueMicrotask(() => server.emit('error', Object.assign(new Error('Port is reserved'), { code: 'EACCES' })));
+      return server;
+    }
+    return listen.call(server, port, host);
+  });
+  try {
+    await listenReviewEndpoint(server, await loadReviewEndpoint(options));
+    assert.deepEqual(attempts, [saved.port, 0]);
+    assert.equal((await readJsonFile(endpointPath)).port, server.address().port);
+    assert.equal(server.listenerCount('error'), 0);
+    assert.deepEqual(server.listeners('listening'), originalListeningHandlers);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
   }
 });
 

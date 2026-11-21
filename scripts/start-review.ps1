@@ -18,6 +18,10 @@ if ($session.schema -ne 1 -or $session.origin -notmatch '^http://127\.0\.0\.1:\d
 if (-not (Get-Process -Id ([int]$session.pid) -ErrorAction SilentlyContinue)) {
     throw 'The Desktop Agent for this Review session has stopped.'
 }
+$access = Invoke-RestMethod -Uri ($session.origin + '/api/review-access') -Headers @{
+    Authorization = 'Bearer ' + [string]$session.token
+} -TimeoutSec 22
+if (-not $access.allowed) { throw (Get-EawUiMessage ([string]$access.error)) }
 if ([string]::IsNullOrWhiteSpace($FilePath)) {
     Add-Type -AssemblyName System.Windows.Forms
     $dialog = [System.Windows.Forms.OpenFileDialog]::new()

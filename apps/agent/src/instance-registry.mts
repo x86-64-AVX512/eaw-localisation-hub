@@ -1,4 +1,7 @@
+import { createHash } from 'node:crypto';
+import { once } from 'node:events';
 import fs from 'node:fs/promises';
+import { createServer } from 'node:net';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -29,6 +32,49 @@ function errorCode(error: unknown): string | undefined {
 
 export function instanceRegistryPath(stateDirectory: string): string {
   return path.join(stateDirectory, 'agent-instance.json');
+}
+
+function instanceAlreadyRunning(cause: unknown) {
+  return new Error('Desktop Agent is already running for this state directory', { cause });
+}
+
+async function acquireFileLock(stateDirectory: string): Promise<() => Promise<void>> {
+  const { DatabaseSync } = await import('node:sqlite');
+  let lock;
+  try {
+    lock = new DatabaseSync(path.join(stateDirectory, 'agent-instance.lock'));
+    lock.exec('BEGIN EXCLUSIVE');
+  } catch (error) {
+    lock?.close();
+    // SQLITE_BUSY means another process holds the exclusive transaction.
+    if (errorCode(error) === 'ERR_SQLITE_ERROR' && typeof error === 'object'
+      && error !== null && 'errcode' in error && error.errcode === 5) {
+      throw instanceAlreadyRunning(error);
+    }
+    throw error;
+  }
+  return async () => { lock.close(); };
+}
+
+export async function acquireAgentInstanceLock(stateDirectory: string): Promise<() => Promise<void>> {
+  await fs.mkdir(stateDirectory, { recursive: true });
+  const canonicalPath = await fs.realpath(stateDirectory);
+  if (process.platform !== 'win32' && process.platform !== 'linux') return acquireFileLock(canonicalPath);
+  const identity = process.platform === 'win32' ? canonicalPath.toLowerCase() : canonicalPath;
+  const name = 'eaw-hub-agent-' + createHash('sha256').update(identity).digest('hex');
+  // Windows pipes and Linux abstract sockets disappear when the owner process exits.
+  const address = process.platform === 'win32' ? '\\\\.\\pipe\\' + name : '\0' + name;
+  const lock = createServer(socket => socket.destroy());
+  try {
+    lock.listen({ path: address, exclusive: true });
+    await once(lock, 'listening');
+  } catch (error) {
+    if (errorCode(error) === 'EADDRINUSE') throw instanceAlreadyRunning(error);
+    throw error;
+  }
+  return () => new Promise<void>((resolve, reject) => {
+    lock.close(error => error ? reject(error) : resolve());
+  });
 }
 
 export async function registerAgentInstance(options: AgentInstanceOptions,

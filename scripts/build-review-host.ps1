@@ -39,7 +39,7 @@ $output = Join-Path $outputRoot 'EaWReview.exe'
     -target x86_64-windows-gnu `
     -std=c++20 -O1 -DUNICODE -D_UNICODE -fms-extensions -municode `
     -I $include `
-    -lole32 -loleaut32 -luuid -luser32 -lshell32 -static `
+    -lole32 -loleaut32 -luuid -luser32 -lshell32 -lbcrypt -liphlpapi -lws2_32 -static `
     '-Wl,--subsystem,windows' `
     -o $output
 if ($LASTEXITCODE -ne 0) { throw 'Could not build EaWReview.exe.' }

@@ -140,7 +140,8 @@ test('transport rejects read-only Git/ticket updates with correlated errors befo
       send: (value) => replies.push(validateServerMessage(JSON.parse(value))), close() {} });
     attachDocumentSocket({ socket, documentId: 'branch:localisation/russian/file.yml',
       room: { clientWritable: () => blockedBy !== 'git', receiveJson: () => { invoked = true; } },
-      ticketStore: { documentWritable: () => blockedBy !== 'ticket' }, isShuttingDown: () => false });
+      ticketStore: { documentWritable: () => blockedBy !== 'ticket' }, isShuttingDown: () => false,
+      authoriseSession() {} });
     socket.emit('message', Buffer.from(JSON.stringify(command())), false); await socket.messageQueue;
     assert.equal(invoked, false); assert.equal(replies[0].type, 'reservation-update-result');
     assert.equal(replies[0].requestId, 'request'); assert.equal(replies[0].status, 'error');

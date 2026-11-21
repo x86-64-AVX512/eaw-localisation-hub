@@ -1,5 +1,6 @@
 import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { createEmbeddedConnection, embeddedSessionId } from './workspace-bridge.ts';
+import { clearLaunchToken } from './launch-session.ts';
 export interface AgentConnectionOptions {
   token: string;
   onMessage: (message: unknown) => void;
@@ -53,7 +54,18 @@ export function createAgentConnection(options: AgentConnectionOptions) {
       retryDelay = 500;
       onOpen();
     });
-    socket.addEventListener('close', schedule);
+    socket.addEventListener('close', (event) => {
+      if (event.code === 4003) {
+        disposed = true;
+        clearLaunchToken();
+        window.removeEventListener('online', connect);
+        const nativeWindow = window as Window & { chrome?: { webview?: { postMessage(message: string): void } } };
+        if (nativeWindow.chrome?.webview) nativeWindow.chrome.webview.postMessage('hub-session-ended');
+        else window.location.replace('about:blank');
+        return;
+      }
+      schedule();
+    });
     socket.addEventListener('error', () => socket?.close());
   }
 

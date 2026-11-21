@@ -14,7 +14,6 @@ import {
   publicSession,
   publicUser,
   secretCode,
-  sessionToken,
   validateDisplayName,
   validatePassword,
 } from './auth-model.mjs';
@@ -42,6 +41,9 @@ import {
 import { updateTrainingProgress } from './training-progress.mjs';
 import { addSpellingWord, spellingWords } from './auth-spelling.mjs';
 import { scryptAsync } from './auth-scrypt.mts';
+import {
+  ADMIN_SESSION_TTL_MILLISECONDS, USER_SESSION_TTL_MILLISECONDS, issueSession, requireActiveSession,
+} from './auth-sessions.mjs';
 export { ACCOUNT_ROLES, AuthError };
 const SCRYPT_PARAMETERS = Object.freeze({ N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 });
 const PASSWORD_KEY_BYTES = 32;
@@ -53,9 +55,6 @@ const ACCOUNT_LOGIN_BURST = 6;
 const ACCOUNT_LOGIN_REFILL_PER_SECOND = 1 / 10;
 const SOURCE_LOGIN_BURST = 12;
 const SOURCE_LOGIN_REFILL_PER_SECOND = 2;
-const MAX_SESSIONS_PER_USER = 8;
-const ADMIN_SESSION_TTL_MILLISECONDS = 7 * 24 * 60 * 60 * 1000;
-const USER_SESSION_TTL_MILLISECONDS = 30 * 24 * 60 * 60 * 1000;
 
 export class AuthStore {
   constructor(dataDirectory, atomicWrite, mode = 'required', rateLimit = {}) {
@@ -66,6 +65,8 @@ export class AuthStore {
     this.state = { schema: 6, users: [], invites: [], sessions: [], backupTokens: [], spellingWords: [] };
     this.recoveryCodes = new RecoveryCodeHasher(dataDirectory, atomicWrite);
     this.persistPromise = Promise.resolve();
+    /** @type {(() => void) | null} */
+    this.onSessionChange = null;
     this.passwordWorkPromise = Promise.resolve();
     this.pendingPasswordJobs = 0;
     this.failedLogins = new Map();
@@ -143,6 +144,7 @@ export class AuthStore {
   }
 
   async persist() {
+    this.onSessionChange?.();
     const snapshot = `${JSON.stringify(this.state, null, 2)}\n`;
     const write = this.persistPromise
       .catch(() => {})
@@ -257,29 +259,7 @@ export class AuthStore {
   }
 
   issueSession(user) {
-    if (user.enabled === false) throw new AuthError('Account is disabled', 403, 'account_disabled');
-    const token = sessionToken();
-    const now = this.now();
-    this.state.sessions = this.state.sessions.filter((session) => activeByExpiry(session, now));
-    const ttl = user.roles.includes('admin')
-      ? ADMIN_SESSION_TTL_MILLISECONDS
-      : USER_SESSION_TTL_MILLISECONDS;
-    const session = {
-      id: crypto.randomUUID(),
-      tokenHash: hashSecret(token),
-      userId: user.id,
-      expiresAt: new Date(now + ttl).toISOString(),
-    };
-    const existing = this.state.sessions.filter(({ userId }) => userId === user.id);
-    if (existing.length >= MAX_SESSIONS_PER_USER) {
-      const remove = new Set(existing
-        .sort((left, right) => Date.parse(left.expiresAt) - Date.parse(right.expiresAt))
-        .slice(0, existing.length - MAX_SESSIONS_PER_USER + 1)
-        .map(({ id }) => id));
-      this.state.sessions = this.state.sessions.filter(({ id }) => !remove.has(id));
-    }
-    this.state.sessions.push(session);
-    return { token, session };
+    return issueSession(this.state, user, this.now());
   }
 
   async authenticate(token) {
@@ -301,10 +281,11 @@ export class AuthStore {
       await this.persist();
       throw new AuthError('Session has expired', 401, 'expired_session');
     }
-    const user = this.state.users.find(({ id }) => id === session.userId);
-    if (!user) throw new AuthError('Session is invalid or revoked', 401, 'invalid_session');
-    if (user.enabled === false) throw new AuthError('Account is disabled', 403, 'account_disabled');
-    return { ...publicUser(user), sessionId: session.id };
+    return { ...publicUser(this.requireActiveSession(sessionId).user), sessionId };
+  }
+
+  requireActiveSession(sessionId) {
+    return this.required ? requireActiveSession(this.state, sessionId, this.now()) : null;
   }
 
   async redeem(code, displayName, password) {
@@ -324,6 +305,7 @@ export class AuthStore {
     const passwordVerifier = await this.hashPassword(password);
     if (this.state.users.some((user) => displayNameKey(user.displayName) === key)
       || !this.state.invites.includes(invite)
+      || invite.revoked === true
       || invite.uses >= invite.maxUses
       || !activeByExpiry(invite)) {
       throw new AuthError('Invitation or display name is no longer available', 409, 'registration_race');
@@ -410,7 +392,9 @@ export class AuthStore {
     if (!user || !await this.verifyPassword(currentPassword, user.passwordVerifier)) {
       throw new AuthError('Current password is incorrect', 401, 'invalid_credentials');
     }
-    user.passwordVerifier = await this.hashPassword(newPassword);
+    const passwordVerifier = await this.hashPassword(newPassword);
+    this.requireActiveSession(actor.sessionId);
+    user.passwordVerifier = passwordVerifier;
     user.temporaryPassword = false;
     this.state.sessions = this.state.sessions.filter(
       (session) => session.userId !== user.id || session.id === actor.sessionId,

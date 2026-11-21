@@ -1,4 +1,4 @@
-﻿param([switch]$StartMinimized)
+﻿param([switch]$StartMinimized, [switch]$AfterUpdate)
 . (Join-Path $PSScriptRoot 'ui-language.ps1')
 
 
@@ -133,11 +133,23 @@ function Get-HubApiErrorMessage {
     return "HTTP $($Result.Status)"
 }
 
+function Sync-RunningAgentCredential {
+    try {
+        $reviewSession = Get-Content -LiteralPath (Join-Path $stateDirectory 'review-session.json') -Raw -Encoding utf8 | ConvertFrom-Json
+        if ($reviewSession.origin -cmatch '^http://127\.0\.0\.1:\d+$' -and $reviewSession.token) {
+            Stop-EawAgentRequests -Keys @('review-credentials')
+            [void](Start-EawAgentRequest -Key 'review-credentials' -Server $serverBox.Text.Trim() `
+                -Url ($reviewSession.origin + '/api/review-access') -Method 'POST' -Token $reviewSession.token -TimeoutMilliseconds 22000)
+        }
+    } catch {}
+}
+
 function Save-AuthenticatedSession($Result) {
     Cancel-AgentStart
     $uiNetwork.ConfirmedAt=[DateTime]::Now
     $credentialTarget = Get-EawHubCredentialTarget -Server $serverBox.Text.Trim() -Kind 'AgentToken'
     Set-EawHubCredential -Target $credentialTarget -UserName ([string]$Result.user.displayName) -Secret ([string]$Result.token)
+    Sync-RunningAgentCredential
     $nameBox.Text = [string]$Result.user.displayName
     Save-AgentConfig (Current-Config)
     $roles = @($Result.user.roles) -join ', '
@@ -487,6 +499,14 @@ $stateGroup.Controls.Add($updateClientButton)
 
 $status = [System.Windows.Forms.Label]::new()
 $status.Text = (Get-EawUiText -Text 'Для первого входа нужны приглашение и новый пароль; затем достаточно имени и пароля.')
+if ($AfterUpdate) {
+    try {
+        $result = Get-Content -LiteralPath (Join-Path $stateDirectory 'update-status.json') -Raw -Encoding utf8 | ConvertFrom-Json
+        if ($result.InstallRequested -and $result.Stage -in @('complete', 'cancelled', 'error')) {
+            $status.Text = [string]$result.Message
+        }
+    } catch {}
+}
 $status.BorderStyle = 'FixedSingle'
 $status.Location = [System.Drawing.Point]::new(27, 830)
 $status.Size = [System.Drawing.Size]::new(643, 66)
@@ -796,7 +816,8 @@ function Start-AgentProcess {
         '--server', $config.Server,
         '--user', $config.User,
         '--color', $config.Color,
-        '--state', $stateDirectory
+        '--state', $stateDirectory,
+        '--windows-credentials'
     )
     $argumentLine = ($arguments | ForEach-Object { Quote-AgentArgument ([string]$_) }) -join ' '
     $previousToken = $env:EAW_HUB_TOKEN
@@ -954,8 +975,9 @@ $reviewButton.Add_Click({
 $logoutButton.Add_Click({
     $credentialTarget=Get-EawHubCredentialTarget -Server $serverBox.Text.Trim() -Kind 'AgentToken'
     $credential=Get-EawHubCredential -Target $credentialTarget
-    Stop-AgentProcess
+    Cancel-AgentStart
     Remove-EawHubCredential -Target $credentialTarget;$uiNetwork.Account=$null;$uiNetwork.ConfirmedAt=$null
+    Sync-RunningAgentCredential
     $status.Text=Get-EawUiText -Text 'Выход выполнен, токен удалён из Windows Credential Manager.'
     if($credential -and $credential.Secret){
         [void](Invoke-HubAuthApi -Key 'logout' -Route '/api/auth/logout' -Operation 'Выход из аккаунта' -Token $credential.Secret -Body @{} -Failure {
@@ -982,7 +1004,7 @@ $checkStateButton.Add_Click({
 })
 $updateClientButton.Add_Click({
     $answer = [System.Windows.Forms.MessageBox]::Show($form,
-        (Get-EawUiText -Text 'Скачать и установить новую версию с GitHub Releases? Если обновление найдено, Agent и Review будут закрыты на время установки, затем запущены снова. Windows может запросить права администратора. Без вашего подтверждения клиент не обновляется.'),
+        (Get-EawUiText -Text 'Скачать и установить последнюю версию с GitHub Releases? Перед установкой Agent и Review закроются. После установки откроются настройки Agent. Windows может запросить права администратора.'),
         (Get-EawUiText -Text 'Обновление EaW Localisation Hub'), 'YesNo', 'Question', 'Button2')
     if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
     try { Start-ClientUpdateCheck -Install } catch { $status.Text = (Get-EawUiText -Text 'Не удалось запустить обновление: {0}' -Values @($($_.Exception.Message))) }
@@ -1032,7 +1054,7 @@ $timer.Add_Tick({
                     [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
                 if ($updateAtUtc -ge $script:uiStartedAtUtc -and
                     ($updateStatus.Stage -eq 'available' -or $updateStatus.InstallRequested) -and
-                    $updateStatus.Stage -in @('checking', 'available', 'current', 'downloading', 'verifying', 'installing', 'switching', 'restarting', 'complete', 'error')) {
+                    $updateStatus.Stage -in @('checking', 'available', 'current', 'downloading', 'verifying', 'installing', 'switching', 'complete', 'cancelled', 'error')) {
                     $status.Text = [string]$updateStatus.Message
                     if ($updateStatus.Stage -eq 'error' -and $updateStatus.InstallRequested) {
                         $tray.ShowBalloonTip(5000, (Get-EawUiText -Text 'EaW Hub – ошибка обновления'), [string]$updateStatus.Message, 'Error')
@@ -1074,7 +1096,7 @@ $updateTimer.Add_Tick({ try { Start-ClientUpdateCheck } catch { $status.Text = (
 $updateTimer.Start()
 $form.Add_Shown({ try { Start-ClientUpdateCheck } catch { $status.Text = (Get-EawUiText -Text 'Ошибка проверки обновления: {0}' -Values @($($_.Exception.Message))) } })
 
-if ($StartMinimized) {
+if ($StartMinimized -and -not $AfterUpdate) {
     $form.Add_Shown({
         $form.Hide()
         try { Start-AgentProcess } catch { $tray.ShowBalloonTip(5000, (Get-EawUiText -Text 'EaW Hub – ошибка запуска'), $_.Exception.Message, 'Error') }

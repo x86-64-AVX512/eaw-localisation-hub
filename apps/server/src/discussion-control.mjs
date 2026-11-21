@@ -28,10 +28,9 @@ export async function receiveDiscussionWrite(room, socket, message, authorise) {
   let result;
   try {
     authorise();
-    result = await auditDocumentControl(room, socket, message, () => room.applyJson(socket, message));
+    result = await auditDocumentControl(room, socket, message, () => { authorise(); return room.applyJson(socket, message); });
     if (!result) throw new Error('Discussion is unavailable');
     // Already inside the room queue: flush() would wait for this very request.
-    if (room.persistTimer) { clearTimeout(room.persistTimer); room.persistTimer = null; }
     await room.persist();
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -117,7 +116,10 @@ export function applyDiscussionControl(room, socket, message) {
     const status = controlledString(message.status, 'Comment status', 16, { required: true });
     if (!['open', 'resolved'].includes(status)) throw new Error('Invalid comment status');
     if (thread && thread.status !== status) {
-      thread.status = status; room.notifyTicketOwner('comment-status', actor, { discussionId: id, status }); room.schedulePersist();
+      const previous = thread.status;
+      thread.status = status;
+      try { room.assertMetadataBudget(); } catch (error) { thread.status = previous; throw error; }
+      room.notifyTicketOwner('comment-status', actor, { discussionId: id, status }); room.schedulePersist();
     }
   } else if (thread) {
     room.commentThreads = collection.filter(item => item.id !== id); room.schedulePersist();

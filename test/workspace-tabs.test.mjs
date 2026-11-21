@@ -1,11 +1,44 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createWorkspaceTabs, workspaceTabLabel } from '../apps/review/src/workspace-tabs.ts';
+import { readLaunchToken, reviewFragment, clearLaunchToken } from '../apps/review/src/launch-session.ts';
 
 const storageKey = 'eaw-hub-workspace-tabs-v1';
 const tab = (name, ticket = '') => ({ path: `C:/repo/localisation/russian/${name}.yml`,
   relativePath: `localisation/russian/${name}.yml`, ticket });
 const A = tab('A'), B = tab('B'), C = tab('C');
+
+test('Review removes the launch token from its URL and can still reload and switch tabs', (t) => {
+  const globals = ['sessionStorage', 'history', 'location'];
+  const descriptors = globals.map((name) => Object.getOwnPropertyDescriptor(globalThis, name));
+  t.after(() => globals.forEach((name, index) => {
+    const descriptor = descriptors[index];
+    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+    else delete globalThis[name];
+  }));
+  const values = new Map();
+  const location = { pathname: '/', search: '?open=2', hash: '#token=fixture&path=one&readOnly=english' };
+  Object.defineProperties(globalThis, {
+    sessionStorage: { configurable: true, value: {
+      getItem: (key) => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key),
+    } },
+    location: { configurable: true, value: location },
+    history: { configurable: true, value: {
+      replaceState: (_state, _title, url) => {
+        const next = new URL(url, 'http://127.0.0.1');
+        Object.assign(location, { search: next.search, hash: next.hash });
+      },
+    } },
+  });
+  assert.equal(readLaunchToken(new URLSearchParams(location.hash.slice(1))), 'fixture');
+  assert.equal(location.hash, '#path=one&readOnly=english');
+  assert.equal(location.search, '?open=2');
+  assert.equal(readLaunchToken(new URLSearchParams(location.hash.slice(1))), 'fixture');
+  assert.equal(reviewFragment('fixture', { path: 'two' }).toString(), 'path=two');
+  clearLaunchToken();
+  assert.equal(readLaunchToken(new URLSearchParams(location.hash.slice(1))), '');
+  assert.equal(reviewFragment('fixture', { path: 'two' }).get('token'), 'fixture');
+});
 
 test('compact tab labels distinguish language and ticket without losing arbitrary filenames', () => {
   assert.equal(workspaceTabLabel(tab('country_BAR_l_russian')), 'BAR · RU');

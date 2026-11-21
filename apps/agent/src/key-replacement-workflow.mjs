@@ -6,7 +6,7 @@ import {
   AMBIGUOUS_QUOTE_MESSAGE, scanLocalisationEntries, parseKeyReplacementBatch, replaceLocalisationValues,
 } from '../../../packages/shared/src/localisation-replace.mts';
 import {
-  readTrackedTextFile, withoutUtf8Bom, withUtf8Bom, writeTrackedTextFile,
+  normaliseLineEndings, readTrackedTextFile, withoutUtf8Bom, withUtf8Bom, writeTrackedTextFile,
 } from '../../../packages/shared/src/text.mts';
 
 const MAX_BATCH_ENTRIES = 500;
@@ -113,16 +113,24 @@ export class KeyReplacementWorkflow {
     try {
       for (const file of preview.files) {
         const absolutePath = path.resolve(this.hub.options.repo, file.path);
-        const original = withoutUtf8Bom(await readTrackedTextFile(this.hub.options.repo, absolutePath));
+        const originalFile = await readTrackedTextFile(this.hub.options.repo, absolutePath);
+        const original = withoutUtf8Bom(originalFile);
         if (digest(original) !== file.hash) throw new Error(`Файл ${file.path} изменился во время применения.`);
         const next = replaceLocalisationValues(original, wanted).text;
         requireDocumentEdit(this.hub.identity, file.path);
-        originals.push({ absolutePath, original });
-        await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(next));
+        const written = await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(next), {
+          expectedText: normaliseLineEndings(original),
+        }).catch((error) => {
+          if (error.code === 'EAW_EXTERNAL_CHANGE') throw new Error(`Файл ${file.path} изменился во время применения.`);
+          throw error;
+        });
+        if (written) originals.push({ absolutePath, originalFile, expectedText: normaliseLineEndings(next) });
       }
     } catch (error) {
       for (const item of originals.toReversed()) {
-        await writeTrackedTextFile(this.hub.options.repo, item.absolutePath, withUtf8Bom(item.original)).catch(() => {});
+        await writeTrackedTextFile(this.hub.options.repo, item.absolutePath, item.originalFile, {
+          expectedText: item.expectedText,
+        }).catch(() => {});
       }
       throw error;
     }

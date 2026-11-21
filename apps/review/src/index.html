@@ -156,16 +156,32 @@
     <svg id="connectors" aria-hidden="true"></svg>
   </main>
   <dialog id="ai-localisation-dialog" class="ai-localisation-dialog" aria-labelledby="ai-localisation-title">
-    <h2 id="ai-localisation-title">Орфография и грамматика · GPT-6 Luna</h2>
-    <p class="dialog-hint">Проверка отправляет видимый текст русской или английской локализации в OpenAI и расходует лимит личного аккаунта Codex.</p>
+    <h2 id="ai-localisation-title">Орфография и грамматика</h2>
+    <fieldset class="ai-localisation-models" id="ai-localisation-models">
+      <legend>Модель проверки</legend>
+      <div class="ai-localisation-actions">
+        <span><input id="ai-model-codex" type="radio" name="ai-model" value="codex" checked><label for="ai-model-codex">GPT-6 Luna (Codex)</label></span>
+        <span><input id="ai-model-deepseek" type="radio" name="ai-model" value="deepseek"><label for="ai-model-deepseek">DeepSeek Flash</label></span>
+        <span><input id="ai-model-kimi" type="radio" name="ai-model" value="kimi"><label for="ai-model-kimi">Kimi K3.1 Pro</label></span>
+      </div>
+    </fieldset>
+    <p class="dialog-hint" id="ai-localisation-provider-hint">Проверка отправляет видимый текст русской или английской локализации в OpenAI и расходует лимит личного аккаунта Codex.</p>
     <p class="dialog-hint">Выделите до 8 ключей и нажмите Ctrl+Alt+R. Замечания появятся под текстом. Наведите на подчёркивание для объяснения, нажмите Ctrl+. для исправления.</p>
     <p id="ai-localisation-account" role="status"></p>
-    <div class="ai-localisation-actions">
+    <div class="ai-localisation-actions" id="ai-localisation-codex">
       <button id="ai-localisation-login" type="button">Войти через браузер</button>
       <button id="ai-localisation-cancel-login" type="button" hidden>Отменить вход</button>
       <button id="ai-localisation-logout" type="button" hidden>Выйти из Codex</button>
       <button id="ai-localisation-connect" type="button">Проверить подключение</button>
     </div>
+    <form id="ai-localisation-api-key" class="ai-localisation-key" action="/api/ai-localisation/api-key" method="post" hidden>
+      <label for="ai-localisation-key-value">API-ключ</label>
+      <div class="ai-localisation-actions">
+        <input id="ai-localisation-key-value" name="key" type="password" required maxlength="512" autocomplete="off" spellcheck="false" aria-describedby="ai-localisation-account">
+        <button id="ai-localisation-key-save" type="submit">Подключить</button>
+        <button id="ai-localisation-key-remove" type="button" hidden>Удалить ключ</button>
+      </div>
+    </form>
     <label><input id="ai-localisation-automatic" type="checkbox" aria-describedby="ai-localisation-automatic-hint"> Проверять орфографию и грамматику в фоне</label>
     <p class="dialog-hint" id="ai-localisation-automatic-hint">Через 15 секунд без правок видимые изменённые предложения проверяются одним запросом. При включении проверяется фрагмент под курсором. Для текста без точки границей служит закрывающая кавычка.</p>
     <div class="ai-localisation-actions">

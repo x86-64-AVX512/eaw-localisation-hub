@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
@@ -23,22 +22,6 @@ async function freePort() {
   const { port } = server.address();
   await new Promise((resolve) => server.close(resolve));
   return port;
-}
-
-async function prepareReviewEndpoint(stateDirectory) {
-  // Windows can reserve ports inside Review's random range (EACCES). Seed the
-  // fixture with an OS-allocated usable port so transport tests stay isolated
-  // from machine-specific exclusions without changing production discovery.
-  let port;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    port = await freePort();
-    if (port >= 49152 && port < 65152) break;
-  }
-  assert.ok(port >= 49152 && port < 65152, 'no usable Review fixture port');
-  await fs.mkdir(stateDirectory, { recursive: true });
-  await fs.writeFile(path.join(stateDirectory, 'review-endpoint.json'), JSON.stringify({
-    schema: 1, port, token: crypto.randomBytes(32).toString('base64url'),
-  }));
 }
 
 function spawnNode(argumentsList, environment = {}) {
@@ -156,8 +139,6 @@ test('real Review–Agent–server transport preserves in-flight typing and writ
       const startAgent = (repo, state, user) => spawnNode(['apps/agent/src/main.mjs',
         '--repo', repo, '--workspace', 'general-dev',
         '--user', user, '--state', state, '--server', `ws://127.0.0.1:${port}`]);
-      await prepareReviewEndpoint(stateAlice);
-      await prepareReviewEndpoint(stateBob);
       aliceAgent = startAgent(repoAlice, stateAlice, 'Alice');
       bobAgent = startAgent(repoBob, stateBob, 'Bob');
       await Promise.all([
@@ -236,7 +217,6 @@ test('real BAR deletion, checkbox and watcher round trip keeps disk equal to the
       await fs.writeFile(file, `\uFEFF${original.replaceAll('\n', '\r\n')}`);
       server = spawnNode(['apps/server/src/main.mjs', '--port', String(port), '--data', path.join(temporary, 'data'), '--auth', 'disabled']);
       await waitForHealth(port);
-      await prepareReviewEndpoint(state);
       agent = spawnNode(['apps/agent/src/main.mjs', '--repo', repo, '--workspace', 'barrad', '--user', 'Alice', '--state', state,
         '--server', `ws://127.0.0.1:${port}`]);
       await waitUntil(async () => { try { await fs.access(path.join(state, 'review-session.json')); return true; } catch { return false; } }, 'Review endpoint');

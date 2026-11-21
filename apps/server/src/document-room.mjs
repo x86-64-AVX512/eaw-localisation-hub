@@ -7,6 +7,7 @@ import { WebSocket } from 'ws';
 import * as Y from 'yjs';
 import { CrdtUpdateValidator, CrdtValidationError } from './crdt-validator.mjs';
 import { DocumentHistory } from './document-history.mjs';
+import { planDocumentReplacement } from './document-replacement.mjs';
 import { evaluateDiskMerge } from './disk-merge.mjs';
 import { mergeConflictId, mergeStateRevision } from '../../../packages/shared/src/merge-state.mts';
 import { encodeMergeText, decodeMergeText } from '../../../packages/shared/src/merge-wire.mts';
@@ -28,6 +29,7 @@ import {
   minimalDiscussionMessage,
   minimalReservation,
   minimalSuggestion,
+  parseRoomMetadata,
   publicDiscussionItems,
 } from './room-metadata.mjs';
 import { expiredPresenceIds } from '../../../packages/shared/src/presence.mts';
@@ -66,6 +68,9 @@ import {
 } from '../../../packages/shared/src/constants.mts';
 
 const MAX_ROOM_METADATA_BYTES = 2 * 1024 * 1024;
+const PERSIST_DEBOUNCE_MILLISECONDS = 200;
+const PERSIST_DEADLINE_MILLISECONDS = 2_000;
+const PERSIST_RETRY_MILLISECONDS = 2_000;
 const MAX_RESERVATIONS_PER_ROOM = 500;
 const MAX_COMMENT_THREADS_PER_ROOM = 500;
 const MAX_SUGGESTIONS_PER_ROOM = 500;
@@ -79,7 +84,12 @@ export class DocumentRoom {
   static async load(dataDirectory, documentId, authStore, registry, canonicalSource = null, canonicalSnapshot = null) {
     const hash = crypto.createHash('sha256').update(documentId).digest('hex');
     const room = new DocumentRoom(dataDirectory, documentId, hash, authStore, registry, canonicalSource);
-    await room.loadFromDisk();
+    try {
+      await room.loadFromDisk();
+    } catch (error) {
+      room.destroy();
+      throw error;
+    }
     if (canonicalSource?.enabled) {
       try {
         await room.applyCanonicalSnapshot(canonicalSnapshot ?? await canonicalSource.snapshot(documentId));
@@ -121,6 +131,9 @@ export class DocumentRoom {
     this.historyPath = path.join(dataDirectory, 'documents', `${hash}.history.json`);
     this.history = new DocumentHistory(this.historyPath);
     this.persistTimer = null;
+    this.persistDeadlineTimer = null;
+    this.persistRetryTimer = null;
+    this.queuedPersist = null;
     this.persistPromise = Promise.resolve();
     this.messageQueue = Promise.resolve();
     this.authStore = authStore;
@@ -194,7 +207,7 @@ export class DocumentRoom {
       if (stats.size > MAX_ROOM_METADATA_BYTES) {
         throw new ProtocolLimitError('Persisted room metadata exceeds the server limit');
       }
-      const metadata = JSON.parse(await fs.readFile(this.metadataPath, 'utf8'));
+      const metadata = parseRoomMetadata(await fs.readFile(this.metadataPath, 'utf8'));
       this.reservations = (Array.isArray(metadata.reservations) ? metadata.reservations : [])
         .filter((reservation) => !reservation.deletedAt)
         .slice(0, MAX_RESERVATIONS_PER_ROOM)
@@ -234,6 +247,9 @@ export class DocumentRoom {
       if (repairReviewAnchors(this.document, reviewItems)) reviewMetadataChanged = true;
       if (reviewMetadataChanged) this.schedulePersist();
     } catch (error) {
+      if (error instanceof SyntaxError || error instanceof TypeError) {
+        throw new ProtocolLimitError('Persisted room metadata is corrupt', 1011);
+      }
       if (error.code !== 'ENOENT') throw error;
     }
   }
@@ -362,6 +378,8 @@ export class DocumentRoom {
   }
 
   finishCanonicalSnapshot(snapshot, merged) {
+    const replacement = merged.changed ? this.prepareReplacement(merged.text) : null;
+    if (replacement) this.registry.assertStateBudget(this, replacement.stateBytes);
     this.history.updateGitBase(snapshot.text);
     this.gitConflict = false;
     this.gitConflicts = [];
@@ -373,7 +391,7 @@ export class DocumentRoom {
       client.gitWritable = ['current', 'branch-outdated'].includes(status.status);
       if (client.readyState === WebSocket.OPEN) sendWithBackpressure(client, JSON.stringify(status));
     }
-    if (merged.changed) this.replaceText(merged.text, null, 'git-refresh');
+    if (replacement) this.replacePrepared(replacement, null, 'git-refresh');
     else {
       this.schedulePersist();
       this.broadcastHistory();
@@ -456,25 +474,37 @@ export class DocumentRoom {
 
   prepareReplacement(nextText) {
     const value = controlledText(nextText, 'Document text', MAX_ROOM_STATE_BYTES);
-    const candidate = new Y.Doc();
-    Y.applyUpdate(candidate, Y.encodeStateAsUpdate(this.document));
-    const candidateText = candidate.getText('content');
-    if (candidateText.length) candidateText.delete(0, candidateText.length);
-    if (value) candidateText.insert(0, value);
-    const candidateBytes = Y.encodeStateAsUpdate(candidate).byteLength;
-    candidate.destroy();
-    return { value, stateBytes: candidateBytes };
+    const previous = this.document.getText('content').toString();
+    const delta = planDocumentReplacement(previous, value);
+    const revision = this.revision;
+    const candidate = new Y.Doc({ gc: this.document.gc });
+    try {
+      Y.applyUpdate(candidate, Y.encodeStateAsUpdate(this.document));
+      // Use the live author's ID only inside this isolated budget simulation.
+      candidate.clientID = this.document.clientID;
+      const candidateText = candidate.getText('content');
+      candidateText.applyDelta(delta);
+      if (candidateText.toString() !== value) throw new ProtocolLimitError('Cannot prepare document replacement');
+      const stateBytes = Y.encodeStateAsUpdate(candidate).byteLength;
+      if (stateBytes > MAX_ROOM_STATE_BYTES) {
+        throw new ProtocolLimitError('Document state exceeds the per-room limit');
+      }
+      return { delta, revision, stateBytes };
+    } finally {
+      candidate.destroy();
+    }
   }
 
   replacePrepared(prepared, actor, historyReason = 'ticket-operation') {
+    if (prepared.revision !== this.revision) throw new ProtocolLimitError('Document changed before replacement');
+    if (!prepared.delta.length) return;
     const reviewItems = [...this.commentThreads, ...this.suggestions];
     captureReviewAnchors(this.document, reviewItems);
     this.document.transact(() => {
-      const content = this.document.getText('content');
-      if (content.length) content.delete(0, content.length);
-      if (prepared.value) content.insert(0, prepared.value);
+      this.document.getText('content').applyDelta(prepared.delta);
     }, { actor, historyReason });
-    if (repairReservationAnchors(this.document, this.reservations, { force: true })) {
+    if (this.reservations.length) {
+      repairReservationAnchors(this.document, this.reservations, { force: true });
       this.broadcastReservations();
     }
     repairReviewAnchors(this.document, reviewItems, { force: true });
@@ -592,13 +622,20 @@ export class DocumentRoom {
     return true;
   }
 
-  assertMetadataBudget() {
-    const bytes = byteLength(JSON.stringify({
+  // The exact bytes persistSnapshot() writes: a compact estimate let changes near the
+  // limit pass here and then fail every later save, including text saves.
+  metadataJson() {
+    return JSON.stringify({
+      schema: 3,
       reservations: this.reservations,
       commentThreads: this.commentThreads,
       suggestions: this.suggestions,
       gitBase: this.gitBase,
-    }));
+    }, null, 2);
+  }
+
+  assertMetadataBudget() {
+    const bytes = byteLength(this.metadataJson());
     if (bytes > MAX_ROOM_METADATA_BYTES) {
       throw new ProtocolLimitError('Room metadata exceeds the persistence limit');
     }
@@ -675,7 +712,10 @@ export class DocumentRoom {
         let applied = null;
         try {
           authorise();
-          result = await auditDocumentControl(this, socket, message, () => (applied = this.applyJson(socket, message)));
+          result = await auditDocumentControl(this, socket, message, () => {
+            authorise();
+            return (applied = this.applyJson(socket, message));
+          });
         } catch (error) {
           console.error(`[server] reservation update rejected for ${this.documentId}: ${error?.message ?? error}`);
           // Resource limits keep closing the socket through the shared handler.
@@ -689,7 +729,8 @@ export class DocumentRoom {
         return;
       }
       authorise();
-      return auditDocumentControl(this, socket, message, () => this.applyJson(socket, message));
+      // The audit log can wait for the disk; recheck write access (e.g. ticket archived) afterwards.
+      return auditDocumentControl(this, socket, message, () => { authorise(); return this.applyJson(socket, message); });
     });
   }
 
@@ -956,10 +997,15 @@ export class DocumentRoom {
       const actor = this.actorFor(socket, message, 'Suggestion');
       const resolved = this.resolveRelativeRange(suggestion);
       const current = resolved?.text.toString().slice(resolved.start, resolved.end);
+      const decision = { status: suggestion.status, decidedById: suggestion.decidedById, decidedBy: suggestion.decidedBy };
+      // Check the metadata budget before anyone can see the decision, so it is never
+      // broadcast and then left unsaveable.
+      const decide = (status) => {
+        Object.assign(suggestion, { status, decidedById: actor.id, decidedBy: actor.displayName });
+        try { this.assertMetadataBudget(); } catch (error) { Object.assign(suggestion, decision); throw error; }
+      };
       if (!resolved || current !== suggestion.originalText) {
-        suggestion.status = 'stale';
-        suggestion.decidedById = actor.id;
-        suggestion.decidedBy = actor.displayName;
+        decide('stale');
         this.schedulePersist();
         this.broadcastReview();
         return;
@@ -971,9 +1017,7 @@ export class DocumentRoom {
         throw new ProtocolLimitError('Accepted suggestion would exceed the room state limit');
       }
       this.registry.assertStateBudget(this, projectedBytes);
-      suggestion.status = 'accepted';
-      suggestion.decidedById = actor.id;
-      suggestion.decidedBy = actor.displayName;
+      decide('accepted');
       this.registry.eventJournal?.append('suggestion-decision', actor, [suggestion.authorId], {
         documentId: this.documentId, suggestionId: suggestion.id, decision: 'accepted',
       });
@@ -1107,6 +1151,11 @@ export class DocumentRoom {
       const id = controlledString(message.id, 'History version id', 128, { required: true });
       const text = this.history.text(id);
       if (text === null) throw new ProtocolLimitError('History version no longer exists');
+      // Base64 grows the text by a third; a frame over the limit would close the socket.
+      // A plain Error reports the problem and keeps the connection.
+      if (Math.ceil(Buffer.byteLength(text, 'utf8') / 3) * 4 + 1024 > MAX_MESSAGE_BYTES) {
+        throw new Error('History version is too large to display; it can still be restored');
+      }
       sendWithBackpressure(socket, JSON.stringify({
         type: 'history-version', documentId: this.documentId, id,
         textBase64: Buffer.from(text, 'utf8').toString('base64'),
@@ -1117,16 +1166,18 @@ export class DocumentRoom {
     if (message.type === 'history-restore') {
       const id = controlledString(message.id, 'History version id', 128, { required: true });
       const expectedHeadId = controlledString(message.headId, 'History head id', 128, { required: true });
-      if (expectedHeadId !== this.history.headId()) {
+      const currentText = this.document.getText('content');
+      // History skips texts over its size limit, so an unchanged head id alone does
+      // not prove that no newer edit exists: the head must also match the live text.
+      if (expectedHeadId !== this.history.headId()
+        || this.history.text(expectedHeadId) !== currentText.toString()) {
         throw new ProtocolLimitError('Document changed after the history view was opened');
       }
       const restored = this.history.text(id);
       if (restored === null) throw new ProtocolLimitError('History version no longer exists');
-      const currentText = this.document.getText('content');
       if (currentText.toString() === restored) return;
       const actor = this.actorFor(socket, message, 'History restoration');
       const prepared = this.prepareReplacement(restored);
-      if (prepared.stateBytes > MAX_ROOM_STATE_BYTES) throw new ProtocolLimitError('Restored version is too large');
       this.registry.assertStateBudget(this, prepared.stateBytes);
       this.replacePrepared(prepared, actor, 'restore');
       return;
@@ -1241,43 +1292,66 @@ export class DocumentRoom {
   }
 
   schedulePersist() {
-    if (this.persistTimer) clearTimeout(this.persistTimer);
-    this.persistTimer = setTimeout(() => {
-      this.persistTimer = null;
-      this.persist().catch(() => console.error('[server] document persistence failed'));
-    }, 200);
+    if (this.destroyed || this.queuedPersist || this.persistRetryTimer) return;
+    const write = () => this.persistInBackground();
+    this.persistDeadlineTimer ??= setTimeout(write, PERSIST_DEADLINE_MILLISECONDS);
+    clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(write, PERSIST_DEBOUNCE_MILLISECONDS);
   }
 
-  async persist() {
+  persistInBackground() {
+    void this.persist().catch((error) => {
+      console.error(`[server] document persistence failed for ${this.hash}: ${error.code ?? error.message}`);
+    });
+  }
+
+  clearScheduledPersist() {
+    clearTimeout(this.persistTimer);
+    clearTimeout(this.persistDeadlineTimer);
+    clearTimeout(this.persistRetryTimer);
+    this.persistTimer = null;
+    this.persistDeadlineTimer = null;
+    this.persistRetryTimer = null;
+  }
+
+  persist() {
+    this.clearScheduledPersist();
+    // A queued write takes its snapshot after the preceding write completes.
+    if (this.queuedPersist) return this.queuedPersist;
+    const write = this.persistPromise.catch(() => {}).then(async () => {
+      this.queuedPersist = null;
+      if (!this.destroyed) await this.persistSnapshot();
+    }).catch((error) => {
+      if (!this.destroyed && this.persistPromise === write) {
+        this.clearScheduledPersist();
+        this.persistRetryTimer = setTimeout(() => this.persistInBackground(), PERSIST_RETRY_MILLISECONDS);
+        this.persistRetryTimer.unref();
+      }
+      throw error;
+    });
+    this.queuedPersist = write;
+    this.persistPromise = write;
+    return write;
+  }
+
+  async persistSnapshot() {
     const update = Buffer.from(Y.encodeStateAsUpdate(this.document));
     const persistedRevision = this.revision;
     if (update.length > MAX_ROOM_STATE_BYTES) {
       throw new ProtocolLimitError('Document state exceeds the persistence limit');
     }
-    const metadata = JSON.stringify({
-      schema: 3,
-      reservations: this.reservations,
-      commentThreads: this.commentThreads,
-      suggestions: this.suggestions,
-      gitBase: this.gitBase,
-    }, null, 2);
+    const metadata = this.metadataJson();
     if (byteLength(metadata) > MAX_ROOM_METADATA_BYTES) {
       throw new ProtocolLimitError('Room metadata exceeds the persistence limit');
     }
-    const history = this.history.serialiseAsync();
-    const write = this.persistPromise
-      .catch(() => {})
-      .then(async () => this.registry.persistRoom(this, update, metadata, await history));
-    this.persistPromise = write;
-    await write;
+    const history = await this.history.serialiseAsync();
+    await this.registry.persistRoom(this, update, metadata, history);
     if (this.revision === persistedRevision) this.stateBudgetBytes = update.length;
   }
 
   async flush() {
     await this.messageQueue;
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-      this.persistTimer = null;
+    if (this.persistTimer || this.persistDeadlineTimer || this.persistRetryTimer) {
       await this.persist();
     }
     await this.persistPromise;
@@ -1286,9 +1360,8 @@ export class DocumentRoom {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
-    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.clearScheduledPersist();
     if (this.presenceTimer) clearInterval(this.presenceTimer);
-    this.persistTimer = null;
     this.presenceTimer = null;
     this.presences.clear();
     this.presenceLastSeen.clear();

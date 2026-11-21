@@ -465,7 +465,8 @@ export function mergeLocalisationThreeWay(baseText: string, collaborativeText: s
     choices.set(key, chosen);
   }
 
-  const preferredOrder = [...external.order, ...collaborative.order.filter((key) => !external.lines.has(key))];
+  // The template already places its own keys. Anchor insertions in the other side's order.
+  const preferredOrder = templateText === externalText ? collaborative.order : external.order;
   const text = renderWithChoices(templateText, choices, preferredOrder, new Set(), duplicateKeys);
   return { text, conflicts, changed: text !== collaborativeText };
 }
@@ -811,6 +812,7 @@ export function setLocalisationSelection(gitText: string, sharedText: string, lo
     ? [...shared.order, ...git.order.filter((candidate) => !shared.lines.has(candidate))]
     : [...git.order, ...shared.order.filter((candidate) => !git.lines.has(candidate))];
   preferred.push(...local.order.filter((candidate) => !preferred.includes(candidate)));
+  // Preserve repeated declarations verbatim while toggling an unrelated key.
   const projected = renderWithChoices(localText, choices, [...new Set(preferred)], duplicateKeys);
   return git.lines.has(key) && !shared.lines.has(key)
     ? removeRestoredKeyPlaceholder(gitText, sharedText, projected, key) : projected;

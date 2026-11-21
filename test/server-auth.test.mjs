@@ -50,6 +50,21 @@ test('login limiter isolates account and transient source buckets before passwor
   assert.equal(passwordChecks, 4);
 });
 
+test('registration rechecks invitations revoked during password hashing', async () => {
+  const store = new AuthStore('.', async () => {}, 'required');
+  const actor = { id: 'admin', roles: ['admin'] };
+  const { code, invite } = await store.createInvite(actor, { roles: ['translator'] });
+  store.recoveryCodes.key = Buffer.alloc(32);
+  store.hashPassword = async () => {
+    await store.revokeInvite(actor, invite.id);
+    return {};
+  };
+  await assert.rejects(store.redeem(code, 'Translator', 'test-password'), { code: 'registration_race' });
+  assert.equal(store.state.invites[0].uses, 0);
+  assert.deepEqual(store.state.users, []);
+  assert.deepEqual(store.state.sessions, []);
+});
+
 test('sessions have role-sensitive expiry and a per-user cap', async () => {
   let now = Date.now();
   const store = new AuthStore('.', async () => {}, 'required', { now: () => now });
@@ -234,6 +249,36 @@ async function connectReviewClient(stateDirectory, filePath, initialText) {
   return { socket, messages, waitFor, send: (message) => socket.send(JSON.stringify(message)) };
 }
 
+test('an idle authenticated socket closes at session expiry and HTTP access is denied', { timeout: 12000 }, async t => {
+  const temp = await fs.realpath(os.tmpdir());
+  const root = await fs.mkdtemp(path.join(temp, 'eaw-expiring-session-'));
+  let server;
+  let socket;
+  t.after(async () => {
+    socket?.terminate();
+    await stop(server);
+    const resolved = await fs.realpath(root);
+    assert.equal(resolved, root);
+    assert.equal(path.dirname(resolved), temp);
+    await fs.rm(resolved, { recursive: true });
+  });
+  const token = crypto.randomBytes(32).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const user = { id: crypto.randomUUID(), displayName: 'Expiry Fixture', roles: ['translator'] };
+  const session = { id: crypto.randomUUID(), userId: user.id, tokenHash, expiresAt: new Date(Date.now() + 4500).toISOString() };
+  await fs.writeFile(path.join(root, 'auth.json'), JSON.stringify({ schema: 6, users: [user], sessions: [session] }));
+  let port;
+  ({ server, port } = await startAuthenticatedServer(root));
+  socket = new WebSocket(`ws://127.0.0.1:${port}/?watchSession=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const closed = once(socket, 'close');
+  const [message] = await once(socket, 'message');
+  assert.equal(JSON.parse(message.toString()).type, 'session-active');
+  const [code, reason] = await closed;
+  assert.equal(code, 1008);
+  assert.equal(reason.toString(), 'Session has expired');
+  assert.equal((await api(port, 'GET', '/api/tickets', { token })).status, 401);
+});
+
 test('password auth supports multiple roles, private reset, identity enforcement, and revocation', { timeout: 60000 }, async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-auth-'));
   const dataDirectory = path.join(temporary, 'data');
@@ -244,7 +289,17 @@ test('password auth supports multiple roles, private reset, identity enforcement
   let aliceAgent;
   let agentReview;
   try {
+    const documents = path.join(dataDirectory, 'documents');
+    await fs.mkdir(documents, { recursive: true });
+    const corruptDocument = 'general-dev:localisation/russian/corrupt.yml';
+    const corruptHash = crypto.createHash('sha256').update(corruptDocument).digest('hex');
+    const corruptFiles = [
+      { path: path.join(documents, `${corruptHash}.json`), data: '{"reservations":[' },
+      { path: path.join(documents, `${'b'.repeat(64)}.json`), data: 'null' },
+    ];
+    for (const { path: file, data } of corruptFiles) await fs.writeFile(file, data);
     ({ server, port } = await startAuthenticatedServer(dataDirectory));
+    assert.match(server.output, /skipping corrupt room metadata/u);
     const bootstrapCode = (await fs.readFile(path.join(dataDirectory, 'bootstrap-invite.txt'), 'utf8')).trim();
     const adminRedeem = await api(port, 'POST', '/api/auth/redeem', {
       body: { inviteCode: bootstrapCode, displayName: 'Admin', password: 'Admin-only-password-947!' },
@@ -252,6 +307,10 @@ test('password auth supports multiple roles, private reset, identity enforcement
     assert.equal(adminRedeem.status, 201);
     assert.deepEqual(adminRedeem.value.user.roles, ['admin']);
     const adminUserToken = adminRedeem.value.token;
+    const corruptSocket = await connectSocket(port, corruptDocument, adminUserToken);
+    const [corruptCode, corruptReason] = await once(corruptSocket, 'close');
+    assert.equal(corruptCode, 1011);
+    assert.equal(corruptReason.toString(), 'Persisted room metadata is corrupt');
     assert.equal((await api(port, 'GET', '/api/admin/users', { token: adminUserToken })).status, 401);
     assert.equal((await api(port, 'POST', '/api/admin/session', {
       token: adminUserToken, body: { password: 'wrong-administrator-password' },
@@ -317,9 +376,17 @@ test('password auth supports multiple roles, private reset, identity enforcement
     );
     await waitJson(logoutSocket, (message) => message.type === 'synced');
     const closedByLogout = once(logoutSocket, 'close');
+    const watcher = new WebSocket(`ws://127.0.0.1:${port}/?watchSession=1`, {
+      headers: { Authorization: `Bearer ${logoutLogin.value.token}` },
+    });
+    const [notice] = await once(watcher, 'message');
+    assert.equal(JSON.parse(notice.toString()).type, 'session-active');
+    const closedWatcher = once(watcher, 'close');
     assert.equal((await api(port, 'POST', '/api/auth/logout', { token: logoutLogin.value.token })).status, 200);
     assert.equal((await closedByLogout)[0], 1008);
+    assert.equal((await closedWatcher)[0], 1008);
     assert.equal((await api(port, 'GET', '/api/auth/me', { token: logoutLogin.value.token })).status, 401);
+    assert.equal((await api(port, 'GET', '/api/tickets', { token: logoutLogin.value.token })).status, 401);
 
     const reused = await api(port, 'POST', '/api/auth/redeem', {
       body: { inviteCode: invite.value.code, displayName: 'Mallory', password: 'Mallory-unique-password-118!' },
@@ -535,9 +602,7 @@ test('password auth supports multiple roles, private reset, identity enforcement
     assert.equal(delegatedFromReview.createdBy, 'Alice');
     assert.equal(delegatedFromReview.color, adminTarget.color);
 
-    const agentUnauthorised = agentReview.waitFor(
-      (message) => message.type === 'documentStatus' && message.status === 'unauthorized',
-    );
+    const agentUnauthorised = once(agentReview.socket, 'close');
     const changedPassword = await api(port, 'POST', '/api/auth/password/change', {
       token: aliceLoginToken,
       body: {
@@ -547,7 +612,7 @@ test('password auth supports multiple roles, private reset, identity enforcement
     });
     assert.equal(changedPassword.status, 200);
     assert.equal((await api(port, 'GET', '/api/auth/me', { token: aliceToken })).status, 401);
-    await agentUnauthorised;
+    assert.equal((await agentUnauthorised)[0], 4003);
     assert.equal((await api(port, 'POST', '/api/auth/login', {
       body: { displayName: 'Alice', password: 'Alice-original-password-371!' },
     })).status, 401);
@@ -638,6 +703,7 @@ test('password auth supports multiple roles, private reset, identity enforcement
     });
     assert.equal(revoked.status, 200);
     assert.equal(revoked.value.user.id, aliceRedeem.value.user.id);
+    for (const { path: file, data } of corruptFiles) assert.equal(await fs.readFile(file, 'utf8'), data);
     const [revokedCode] = await aliceClosed;
     assert.equal(revokedCode, 1008);
     const afterRevocation = await anonymisedReservation;

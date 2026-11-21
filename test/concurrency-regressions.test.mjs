@@ -134,6 +134,99 @@ test('deleting a room wins over an already running persistence write', async () 
   }
 });
 
+function roomPersistenceFixture(t, writeUpdate) {
+  const id = 'main:localisation/russian/persistence.yml';
+  const auth = { required: false };
+  const registry = new RoomRegistry('.', auth, null, async (target, data) => {
+    if (target.endsWith('.update')) await writeUpdate(data);
+  });
+  const room = new DocumentRoom('.', id, hash(id), auth, registry);
+  room.history.serialiseAsync = async () => '{}';
+  t.after(() => room.destroy());
+  return room;
+}
+
+test('room persistence reaches its deadline during continuous edits', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const snapshots = [];
+  const room = roomPersistenceFixture(t, data => snapshots.push(data));
+  const content = room.document.getText('content');
+  for (let index = 0; index < 20; index++) {
+    content.insert(content.length, 'x');
+    t.mock.timers.tick(100);
+  }
+  await room.persistPromise;
+  assert.equal(snapshots.length, 1);
+  const restored = new Y.Doc();
+  t.after(() => restored.destroy());
+  Y.applyUpdate(restored, snapshots[0]);
+  assert.equal(restored.getText('content').toString(), 'x'.repeat(20));
+});
+
+test('room persistence retries a failed write without waiting for further edits', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let attempts = 0;
+  const room = roomPersistenceFixture(t, () => {
+    attempts += 1;
+    if (attempts === 1) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+  });
+  room.document.getText('content').insert(0, 'pending edit');
+  t.mock.timers.tick(200);
+  await assert.rejects(room.persistPromise, { code: 'ENOSPC' });
+  t.mock.timers.tick(2_000);
+  await room.persistPromise;
+  assert.equal(attempts, 2);
+});
+
+test('a Git refresh keeps the anchors of delayed edits between disjoint changes', async t => {
+  const room = roomPersistenceFixture(t, () => {});
+  const original = 'l_russian:\n a:0 "Один"\n b:0 "Два лишнее"\n c:0 "Три"\n';
+  const next = original.replace('Один', 'Один из Git').replace('Три', 'Три из Git');
+  await room.applyCanonicalSnapshot({ text: original, commit: 'first', blob: 'first' });
+
+  const peer = new Y.Doc();
+  t.after(() => peer.destroy());
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(room.document));
+  const peerContent = peer.getText('content');
+  const delayedEditAt = original.indexOf('Два') + 'Два'.length;
+  peer.transact(() => {
+    peerContent.delete(delayedEditAt, ' лишнее'.length);
+    peerContent.insert(delayedEditAt, ' (правка)');
+  });
+  const delayedUpdate = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(room.document));
+
+  await room.applyCanonicalSnapshot({ text: next, commit: 'second', blob: 'second' });
+  assert.equal(room.currentText(), next);
+  await room.receiveBinary({ readyState: 1, gitWritable: true }, delayedUpdate);
+  assert.equal(room.currentText(), next.replace('Два лишнее', 'Два (правка)'));
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(room.document));
+  assert.equal(peerContent.toString(), room.currentText());
+});
+
+test('prepared replacements preserve unchanged text within edited lines and budget the applied update', t => {
+  const room = roomPersistenceFixture(t, () => {});
+  const original = 'l_russian:\r\n obsolete:0 "Old"\r\n key:0 "Старое 😀 конец"\r\n last:0 "End"';
+  const next = original.replace(' obsolete:0 "Old"\r\n', '')
+    .replace('Старое', 'Новое').replace(' last:0', ' added:0 "New"\r\n last:0');
+  room.replaceText(original, null);
+  const peer = new Y.Doc();
+  t.after(() => peer.destroy());
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(room.document));
+  peer.getText('content').insert(original.indexOf(' конец'), ' (правка)');
+  const pending = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(room.document));
+
+  const replacement = room.prepareReplacement(next);
+  const emitted = [];
+  room.document.on('update', (_, origin) => emitted.push(origin.historyReason));
+  room.replacePrepared(replacement, null, 'restore');
+  assert.equal(room.currentText(), next);
+  assert.equal(replacement.stateBytes, Y.encodeStateAsUpdate(room.document).byteLength);
+  assert.deepEqual(emitted, ['restore']);
+
+  Y.applyUpdate(room.document, pending, { localActor: null });
+  assert.equal(room.currentText(), next.replace(' конец', ' (правка) конец'));
+});
+
 test('a detached binding ignores a disk read that completes late', async () => {
   const gate = deferred();
   const absolutePath = 'C:\\repo\\localisation\\russian\\a.yml';
@@ -210,6 +303,7 @@ test('queued CRDT updates are re-authorised immediately before application', asy
   attachDocumentSocket({
     socket, documentId: room.documentId, room,
     ticketStore: { documentWritable: () => writable }, isShuttingDown: () => false,
+    authoriseSession() {},
   });
   const gate = deferred();
   const entered = deferred();

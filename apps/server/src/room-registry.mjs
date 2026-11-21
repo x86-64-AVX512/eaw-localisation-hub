@@ -9,6 +9,7 @@ import {
   ROOM_IDLE_MILLISECONDS,
 } from '../../../packages/shared/src/constants.mts';
 import { ProtocolLimitError, byteLength } from './protocol-limits.mts';
+import { parseRoomMetadata } from './room-metadata.mjs';
 
 export class RoomRegistry {
   constructor(dataDirectory, authStore, loadRoom, atomicWrite, canonicalSource = null) {
@@ -76,19 +77,19 @@ export class RoomRegistry {
       if (match[2] === 'json') {
         let metadata;
         try {
-          metadata = JSON.parse(await fs.readFile(path.join(directory, entry.name), 'utf8'));
+          metadata = parseRoomMetadata(await fs.readFile(path.join(directory, entry.name), 'utf8'));
         } catch {
           console.error(`[server] cannot index document metadata ${entry.name}`);
           continue;
         }
-        const branch = String(metadata.gitBase?.branch ?? '');
-        const commit = String(metadata.gitBase?.commit ?? '');
-        const checkedAt = Number(metadata.gitBase?.checkedAt ?? 0);
-        if (branch && /^[0-9a-f]{40}$/u.test(commit)
+        const { branch, commit, checkedAt: timestamp = 0 } = metadata.gitBase ?? {};
+        if (typeof branch !== 'string' || !branch) continue;
+        const checkedAt = typeof timestamp === 'string' ? Number(timestamp) : timestamp;
+        if (typeof commit === 'string' && /^[0-9a-f]{40}$/u.test(commit) && Number.isFinite(checkedAt)
           && checkedAt >= (this.branchHints.get(branch)?.checkedAt ?? -1)) {
           this.branchHints.set(branch, { commit, checkedAt });
         }
-        if (branch && !this.knownDocuments.has(match[1])) {
+        if (!this.knownDocuments.has(match[1])) {
           const legacy = this.legacyDocumentsByBranch.get(branch) ?? new Set();
           legacy.add(match[1]);
           this.legacyDocumentsByBranch.set(branch, legacy);
@@ -263,7 +264,7 @@ export class RoomRegistry {
     room.persistenceGeneration ??= this.persistenceGenerations.get(room.hash) ?? 0;
     const generation = room.persistenceGeneration;
     const operation = this.persistencePromise.catch(() => {}).then(async () => {
-      if (room.destroyed || (this.persistenceGenerations.get(room.hash) ?? 0) !== generation) return false;
+      if (room.destroyed || (this.persistenceGenerations.get(room.hash) ?? 0) !== generation) return;
       const nextBytes = update.length + byteLength(metadata) + byteLength(history);
       const previousBytes = this.persisted.get(room.hash) ?? 0;
       const projected = this.persistedTotalBytes - previousBytes + nextBytes;
@@ -287,9 +288,8 @@ export class RoomRegistry {
           commit: room.gitBase.commit, checkedAt: Number(room.gitBase.checkedAt ?? 0),
         });
       }
-      return true;
     });
-    this.persistencePromise = operation.then(() => undefined);
+    this.persistencePromise = operation;
     await operation;
   }
 

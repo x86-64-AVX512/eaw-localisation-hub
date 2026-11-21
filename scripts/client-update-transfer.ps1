@@ -10,14 +10,31 @@
     $Task.GetAwaiter().GetResult()
 }
 
+function Get-ClientReleaseList {
+    param([string]$Url, [System.Threading.CancellationToken]$CancellationToken)
+    Add-Type -AssemblyName System.Net.Http
+    $http = [System.Net.Http.HttpClient]::new()
+    $http.Timeout = [TimeSpan]::FromSeconds(20)
+    $http.DefaultRequestHeaders.UserAgent.ParseAdd('EaWLocalisationHub-Updater')
+    $http.DefaultRequestHeaders.Accept.ParseAdd('application/vnd.github+json')
+    $http.DefaultRequestHeaders.Add('X-GitHub-Api-Version', '2022-11-28')
+    try {
+        $json = Wait-ClientUpdateTask -Task ($http.GetStringAsync($Url)) -CancellationToken $CancellationToken
+        ConvertFrom-Json -InputObject $json
+    } finally {
+        $http.Dispose()
+    }
+}
+
 function Save-ClientReleaseAsset {
     param([string]$Url, [string]$Destination, [long]$ExpectedBytes, [string]$Version,
-        [int]$TimeoutSeconds = 600, [switch]$ReportProgress)
+        [int]$TimeoutSeconds = 600, [switch]$ReportProgress,
+        [System.Threading.CancellationToken]$CancellationToken = [System.Threading.CancellationToken]::None)
     Add-Type -AssemblyName System.Net.Http
     $http = [System.Net.Http.HttpClient]::new()
     $http.Timeout = [System.Threading.Timeout]::InfiniteTimeSpan
     $http.DefaultRequestHeaders.UserAgent.ParseAdd('EaWLocalisationHub-Updater')
-    $cancel = [System.Threading.CancellationTokenSource]::new()
+    $cancel = [System.Threading.CancellationTokenSource]::CreateLinkedTokenSource($CancellationToken, [System.Threading.CancellationToken]::None)
     $cancel.CancelAfter([TimeSpan]::FromSeconds($TimeoutSeconds))
     $response = $null
     $inputStream = $null

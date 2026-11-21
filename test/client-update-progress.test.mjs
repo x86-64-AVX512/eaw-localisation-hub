@@ -6,10 +6,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-test('Windows updater streams progress and verifies Agent restart without installing anything', {
+test('Windows updater streams progress, cancels a stalled download and opens only settings', {
   skip: process.platform !== 'win32', timeout: 45_000,
 }, async () => {
   const server = http.createServer((req, res) => {
+    if (req.url === '/releases') { res.end(JSON.stringify([{tag_name: 'v0.8.9F3'}, {tag_name: 'v.0.8.9F2'}])); return; }
     if (req.url === '/error') { res.writeHead(503).end(); return; }
     if (req.url === '/stall') { res.writeHead(200); res.flushHeaders(); return; }
     if (req.url === '/short') { res.end(Buffer.alloc(512, 65)); return; }
@@ -35,7 +36,7 @@ test('Windows updater streams progress and verifies Agent restart without instal
     const [code] = await once(child, 'exit');
     assert.equal(code, 0, output);
     assert.match(output, /real loopback streaming/);
-    assert.match(output, /verified restart/);
+    assert.match(output, /settings-only launch/);
   } finally {
     clearTimeout(watchdog);
     child.kill();

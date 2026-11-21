@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import http from 'node:http';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import * as Y from 'yjs';
 import { requestAgentJson } from '../apps/agent/src/agent-http.mjs';
 import { AgentHub } from '../apps/agent/src/agent-hub.mjs';
 import { DocumentBinding } from '../apps/agent/src/document-binding.mjs';
+import { startReviewServer } from '../apps/agent/src/review-server.mjs';
 import { PROTOCOL_VERSION } from '../packages/shared/src/constants.mts';
 
 async function fixture(t, handler) {
@@ -63,6 +67,73 @@ test('an explicit caller abort cancels an HTTP body read', async t => {
   const request = requestAgentJson({ server: url }, '/body', { signal: controller.signal });
   const rejected = assert.rejects(request, { name: 'AbortError' });
   controller.abort(); await rejected;
+});
+
+test('Review opens offline, closes on revocation, and recovers in the same Agent after sign-in', async t => {
+  let storedToken = 'first-token';
+  let validToken = storedToken;
+  let serverReachable = false;
+  const { server, url } = await fixture(t, (req, res) => {
+    if (!serverReachable) return res.destroy();
+    if (req.url === '/health') return res.end('{}');
+    if (req.headers.authorization === `Bearer ${validToken}`) {
+      res.end(JSON.stringify({ user: { displayName: 'Translator' } }));
+    } else {
+      res.writeHead(401).end(JSON.stringify({ code: 'invalid_session' }));
+    }
+  });
+  let watcher;
+  const remote = new WebSocketServer({ server });
+  remote.on('connection', (socket, req) => {
+    assert.equal(new URL(req.url, 'ws://127.0.0.1').searchParams.get('watchSession'), '1');
+    watcher = socket;
+  });
+  t.after(() => { for (const socket of remote.clients) socket.terminate(); remote.close(); });
+
+  const temp = await fs.realpath(os.tmpdir());
+  const state = await fs.mkdtemp(path.join(temp, 'eaw-auth-review-'));
+  const options = { server: url, repo: state, state, workspace: 'test', token: storedToken, readToken: async () => storedToken };
+  const hub = new AgentHub(options);
+  const review = await startReviewServer(hub, options);
+  t.after(async () => {
+    await review.close();
+    await hub.close();
+    const resolved = await fs.realpath(state);
+    assert.equal(resolved, state);
+    assert.equal(path.dirname(resolved), temp);
+    await fs.rm(resolved, { recursive: true });
+  });
+  const { token, origin } = JSON.parse(await fs.readFile(review.discoveryPath, 'utf8'));
+  const headers = { Authorization: `Bearer ${token}` };
+  const checkAccess = method => fetch(origin + '/api/review-access', { method, headers }).then(res => res.json());
+  assert.equal((await checkAccess('GET')).allowed, true);
+  assert.equal(hub.reviewAccess, 'unknown');
+  assert.equal((await fetch(origin + '/api/diff-cache', { headers })).status, 200);
+  const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/review-socket?token=${token}&multiplex=1`, { origin });
+  t.after(() => socket.terminate());
+  const closed = once(socket, 'close');
+  await once(socket, 'open');
+  const greeting = once(socket, 'message', { signal: AbortSignal.timeout(2500) });
+  socket.send(JSON.stringify({ type: 'reviewSession', operation: 'open', sessionId: 'offline-review' }));
+  const [frame] = await greeting;
+  assert.equal(JSON.parse(frame).message.type, 'agentHello');
+
+  serverReachable = true;
+  assert.equal((await checkAccess('GET')).allowed, true);
+  await until(() => watcher?.readyState === WebSocket.OPEN, 'authenticated session watcher connected');
+  validToken = 'second-token';
+  watcher.close(1008, 'Session is invalid or revoked');
+  assert.equal((await closed)[0], 4003);
+  assert.equal((await checkAccess('GET')).allowed, false);
+  assert.equal((await fetch(origin + '/api/localisation-files', { headers })).status, 401);
+
+  serverReachable = false;
+  assert.equal((await checkAccess('GET')).allowed, false, 'going offline does not clear a known revocation');
+  storedToken = validToken;
+  serverReachable = true;
+  assert.equal((await checkAccess('POST')).allowed, true);
+  assert.equal(hub.options.token, validToken);
+  assert.equal(hub.identity.displayName, 'Translator');
 });
 
 function documentFixture(t, url, policy = {}) {

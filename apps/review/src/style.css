@@ -949,6 +949,12 @@ dialog :is(.simple-dialog-shell, .key-replace-shell) { gap:12px; }
 .ai-localisation-dialog { width: min(680px, 90vw); max-height: 80vh; overflow-y: auto; }
 .ai-localisation-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .ai-localisation-actions:has(#ai-localisation-login) { margin-bottom: 12px; }
+.ai-localisation-models { margin: 0 0 8px; padding: 6px 10px 8px; border: 1px solid var(--wb-border); }
+.ai-localisation-models .ai-localisation-actions { gap: 6px 16px; }
+.ai-localisation-models input { margin-inline: 0 5px; }
+.ai-localisation-key { margin-bottom: 12px; }
+.ai-localisation-key label { display: block; margin-bottom: 4px; }
+.ai-localisation-key input { flex: 1 1 180px; min-width: 0; }
 .ai-localisation-usage { display: flex; align-items: stretch; gap: 2px; flex: none; align-self: stretch; }
 .ai-localisation-usage button {
   display: flex; align-items: center; gap: 5px; padding: 2px 5px; min-height: 0;

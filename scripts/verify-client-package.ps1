@@ -34,7 +34,6 @@ $required = @(
     'scripts\update-client.ps1',
     'scripts\client-update-ui.ps1',
     'scripts\client-update-transfer.ps1',
-    'scripts\client-update-restart.ps1',
     'scripts\repository-sync-ui.ps1',
     'scripts\start-review.ps1',
     'scripts\credential-store.ps1',

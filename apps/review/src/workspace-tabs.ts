@@ -1,6 +1,7 @@
 import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { requiredElement } from './dom-elements.ts';
 import { embeddedSessionId, postWorkspace } from './workspace-bridge.ts';
+import { reviewFragment } from './launch-session.ts';
 
 const STORAGE_KEY = 'eaw-hub-workspace-tabs-v1';
 const MAX_TABS = 20;
@@ -87,7 +88,7 @@ export function createWorkspaceTabs({ token, requestedPath, requestedTicket, rea
       showToast(uiText('Можно открыть не больше 20 вкладок. Закройте одну из них.'),true); return;
     }
     if (onNavigate) { upsert(tab); dialog.close(); onNavigate(tab); return; }
-    const hash = new URLSearchParams({ token, path: tab.path });
+    const hash = reviewFragment(token, { path: tab.path });
     if (tab.ticket) hash.set('ticket', tab.ticket);
     location.hash = hash.toString(); location.reload();
   }

@@ -1,4 +1,6 @@
 import {
+  MAX_QUEUED_INBOUND_BYTES,
+  MAX_TOTAL_QUEUED_INBOUND_BYTES,
   ProtocolLimitError,
   byteLength,
   consumeInboundBudget,
@@ -11,6 +13,7 @@ interface DocumentSocket {
   bufferedAmount: number;
   inboundBudget: InboundBudget;
   messageQueue?: Promise<void>;
+  queuedInboundBytes?: number;
   on(event: 'message', listener: (data: Buffer, isBinary: boolean) => void): void;
   send(value: string | Uint8Array, options?: unknown): void;
   close(code: number, reason: string): void;
@@ -30,14 +33,17 @@ interface DocumentSocketOptions {
   room: DocumentRoomPort;
   ticketStore: { documentWritable(documentId: string): boolean };
   isShuttingDown(): boolean;
+  authoriseSession(): void;
 }
+
+let totalQueuedInboundBytes = 0;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function attachDocumentSocket({
-  socket, documentId, room, ticketStore, isShuttingDown,
+  socket, documentId, room, ticketStore, isShuttingDown, authoriseSession,
 }: DocumentSocketOptions): void {
   const writableError = (isBinary: boolean, control: Record<string, unknown> | null): string => {
     const controlType = typeof control?.type === 'string' ? control.type : '';
@@ -53,10 +59,13 @@ export function attachDocumentSocket({
   };
   socket.messageQueue = Promise.resolve();
   const respondError = (control: Record<string, unknown> | null, message: string) => {
+    // Echo only a bounded string id: a deeply nested JSON value parses fine but
+    // overflows the stack when serialised again.
+    const id = typeof control?.id === 'string' && control.id.length <= 128 ? control.id : '';
     if (typeof control?.requestId === 'string' && control.requestId.length > 0 && control.requestId.length <= 128
       && ['comment-create', 'comment-reply', 'suggestion-reply', 'discussion-message-update', 'discussion-message-delete'].includes(String(control.type))) {
       sendWithBackpressure(socket, JSON.stringify({ type: 'discussion-result', requestId: control.requestId,
-        id: control.id, status: 'error', message }));
+        id, status: 'error', message }));
     } else if (control?.type === 'reservation-update' && typeof control.requestId === 'string'
       && control.requestId.length > 0 && control.requestId.length <= 128
       && typeof control.id === 'string' && control.id.length > 0 && control.id.length <= 128) {
@@ -67,9 +76,19 @@ export function attachDocumentSocket({
   };
   socket.on('message', (data, isBinary) => {
     if (isShuttingDown()) return;
+    // Charge a fixed overhead per frame: empty frames still cost a queued task each.
+    const queuedBytes = byteLength(data) + 1024;
+    if ((socket.queuedInboundBytes ?? 0) + queuedBytes > MAX_QUEUED_INBOUND_BYTES
+      || totalQueuedInboundBytes + queuedBytes > MAX_TOTAL_QUEUED_INBOUND_BYTES) {
+      socket.close(1013, 'Inbound message queue limit exceeded');
+      return;
+    }
+    socket.queuedInboundBytes = (socket.queuedInboundBytes ?? 0) + queuedBytes;
+    totalQueuedInboundBytes += queuedBytes;
     socket.messageQueue = (socket.messageQueue ?? Promise.resolve()).then(async () => {
       let control: Record<string, unknown> | null = null;
       try {
+        authoriseSession();
         const parsed: unknown = isBinary ? null : JSON.parse(data.toString('utf8'));
         if (!isBinary && !isRecord(parsed)) throw new Error('Invalid document control message');
         control = isBinary ? null : parsed as Record<string, unknown>;
@@ -79,6 +98,7 @@ export function attachDocumentSocket({
           return;
         }
         const recheckWritable = () => {
+          authoriseSession();
           const message = writableError(isBinary, control);
           if (message) throw new Error(message);
         };
@@ -93,11 +113,19 @@ export function attachDocumentSocket({
         else if (control) await room.receiveJson(socket, control, recheckWritable);
       } catch (error) {
         console.error('[server] rejected a document message');
-        respondError(control, error instanceof Error ? error.message : String(error));
+        try {
+          respondError(control, error instanceof Error ? error.message : String(error));
+        } catch {
+          console.error('[server] could not report a rejected document message');
+        }
         if (error instanceof ProtocolLimitError) {
           socket.close(error.closeCode, 'Protocol resource limit exceeded');
         }
+      } finally {
+        socket.queuedInboundBytes = Math.max(0, (socket.queuedInboundBytes ?? 0) - queuedBytes);
+        totalQueuedInboundBytes = Math.max(0, totalQueuedInboundBytes - queuedBytes);
       }
-    });
+    // A rejected link would skip every later message and, unhandled, end the process.
+    }).catch(() => console.error('[server] document message queue failed'));
   });
 }

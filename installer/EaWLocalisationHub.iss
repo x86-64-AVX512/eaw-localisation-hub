@@ -1,11 +1,11 @@
 #ifndef AppVersion
-  #define AppVersion "0.8.9F3"
+  #define AppVersion "0.8.9-beta.4"
 #endif
 #ifndef PayloadDir
   #define PayloadDir "..\dist\EaW-Hub-Client-" + AppVersion
 #endif
 #ifndef WindowsFileVersion
-  #define WindowsFileVersion "0.8.9.3"
+  #define WindowsFileVersion "0.8.9.4"
 #endif
 
 #define AppGuid "{{B84E4DE8-27A1-4DC2-ACF7-AB7779F76FC8}"
@@ -55,10 +55,10 @@ english.LaunchAgent=Launch EaW Localisation Hub Agent
 russian.LaunchAgent=Запустить EaW Localisation Hub Agent
 english.InstallCodex=Install Codex CLI for proofreading (requires internet)
 russian.InstallCodex=Установить Codex CLI для проверки текста (нужен интернет)
-english.WebViewPrompt=Review requires Microsoft Edge WebView2 Runtime. Open the official Microsoft installer?
-russian.WebViewPrompt=Для Review необходим Microsoft Edge WebView2 Runtime. Открыть официальный установщик Microsoft?
-english.WebViewRequired=Install WebView2 Runtime and run EaW Hub Setup again.
-russian.WebViewRequired=Установите WebView2 Runtime и повторите установку EaW Hub.
+english.WebViewPrompt=Review requires Microsoft Edge WebView2 Runtime version 114.0.1823.32 or later. Open the official Microsoft installer?
+russian.WebViewPrompt=Для Review нужен Microsoft Edge WebView2 Runtime версии 114.0.1823.32 или новее. Открыть официальный установщик Microsoft?
+english.WebViewRequired=Install or update WebView2 Runtime and run EaW Hub Setup again.
+russian.WebViewRequired=Установите или обновите WebView2 Runtime и повторите установку EaW Hub.
 english.DeleteSettings=Delete local EaW Hub settings? Saved tokens in Windows Credential Manager will remain; remove them using the Sign out button before uninstalling the application.
 russian.DeleteSettings=Удалить локальные настройки EaW Hub? Сохранённые токены в Windows Credential Manager останутся; их следует удалить кнопкой «Выйти» до удаления программы.
 
@@ -86,19 +86,46 @@ Filename: "{app}\Launch EaW Hub Agent.cmd"; Description: "{cm:LaunchAgent}"; Wor
 [Code]
 const
   WebView2ClientId = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+  WebView2ClientKey = 'Software\Microsoft\EdgeUpdate\Clients\' + WebView2ClientId;
 
 var
   DeleteUserState: Boolean;
 
-function IsWebView2Installed: Boolean;
+function HasSupportedWebView2(RootKey: Integer): Boolean;
 var
-  Version: string;
+  Version, Part: string;
+  Components: array[0..3] of Word;
+  I, Separator, Number: Integer;
 begin
-  Result :=
-    (RegQueryStringValue(HKLM32, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\' + WebView2ClientId, 'pv', Version) and (Version <> '')) or
-    (RegQueryStringValue(HKCU32, 'Software\Microsoft\EdgeUpdate\Clients\' + WebView2ClientId, 'pv', Version) and (Version <> '')) or
-    (RegQueryStringValue(HKLM64, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\' + WebView2ClientId, 'pv', Version) and (Version <> '')) or
-    (RegQueryStringValue(HKCU64, 'Software\Microsoft\EdgeUpdate\Clients\' + WebView2ClientId, 'pv', Version) and (Version <> ''));
+  Result := False;
+  if not RegQueryStringValue(RootKey, WebView2ClientKey, 'pv', Version) then Exit;
+  for I := 0 to 3 do
+  begin
+    Separator := Pos('.', Version);
+    if I < 3 then
+    begin
+      if Separator < 2 then Exit;
+      Part := Copy(Version, 1, Separator - 1);
+      Delete(Version, 1, Separator);
+    end
+    else
+    begin
+      if Separator <> 0 then Exit;
+      Part := Version;
+    end;
+    Number := StrToIntDef(Part, -1);
+    if (Number < 0) or (Number > 65535) then Exit;
+    Components[I] := Number;
+  end;
+  Result := ComparePackedVersion(
+    PackVersionComponents(Components[0], Components[1], Components[2], Components[3]),
+    PackVersionComponents(114, 0, 1823, 32)) >= 0;
+end;
+
+function IsWebView2Installed: Boolean;
+begin
+  Result := HasSupportedWebView2(HKLM32) or HasSupportedWebView2(HKCU32) or
+    HasSupportedWebView2(HKLM64) or HasSupportedWebView2(HKCU64);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): string;

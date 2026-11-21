@@ -2,6 +2,16 @@ import { technicalInsertions } from './localisation-markup.mts';
 import { parseKeyReplacementBatch } from './localisation-replace.mts';
 
 export const LOCALISATION_AI_MODEL = 'gpt-6-luna';
+export const PROOFREADING_MODELS = {
+  codex: { id: LOCALISATION_AI_MODEL, name: 'GPT-6 Luna' },
+  deepseek: { id: 'deepseek-flash', name: 'DeepSeek Flash' },
+  kimi: { id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro' },
+} as const;
+export type ProofreadingProvider = keyof typeof PROOFREADING_MODELS;
+
+export function isProofreadingProvider(value: unknown): value is ProofreadingProvider {
+  return typeof value === 'string' && Object.hasOwn(PROOFREADING_MODELS, value);
+}
 export const MAX_AI_ENTRIES = 8;
 export const MAX_AI_AUTOMATIC_ENTRIES = 64;
 export const MAX_AI_REQUEST_CHARS = 12_000;

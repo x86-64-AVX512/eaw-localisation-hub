@@ -25,18 +25,24 @@ $script:foundRelease = [pscustomobject]@{
 }
 $script:downloads = 0
 $script:mutations = 0
+$script:cancelDownload = $false
 function Get-OwnerProcess { [pscustomobject]@{ Id = 2147483647 } }
 function Get-EawHubClientStatusMetadata { param($ProjectRoot); [pscustomobject]@{ Version = '0.8.8F7' } }
 function Find-NewClientRelease { param($InstalledVersion); $script:foundRelease }
 function Show-ClientUpdateWindow { param($Version) }
+function Set-ClientUpdateWindowVersion { param($Version) }
 function Save-ClientReleaseAsset {
-    param($Url, $Destination, $ExpectedBytes, $Version, $TimeoutSeconds, [switch]$ReportProgress)
+    param($Url, $Destination, $ExpectedBytes, $Version, $TimeoutSeconds, $CancellationToken, [switch]$ReportProgress)
     $script:downloads++
+    if ($script:cancelDownload) {
+        $cancelUpdate.Cancel()
+        $CancellationToken.ThrowIfCancellationRequested()
+    }
     throw 'fixture-download-stop'
 }
 function Stop-CurrentClient { $script:mutations++; throw 'Client must not be stopped by this test.' }
 function Invoke-ClientInstaller { $script:mutations++; throw 'Installer must not be launched by this test.' }
-function Restart-UpdatedClient { $script:mutations++; throw 'Client must not be restarted by this test.' }
+function Open-ClientSettingsAfterUpdate { $script:mutations++; throw 'Client settings must not be reopened by this test.' }
 
 function Invoke-TestEntry {
     param([bool]$RequestInstall)
@@ -45,6 +51,7 @@ function Invoke-TestEntry {
     $hasMutex = $false
     $workRoot = $null
     $clientStopped = $false
+    $cancelUpdate = [System.Threading.CancellationTokenSource]::new()
     & $entryBlock
     Get-Content -LiteralPath $statusPath -Raw -Encoding utf8 | ConvertFrom-Json
 }
@@ -58,9 +65,14 @@ try {
     $record = Invoke-TestEntry -RequestInstall $true
     if ($record.Stage -cne 'error' -or -not $record.InstallRequested -or $record.Message -notmatch 'fixture-download-stop' -or
         $script:downloads -ne 1 -or $script:mutations -ne 0) { throw 'An explicit install request did not reach the download gate correctly.' }
+    $script:cancelDownload = $true
+    $record = Invoke-TestEntry -RequestInstall $true
+    if ($record.Stage -cne 'cancelled' -or $script:downloads -ne 2 -or $script:mutations -ne 0) {
+        throw 'Cancelling the download did not leave the running client alone.'
+    }
     $script:foundRelease = $null
     $record = Invoke-TestEntry -RequestInstall $true
-    if ($record.Stage -cne 'current' -or $script:downloads -ne 1 -or $script:mutations -ne 0) { throw 'An up-to-date client was changed by the button.' }
+    if ($record.Stage -cne 'current' -or $script:downloads -ne 2 -or $script:mutations -ne 0) { throw 'An up-to-date client was changed by the button.' }
 
     # Exercise the actual Agent launcher function with a process spy, never launch it.
     $uiAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'start-agent-ui.ps1'), [ref]$tokens, [ref]$errors)

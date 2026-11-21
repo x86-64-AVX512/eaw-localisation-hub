@@ -58,7 +58,10 @@ export function minimalReservation(reservation) {
     comment: String(reservation.comment ?? ''),
     startRelative: String(reservation.startRelative),
     endRelative: String(reservation.endRelative),
-    initialKeys: Array.isArray(reservation.initialKeys) ? reservation.initialKeys.map(String) : [],
+    // Older versions could store derived keys of any length; Agent rejects a whole
+    // snapshot that contains one over its limit, so drop them on load.
+    initialKeys: Array.isArray(reservation.initialKeys)
+      ? reservation.initialKeys.map(String).filter((key) => Buffer.byteLength(key, 'utf8') <= 256) : [],
   };
   if (reservation.orphaned === true) result.orphaned = true;
   return result;
@@ -158,12 +161,41 @@ async function metadataFiles(dataDirectory) {
 }
 
 function serialiseMetadata(reservations, commentThreads, suggestions, gitBase = null) {
-  return `${JSON.stringify({ schema: 3, reservations, commentThreads, suggestions, gitBase }, null, 2)}\n`;
+  // Byte-identical to DocumentRoom.metadataJson(), whose size the room budget checks.
+  return JSON.stringify({ schema: 3, reservations, commentThreads, suggestions, gitBase }, null, 2);
+}
+
+export function parseRoomMetadata(text) {
+  const metadata = JSON.parse(text);
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    throw new TypeError('Room metadata must be a JSON object');
+  }
+  return metadata;
+}
+
+async function rewritePersistedRoomMetadata(dataDirectory, atomicWrite, transform) {
+  for (const target of await metadataFiles(dataDirectory)) {
+    let original;
+    try {
+      original = await fs.readFile(target, 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+    let updated;
+    try {
+      updated = transform(parseRoomMetadata(original));
+    } catch (error) {
+      if (!(error instanceof SyntaxError || error instanceof TypeError)) throw error;
+      console.warn(`[server] skipping corrupt room metadata ${path.basename(target)}`);
+      continue;
+    }
+    if (updated !== null && updated !== original) await atomicWrite(target, updated);
+  }
 }
 
 export async function minimisePersistedDocumentMetadata(dataDirectory, atomicWrite) {
-  for (const target of await metadataFiles(dataDirectory)) {
-    const metadata = JSON.parse(await fs.readFile(target, 'utf8'));
+  await rewritePersistedRoomMetadata(dataDirectory, atomicWrite, (metadata) => {
     const reservations = (Array.isArray(metadata.reservations) ? metadata.reservations : [])
       .filter((reservation) => !reservation.deletedAt)
       .map(minimalReservation);
@@ -173,15 +205,12 @@ export async function minimisePersistedDocumentMetadata(dataDirectory, atomicWri
     const suggestions = (Array.isArray(metadata.suggestions) ? metadata.suggestions : [])
       .slice(0, MAX_SUGGESTIONS_PER_ROOM)
       .map(minimalSuggestion);
-    await atomicWrite(target, serialiseMetadata(
-      reservations, commentThreads, suggestions, metadata.gitBase ?? null,
-    ));
-  }
+    return serialiseMetadata(reservations, commentThreads, suggestions, metadata.gitBase ?? null);
+  });
 }
 
 export async function anonymisePersistedReservationUser(dataDirectory, userId, atomicWrite) {
-  for (const target of await metadataFiles(dataDirectory)) {
-    const metadata = JSON.parse(await fs.readFile(target, 'utf8'));
+  await rewritePersistedRoomMetadata(dataDirectory, atomicWrite, (metadata) => {
     let changed = false;
     const reservations = (Array.isArray(metadata.reservations) ? metadata.reservations : []).map((item) => {
       const reservation = minimalReservation(item);
@@ -223,8 +252,6 @@ export async function anonymisePersistedReservationUser(dataDirectory, userId, a
       .map(minimalCommentThread).map(anonymiseDiscussion);
     const suggestions = (Array.isArray(metadata.suggestions) ? metadata.suggestions : [])
       .map(minimalSuggestion).map(anonymiseDiscussion);
-    if (changed) await atomicWrite(target, serialiseMetadata(
-      reservations, commentThreads, suggestions, metadata.gitBase ?? null,
-    ));
-  }
+    return changed ? serialiseMetadata(reservations, commentThreads, suggestions, metadata.gitBase ?? null) : null;
+  });
 }

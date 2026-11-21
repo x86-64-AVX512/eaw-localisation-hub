@@ -6,7 +6,8 @@ import { DISPLAY_VERSION } from '../../../packages/shared/src/constants.mts';
 import { AgentHub } from './agent-hub.mjs';
 import { runGitSync } from './git-executable.mts';
 import { startReviewServer } from './review-server.mjs';
-import { registerAgentInstance, unregisterAgentInstance } from './instance-registry.mts';
+import { readWindowsAgentToken } from './agent-session.mjs';
+import { acquireAgentInstanceLock, registerAgentInstance, unregisterAgentInstance } from './instance-registry.mts';
 import { RepositorySync } from './repository-sync.mjs';
 
 function parseArguments(argv) {
@@ -36,6 +37,7 @@ function parseArguments(argv) {
       result.token = fs.readFileSync(path.resolve(argv[++index]), 'utf8').trim();
     }
     else if (argument === '--state') result.state = path.resolve(argv[++index]);
+    else if (argument === '--windows-credentials' && process.platform === 'win32') result.readToken = readWindowsAgentToken;
     else if (argument === '--workspace') {
       result.workspace = argv[++index];
       result.workspaceExplicit = true;
@@ -77,7 +79,12 @@ if (options.help) {
   console.log('       [--token TOKEN | --token-file PATH]');
   process.exit(0);
 }
+if (process.platform === 'win32') {
+  const localData = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
+  options.reviewHostDirectory = path.join(localData, 'EaWLocalisationHub', 'review-host');
+}
 
+const releaseInstanceLock = await acquireAgentInstanceLock(options.state);
 const hub = new AgentHub(options);
 const reviewServer = await startReviewServer(hub, options);
 options.reviewOpen = (absolutePath, openOptions) => reviewServer.open(absolutePath, openOptions);
@@ -88,12 +95,16 @@ hub.repositorySync = repositorySync;
 console.log(`[agent] EaW Localisation Hub ${DISPLAY_VERSION}`);
 console.log('[agent] review application: ready');
 
+let shuttingDown = false;
 async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`[agent] ${signal}: shutting down`);
   await repositorySync.close();
   await reviewServer.close();
   await hub.close();
   await unregisterAgentInstance(instanceRegistration);
+  await releaseInstanceLock();
   process.exit(0);
 }
 

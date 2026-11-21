@@ -13,9 +13,12 @@ import {
   projectLocalisationOwnership,
   mergeLocalisationThreeWay,
 } from '../../../packages/shared/src/merge.mts';
+import { MAX_ROOM_STATE_BYTES } from '../../../packages/shared/src/constants.mts';
 
 const MAX_ENTRIES = 100;
-const MAX_TEXT_BYTES = 8 * 1024 * 1024;
+// A room's text never exceeds its Yjs state, so history can record every text a room
+// can hold. A skipped text would leave a stale head that history-restore must refuse.
+const MAX_TEXT_BYTES = MAX_ROOM_STATE_BYTES;
 const MAX_STORED_BYTES = 24 * 1024 * 1024;
 const EDIT_SESSION_MILLISECONDS = 60 * 1000;
 const gzipAsync = promisify(zlib.gzip);
@@ -44,12 +47,15 @@ function boundedHistoryJson(persisted, ownership, authorVariants, gitBaseGzipBas
   let start = entryJson.length;
   while (start > 0) {
     const added = byteLength(entryJson[start - 1]) + (start < entryJson.length ? 1 : 0);
-    if (entryJson.length - start >= 2 && bytes + added > MAX_STORED_BYTES) break;
+    // Never write a file that load() would refuse: drop even the newest versions if needed.
+    if (bytes + added > MAX_STORED_BYTES) break;
     start -= 1;
     bytes += added;
   }
+  // A replacement function keeps `$'`, `$&` and similar text in author names literal.
+  const entries = `"entries":[${entryJson.slice(start).join(',')}]`;
   return {
-    value: envelope.replace(marker, `"entries":[${entryJson.slice(start).join(',')}]`),
+    value: envelope.replace(marker, () => entries),
     dropped: start,
   };
 }
@@ -109,8 +115,24 @@ export class DocumentHistory {
 
   async load() {
     try {
-      if ((await fs.stat(this.target)).size > MAX_STORED_BYTES) throw new Error('Persisted history exceeds its limit');
-      const value = JSON.parse(await fs.readFile(this.target, 'utf8'));
+      let value;
+      try {
+        if ((await fs.stat(this.target)).size > MAX_STORED_BYTES) throw new SyntaxError('Persisted history exceeds its limit');
+        value = JSON.parse(await fs.readFile(this.target, 'utf8'));
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        // The document text lives in its own file; an unreadable history must not
+        // make the room unopenable. Keep the old file aside for inspection.
+        const aside = `${this.target}.unreadable-${Date.now()}`;
+        // Keep only the newest unreadable copy: these files are outside the storage quota.
+        const prefix = `${path.basename(this.target)}.unreadable-`;
+        for (const name of await fs.readdir(path.dirname(this.target)).catch(() => [])) {
+          if (name.startsWith(prefix)) await fs.rm(path.join(path.dirname(this.target), name), { force: true }).catch(() => {});
+        }
+        await fs.rename(this.target, aside).catch(() => {});
+        console.warn(`[server] history ${path.basename(this.target)} was unreadable (${error.message}); moved to ${path.basename(aside)}`);
+        return;
+      }
       this.gitBaseText = typeof value.gitBaseGzipBase64 === 'string'
         ? unpackText({ textGzipBase64: value.gitBaseGzipBase64 }) : null;
       this.rebaseConflicts = new Map((value.rebaseConflicts ?? []).map(({ authorId, conflicts }) => [

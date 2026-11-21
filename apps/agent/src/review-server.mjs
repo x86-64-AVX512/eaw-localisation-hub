@@ -4,7 +4,6 @@ import fsPromises from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import { MAX_MESSAGE_BYTES, MAX_KEY_REPLACEMENT_REQUEST_BYTES } from '../../../packages/shared/src/constants.mts';
@@ -17,7 +16,7 @@ import {
 } from '../../../packages/shared/src/text.mts';
 import { validateClientMessage } from '../../../packages/shared/src/protocol-schema.mts';
 import { handleTicketReviewApi } from './ticket-review-api.mjs';
-import { persistentReviewEndpoint } from './review-endpoint.mts';
+import { listenReviewEndpoint, loadReviewEndpoint, respondToReviewOwnerProbe } from './review-endpoint.mts';
 import { fileHistoryDiff, listFileHistory } from './git-file-history.mts';
 import { runGitSync } from './git-executable.mts';
 import { prepareLocalisationAudit } from './localisation-audit.mjs';
@@ -32,6 +31,8 @@ import { handleUiLanguageApi } from './ui-language.mjs';
 import { attachReviewMultiplexer } from './review-multiplexer.mjs';
 import { CodexLocalisationAssistant } from './codex-localisation.mjs';
 import { handleAiReviewApi } from './ai-review-api.mjs';
+import { REVIEW_SESSION_CLOSED } from './agent-session.mjs';
+import { createReviewHostLauncher, publishReviewHostEndpoint } from './review-host-launch.mjs';
 
 const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -117,6 +118,7 @@ async function readJsonBody(request, maximumBytes = 64 * 1024, tooLargeMessage =
 }
 
 function secureHeaders(response, contentType) {
+  const loopbackSocket = response.socket?.localPort ? ` ws://127.0.0.1:${response.socket.localPort}` : '';
   response.setHeader('Content-Type', contentType);
   response.setHeader('Cache-Control', 'no-store');
   response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -130,9 +132,10 @@ function secureHeaders(response, contentType) {
     "img-src 'self' data:",
     "font-src 'self' data:",
     "worker-src 'self' blob:",
-    "connect-src 'self' ws://127.0.0.1:*",
+    `connect-src 'self'${loopbackSocket}`,
     "object-src 'none'",
     "base-uri 'none'",
+    "form-action 'self'",
     "frame-src 'self'",
     "frame-ancestors 'self'",
   ].join('; '));
@@ -306,8 +309,8 @@ function requestIsLoopback(request, port) {
 }
 
 export async function startReviewServer(hub, options) {
-  const endpoint = await persistentReviewEndpoint(options);
-  const { token, port: preferredPort } = endpoint;
+  const endpoint = await loadReviewEndpoint(options);
+  const reviewHost = createReviewHostLauncher();
   const diffCache = hub.diffCache ?? new DiffCache(path.join(options.state, 'diff-cache'));
   await diffCache.initialise();
   let spellingDictionaryPromise = null;
@@ -315,6 +318,7 @@ export async function startReviewServer(hub, options) {
   let keyIndexSnapshot = null; let keyIndexTag = '';
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'review-web');
   const server = http.createServer(async (request, response) => {
+    const { token } = endpoint;
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : 0;
     if (!requestIsLoopback(request, port)) {
@@ -326,6 +330,34 @@ export async function startReviewServer(hub, options) {
       requestUrl = new URL(request.url ?? '/', `http://127.0.0.1:${port}`);
     } catch {
       response.writeHead(400).end();
+      return;
+    }
+    if (respondToReviewOwnerProbe(request, response, requestUrl, token)) return;
+    if (requestUrl.pathname === '/api/review-access' && ['GET', 'POST'].includes(request.method)) {
+      if ((request.headers.origin && request.headers.origin !== `http://127.0.0.1:${port}`)
+        || !tokenMatches(bearerToken(request), token)) { response.writeHead(403).end(); return; }
+      try {
+        await hub.requireReviewAccess?.();
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify({ allowed: true }));
+      } catch (error) {
+        secureHeaders(response, 'application/json; charset=utf-8');
+        response.end(JSON.stringify({ allowed: false, error: error.message }));
+      }
+      return;
+    }
+    if (hub.reviewAccess === 'denied'
+      && requestUrl.pathname.startsWith('/api/') && requestUrl.pathname !== '/api/ui-language') {
+      response.writeHead(401).end();
+      return;
+    }
+    if (requestUrl.pathname === '/api/review-open-result' && request.method === 'POST') {
+      if (request.headers.origin !== `http://127.0.0.1:${port}`
+        || !tokenMatches(bearerToken(request), token)) { response.writeHead(403).end(); return; }
+      const result = requestUrl.searchParams.get('result');
+      const reported = (result === 'opened' || result === 'failed')
+        && reviewHost.report(requestUrl.searchParams.get('launch'), result === 'opened');
+      response.writeHead(reported ? 204 : 404).end();
       return;
     }
     if (requestUrl.pathname.startsWith('/api/ai-localisation/')) {
@@ -702,7 +734,13 @@ export async function startReviewServer(hub, options) {
     }
   });
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
+  const closeForSession = websocket => websocket.close(REVIEW_SESSION_CLOSED, 'Hub session ended');
+  const onReviewAccessLost = () => {
+    for (const websocket of websocketServer.clients) closeForSession(websocket);
+  };
+  hub.onReviewAccessLost = onReviewAccessLost;
   server.on('upgrade', (request, socket, head) => {
+    const { token } = endpoint;
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : 0;
     let requestUrl;
@@ -721,6 +759,12 @@ export async function startReviewServer(hub, options) {
       return;
     }
     websocketServer.handleUpgrade(request, socket, head, (websocket) => {
+      websocket.on('error', () => {});
+      if (hub.reviewAccess === 'denied') {
+        closeForSession(websocket);
+        return;
+      }
+      if (websocket.readyState !== WebSocket.OPEN) return;
       if (requestUrl.searchParams.get('multiplex') === '1') {
         attachReviewMultiplexer(websocket, hub, channel => new ReviewClient(channel, hub));
         return;
@@ -729,22 +773,37 @@ export async function startReviewServer(hub, options) {
       if (!hub.attachAuthenticatedClient(client)) websocket.close(1013, 'Too many local clients');
     });
   });
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(preferredPort, '127.0.0.1', () => resolve(undefined));
-  });
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Review server did not bind a TCP port');
-  const { port } = address;
-  const discoveryPath = await writeDiscovery(options, {
-    schema: 1,
-    pid: process.pid,
-    origin: `http://127.0.0.1:${port}`,
-    token,
-    repository: options.repo,
-    workspace: options.workspace,
-  });
+  const closeServer = async () => {
+    reviewHost.close();
+    if (hub.onReviewAccessLost === onReviewAccessLost) hub.onReviewAccessLost = null;
+    localisationAssistant.close();
+    for (const client of websocketServer.clients) client.terminate();
+    websocketServer.close();
+    if (server.listening) await new Promise((resolve) => server.close(resolve));
+  };
+  let discoveryPath;
+  let removeHostEndpoint;
+  try {
+    await listenReviewEndpoint(server, endpoint);
+    if (options.reviewHostDirectory) {
+      removeHostEndpoint = await publishReviewHostEndpoint(options.reviewHostDirectory, endpoint);
+    }
+    discoveryPath = await writeDiscovery(options, {
+      schema: 1,
+      pid: process.pid,
+      origin: `http://127.0.0.1:${endpoint.port}`,
+      token: endpoint.token,
+      repository: options.repo,
+      workspace: options.workspace,
+    });
+  } catch (error) {
+    await removeHostEndpoint?.().catch(() => {});
+    await closeServer();
+    throw error;
+  }
+  const { port, token } = endpoint;
   const open = async (requestedPath, openOptions = {}) => {
+    await hub.requireReviewAccess?.();
     const absolutePath = path.resolve(options.repo, requestedPath);
     if (openOptions.readOnly === 'english') {
       normaliseEnglishPath(options.repo, absolutePath);
@@ -762,18 +821,14 @@ export async function startReviewServer(hub, options) {
     if (!host) throw new Error('EaWReview.exe is missing');
     const hash = new URLSearchParams({ token, path: absolutePath });
     for (const [name, value] of Object.entries(openOptions)) if (value !== undefined && value !== '') hash.set(name, String(value));
-    const url = `http://127.0.0.1:${port}/#${hash}`;
-    const child = spawn(host, [url], { detached: true, stdio: 'ignore', windowsHide: false });
-    child.unref();
+    await reviewHost.open(host, `http://127.0.0.1:${port}`, hash);
   };
   return {
     discoveryPath,
     open,
     async close() {
-      localisationAssistant.close();
-      for (const client of websocketServer.clients) client.terminate();
-      websocketServer.close();
-      await new Promise((resolve) => server.close(resolve));
+      await removeHostEndpoint?.().catch(() => {});
+      await closeServer();
       await fsPromises.rm(discoveryPath, { force: true }).catch(() => {});
     },
   };

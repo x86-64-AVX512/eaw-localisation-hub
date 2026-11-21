@@ -11,15 +11,17 @@ test('release versions stay consistent across package and Windows metadata', asy
   ]);
   const manifest = JSON.parse(manifestText);
   const lock = JSON.parse(lockText);
-  const displayMatch = /^(\d+\.\d+\.\d+)F(\d+)$/u.exec(DISPLAY_VERSION);
+  const displayMatch = /^(\d+\.\d+\.\d+)-beta\.(\d+)$/u.exec(DISPLAY_VERSION);
   assert.ok(displayMatch);
+  assert.equal(DISPLAY_VERSION, SEMVER_VERSION);
   assert.equal(manifest.version, SEMVER_VERSION);
   assert.equal(lock.version, SEMVER_VERSION);
   assert.equal(lock.packages[''].version, SEMVER_VERSION);
   assert.equal(manifest.eawHub.displayVersion, DISPLAY_VERSION);
   assert.equal(manifest.eawHub.windowsFileVersion, `${displayMatch[1]}.${displayMatch[2]}`);
   assert.equal(versionText.trim(), DISPLAY_VERSION);
-  assert.match(installer, new RegExp(`#define AppVersion "${DISPLAY_VERSION}"`, 'u'));
+  assert.ok(installer.includes(`#define AppVersion "${DISPLAY_VERSION}"`));
+  assert.ok(installer.includes(`#define WindowsFileVersion "${manifest.eawHub.windowsFileVersion}"`));
 });
 
 test('public repository metadata declares GPL-2.0-only and publication safeguards', async () => {

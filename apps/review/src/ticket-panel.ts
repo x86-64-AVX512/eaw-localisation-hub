@@ -9,6 +9,7 @@ import {
 } from './dom-elements.ts';
 import type * as Monaco from 'monaco-editor';
 import { embeddedSessionId, postWorkspace } from './workspace-bridge.ts';
+import { reviewFragment } from './launch-session.ts';
 
 interface TicketEvent { type: string; actor: string; at: string }
 
@@ -220,7 +221,7 @@ export function createTicketPanel(options: TicketPanelOptions) {
     navigating = true;
     const path = ticket && !ticket.files.includes(state.relativePath) ? ticket.files[0] ?? requestedPath : requestedPath;
     if (embeddedSessionId()) { postWorkspace('navigate',{path,ticket:ticket?.id ?? '',replaceCurrent}); navigating = false; return; }
-    const hash = new URLSearchParams({ token, path });
+    const hash = reviewFragment(token, { path });
     if (ticket) hash.set('ticket', ticket.id);
     await options.beforeNavigate?.();
     location.hash = hash.toString();

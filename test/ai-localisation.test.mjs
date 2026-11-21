@@ -165,6 +165,62 @@ test('Agent spaces automatic generations and reuses checked sentences after othe
   } finally { assistant.close(); }
 });
 
+test('DeepSeek and Kimi validate their own keys, batch proofreading and keep separate caches', async t => {
+  const calls = [];
+  const assistant = new CodexLocalisationAssistant({ providerFetch: async (origin, init) => {
+    calls.push({ url: origin.href, init });
+    const deepseek = origin.hostname === 'api.deepseek.com';
+    const model = deepseek ? 'deepseek-flash' : 'kimi-k3.1-pro';
+    if (init.headers.Authorization !== `Bearer ${deepseek ? 'deepseek-key' : 'kimi-key'}`) {
+      return new Response('provider diagnostic body', { status: 401 });
+    }
+    if (init.method === 'GET') return Response.json({ data: [{ id: model }] });
+    const body = JSON.parse(init.body);
+    assert.equal(body.model, model);
+    assert.equal(body.reasoning_effort, deepseek ? 'none' : 'low');
+    assert.deepEqual(body.response_format, { type: 'json_object' });
+    assert.equal(init.redirect, 'error');
+    assert.match(body.messages[0].content, /spelling and grammar/u);
+    assert.equal(body.messages.length, 2);
+    const { entries } = JSON.parse(body.messages[1].content);
+    return Response.json({ choices: [{
+      finish_reason: 'stop',
+      message: { content: JSON.stringify({ suggestions: [{
+        key: entries[0].key, text: 'Граф решил.', reason: deepseek ? 'Согласование.' : 'Число глагола.',
+      }] }) },
+    }], usage: { prompt_tokens: 50, completion_tokens: 10 } });
+  } });
+  t.after(() => assistant.close());
+  assistant.status = async () => assert.fail('External providers must not start Codex');
+  const request = { mode: 'review', automatic: true, entries: [
+    { key: 'A', text: 'Граф решили.' }, { key: 'B', text: 'Яблоко.' },
+  ] };
+
+  assert.deepEqual(assistant.providers.deepseek.status(), { signedIn: false });
+  await assert.rejects(assistant.setProviderKey('deepseek', 'invalid-key'), /проверьте ключ/iu);
+  assert.deepEqual(assistant.providers.deepseek.status(), { signedIn: false });
+  assert.deepEqual(await assistant.setProviderKey('deepseek', 'deepseek-key'), { signedIn: true });
+  assert.deepEqual(await assistant.setProviderKey('kimi', 'kimi-key'), { signedIn: true });
+  const deepseek = await assistant.run(request, undefined, 'deepseek');
+  assert.equal(deepseek.model, 'deepseek-flash');
+  assert.equal(deepseek.suggestions[0].reason, 'Согласование.');
+  assert.equal(deepseek.usage.inputTokens, 50);
+  assert.deepEqual(JSON.parse(JSON.parse(calls.at(-1).init.body).messages[1].content).entries, request.entries);
+  assert.equal(calls.at(-1).url, 'https://api.deepseek.com/chat/completions');
+  assert.equal((await assistant.run(request, undefined, 'deepseek')).usage.inputTokens, 0);
+
+  assistant.lastGeneration = -Infinity;
+  const kimi = await assistant.run(request, undefined, 'kimi');
+  assert.equal(kimi.model, 'kimi-k3.1-pro');
+  assert.equal(kimi.suggestions[0].reason, 'Число глагола.');
+  assert.equal(calls.at(-1).url, 'https://api.moonshot.ai/v1/chat/completions');
+  assert.deepEqual(await assistant.setProviderKey('deepseek', null), { signedIn: false });
+  assert.equal((await assistant.run(request, undefined, 'kimi')).usage.inputTokens, 0);
+  assistant.lastGeneration = -Infinity;
+  await assert.rejects(assistant.run(request, undefined, 'deepseek'), /Добавьте API-ключ/u);
+  assert.equal(calls.length, 5);
+});
+
 test('grammar highlighting marks the incorrect word instead of the entire value', () => {
   assert.deepEqual(aiCorrectionRange('Граф решили устроить охоту.', 'Граф решил устроить охоту.'),
     { start: 5, end: 11, text: 'решил' });
@@ -207,15 +263,25 @@ test('AI endpoints require a local capability and same-origin requests before to
   });
   const { origin, token } = JSON.parse(await fs.readFile(review.discoveryPath, 'utf8'));
   const url = origin + '/api/ai-localisation/';
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   assert.equal((await fetch(url + 'status')).status, 403);
   assert.equal((await fetch(url + 'usage')).status, 403);
   assert.equal((await fetch(url + 'status', { headers: { Authorization: `Bearer ${token}`, Origin: 'https://example.invalid' } })).status, 403);
-  for (const route of ['login', 'cancel-login', 'logout']) {
+  for (const route of ['login', 'cancel-login', 'logout', 'api-key?provider=deepseek']) {
     assert.equal((await fetch(url + route, { method: 'POST' })).status, 403);
     assert.equal((await fetch(url + route, { method: 'POST', headers: {
       Authorization: `Bearer ${token}`, Origin: 'https://example.invalid',
     } })).status, 403);
   }
+  const externalStatus = await fetch(url + 'status?provider=deepseek', { headers });
+  assert.equal(externalStatus.status, 200);
+  assert.deepEqual(await externalStatus.json(), { signedIn: false });
+  assert.equal((await fetch(url + 'status?provider=toString', { headers })).status, 409);
+  const blankKey = await fetch(url + 'api-key?provider=kimi', {
+    method: 'POST', headers, body: JSON.stringify({ key: ' ' }),
+  });
+  assert.equal(blankKey.status, 409);
+  assert.match((await blankKey.json()).error, /Введите действительный API-ключ/u);
   const bad = await fetch(url + 'run', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode: 'review', entries: [] }) });
   assert.equal(bad.status, 409);
@@ -266,7 +332,7 @@ test('Review tracks the isolated Codex sign-in and clears local proofreading sta
     const status = await assistant.status();
     assert.equal(status.loginPending, false);
     assert.equal(status.email, 'review@example.invalid');
-    assistant.automaticResults.set('cached result', {});
+    assistant.automaticResults.set('codex\0russian\0cached result', {});
     assistant.conversation = { worker, id: 'old-thread' };
     assert.equal((await assistant.changeAccount('logout')).signedIn, false);
     assert.equal(assistant.automaticResults.size, 0);

@@ -5,7 +5,8 @@ import { CodexRpc } from './codex-rpc.mjs';
 import { codexExecutable } from './codex-executable.mjs';
 import { CodexReviewAccount } from './codex-review-account.mjs';
 import { reviewRateLimits } from './codex-review-usage.mjs';
-import { AI_AUTO_INTERVAL_MS, AI_OUTPUT_SCHEMA, LOCALISATION_AI_MODEL, aiRequest, aiSuggestions } from '../../../packages/shared/src/ai-localisation.mts';
+import { ProofreadingProvider } from './proofreading-provider.mjs';
+import { AI_AUTO_INTERVAL_MS, AI_OUTPUT_SCHEMA, LOCALISATION_AI_MODEL, PROOFREADING_MODELS, aiRequest, aiSuggestions } from '../../../packages/shared/src/ai-localisation.mts';
 
 const MAX_CACHED_SENTENCES = 1024;
 const CONTEXT_TARGET_TOKENS = 24_000;
@@ -37,10 +38,14 @@ export class CodexLocalisationAssistant {
   lastRateLimits = null;
   signedIn = false;
 
-  /** @param {{profileDirectory?: string, openBrowser?: (url: string) => Promise<void>}} [options] */
-  constructor({ profileDirectory, openBrowser } = {}) {
+  /** @param {{profileDirectory?: string, openBrowser?: (url: string) => Promise<void>, providerFetch?: typeof fetch}} [options] */
+  constructor({ profileDirectory, openBrowser, providerFetch } = {}) {
     this.profileDirectory = profileDirectory;
     this.account = new CodexReviewAccount({ openBrowser, changed: () => this.scheduleIdleStop() });
+    this.providers = {
+      deepseek: new ProofreadingProvider('deepseek', providerFetch),
+      kimi: new ProofreadingProvider('kimi', providerFetch),
+    };
   }
 
   async startWorker(passive = false) {
@@ -151,7 +156,7 @@ export class CodexLocalisationAssistant {
       if (action === 'logout') {
         this.signedIn = false;
         this.lastRateLimits = null;
-        this.automaticResults.clear();
+        this.clearCachedResults('codex');
         this.conversation = null;
         this.lastGeneration = -Infinity;
         this.worker?.close();
@@ -161,13 +166,70 @@ export class CodexLocalisationAssistant {
     }
   }
 
-  async run(value, signal) {
+  clearCachedResults(provider) {
+    for (const key of this.automaticResults.keys()) {
+      if (key.startsWith(`${provider}\0`)) this.automaticResults.delete(key);
+    }
+  }
+
+  async setProviderKey(provider, key, signal) {
+    if (this.closed) throw new Error('Запрос ИИ отменён.');
+    if (this.active) throw new Error('Дождитесь завершения текущего запроса ИИ.');
+    const controller = new AbortController();
+    this.active = controller;
+    try {
+      const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+      const status = await this.providers[provider].setKey(key, combined);
+      this.clearCachedResults(provider);
+      return status;
+    } finally {
+      this.active = null;
+      this.scheduleIdleStop();
+    }
+  }
+
+  async generateCodex(input, signal) {
+    const status = await this.status(signal, false);
+    if (!status.signedIn) throw new Error('Войдите в Codex в окне «Орфография и грамматика (тест)».');
+    const worker = this.worker;
+    try {
+      if (signal.aborted) throw new Error('Запрос ИИ отменён.');
+      let conversation = this.conversation;
+      if (conversation?.worker !== worker || conversation.tokens + Math.ceil(input.length / 2) >= conversation.limit) {
+        await this.releaseConversation();
+        const { thread } = await worker.call('thread/start', {
+          model: LOCALISATION_AI_MODEL, modelProvider: 'openai', cwd: worker.cwd,
+          ephemeral: true, sandbox: 'read-only', approvalPolicy: 'never',
+          baseInstructions: this.instructions, developerInstructions: '', config: this.threadConfig,
+        }, signal);
+        this.conversation = conversation = { worker, id: thread.id, tokens: 0, limit: CONTEXT_TARGET_TOKENS };
+      }
+      this.lastGeneration = performance.now();
+      const result = await worker.generate(conversation.id, input, AI_OUTPUT_SCHEMA, LOCALISATION_AI_MODEL, signal);
+      conversation.tokens = result.usage?.inputTokens !== undefined
+        ? result.usage.inputTokens + (result.usage.outputTokens ?? 0)
+        : conversation.tokens + Math.ceil((input.length + result.text.length) / 2);
+      conversation.estimated = result.usage?.inputTokens === undefined;
+      if (result.contextWindow > 0) {
+        conversation.contextWindow = result.contextWindow;
+        conversation.limit = Math.min(CONTEXT_TARGET_TOKENS, Math.floor(result.contextWindow * 0.8));
+      }
+      return result;
+    } catch (error) {
+      if (signal.aborted) worker.close(new Error('Запрос ИИ отменён.'));
+      throw error;
+    }
+  }
+
+  async run(value, signal, provider = 'codex') {
     const request = aiRequest(value);
-    if (this.account.busy || this.account.pending) throw new Error('Дождитесь завершения входа в Codex.');
+    if (this.closed) throw new Error('Запрос ИИ отменён.');
+    const external = this.providers[provider];
+    if (!external && (this.account.busy || this.account.pending)) throw new Error('Дождитесь завершения входа в Codex.');
     const started = Date.now();
     const suggestionsByText = new Map();
     const toCheck = new Map();
-    const cacheKey = text => `${request.language}\0${text}`;
+    const cacheKey = text => `${provider}\0${request.language}\0${text}`;
     if (request.automatic) {
       for (const entry of request.entries) {
         const key = cacheKey(entry.text);
@@ -179,7 +241,7 @@ export class CodexLocalisationAssistant {
         } else if (!toCheck.has(entry.text)) toCheck.set(entry.text, entry);
       }
     }
-    const output = (suggestions, usage) => ({ model: LOCALISATION_AI_MODEL, suggestions,
+    const output = (suggestions, usage) => ({ model: PROOFREADING_MODELS[provider].id, suggestions,
       durationMs: usage ? Date.now() - started : 0,
       usage: { inputTokens: usage?.inputTokens ?? 0, outputTokens: usage?.outputTokens ?? 0,
         ...(usage?.cachedInputTokens === undefined ? {} : { cachedInputTokens: usage.cachedInputTokens }) } });
@@ -199,35 +261,16 @@ export class CodexLocalisationAssistant {
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
-    let worker;
     try {
-      const status = await this.status(controller.signal, false);
-      if (!status.signedIn) throw new Error('Войдите в Codex в окне «Орфография и грамматика (тест)».');
-      worker = this.worker;
-      if (controller.signal.aborted) throw new Error('Запрос ИИ отменён.');
       const entries = request.automatic ? [...toCheck.values()] : request.entries;
       const prompt = { mode: request.mode, language: request.language, entries };
       const input = JSON.stringify(prompt);
-      let conversation = this.conversation;
-      if (conversation?.worker !== worker || conversation.tokens + Math.ceil(input.length / 2) >= conversation.limit) {
-        await this.releaseConversation();
-        const { thread } = await worker.call('thread/start', {
-          model: LOCALISATION_AI_MODEL, modelProvider: 'openai', cwd: worker.cwd,
-          ephemeral: true, sandbox: 'read-only', approvalPolicy: 'never',
-          baseInstructions: this.instructions, developerInstructions: '', config: this.threadConfig,
-        }, controller.signal);
-        this.conversation = conversation = { worker, id: thread.id, tokens: 0, limit: CONTEXT_TARGET_TOKENS };
-      }
-      this.lastGeneration = performance.now();
-      const result = await worker.generate(conversation.id, input,
-        AI_OUTPUT_SCHEMA, LOCALISATION_AI_MODEL, controller.signal);
-      conversation.tokens = result.usage?.inputTokens !== undefined
-        ? result.usage.inputTokens + (result.usage.outputTokens ?? 0)
-        : conversation.tokens + Math.ceil((input.length + result.text.length) / 2);
-      conversation.estimated = result.usage?.inputTokens === undefined;
-      if (result.contextWindow > 0) {
-        conversation.contextWindow = result.contextWindow;
-        conversation.limit = Math.min(CONTEXT_TARGET_TOKENS, Math.floor(result.contextWindow * 0.8));
+      let result;
+      if (external) {
+        this.lastGeneration = performance.now();
+        result = await external.generate(input, controller.signal);
+      } else {
+        result = await this.generateCodex(input, controller.signal);
       }
       const suggestions = aiSuggestions(JSON.parse(result.text), prompt);
       if (!request.automatic) return output(suggestions, result.usage);
@@ -243,9 +286,10 @@ export class CodexLocalisationAssistant {
       }
       return output(automaticSuggestions(), result.usage);
     } catch (error) {
-      if (controller.signal.aborted) worker?.close(new Error('Запрос ИИ отменён.'));
-      if (worker) await this.releaseConversation();
-      if (error instanceof SyntaxError) throw new Error('Codex вернул некорректный ответ. Повторите запрос.');
+      if (!external) await this.releaseConversation();
+      if (error instanceof SyntaxError) throw new Error(external
+        ? 'Провайдер ИИ вернул некорректный ответ.'
+        : 'Codex вернул некорректный ответ. Повторите запрос.');
       throw error;
     } finally {
       signal?.removeEventListener('abort', abort);

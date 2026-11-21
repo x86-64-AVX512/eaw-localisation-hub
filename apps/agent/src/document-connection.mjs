@@ -7,6 +7,7 @@ import { rejectDiskMergeRequests } from './disk-merge-request.mjs';
 import { handleSocketClose } from './document-delivery.mts';
 import { resetPersonalRequest } from './personal-document.mjs';
 import { handleMergedBranchClose, handleUnavailableTicketClose } from './document-lifecycle.mts';
+import { isSessionRejected } from './agent-session.mjs';
 
 export function scheduleDocumentReconnect(binding) {
   if (binding.reconnectTimer || binding.closing || binding.paused) return;
@@ -22,7 +23,8 @@ export function connectDocument(binding, remoteOrigin) {
   const policy = binding.hub.options.connectionPolicy ?? {};
   const url = new URL(binding.hub.options.server);
   url.searchParams.set('document', binding.documentId); appendGitHead(binding, url);
-  const headers = binding.hub.options.token ? {Authorization:`Bearer ${binding.hub.options.token}`} : undefined;
+  const token = binding.hub.options.token;
+  const headers = token ? {Authorization:`Bearer ${token}`} : undefined;
   binding.serverStateVector = null;
   const socket = new WebSocket(url, {maxPayload:MAX_MESSAGE_BYTES,headers,handshakeTimeout:policy.handshakeMs ?? 8000});
   binding.socket = socket; socket.binaryType = 'arraybuffer';
@@ -77,9 +79,9 @@ export function connectDocument(binding, remoteOrigin) {
     console.warn('[agent] document disconnected');
     const detail = reason?.toString('utf8') || '';
     if (handleMergedBranchClose(binding,code) || handleUnavailableTicketClose(binding,code,detail)) return;
-    if (code === 1008) {
+    if (isSessionRejected(code, detail) && binding.hub.options.token === token) {
       binding.paused=true;binding.emitDocumentStatus('unauthorized');
-      for (const client of binding.clients) client.send({type:'notice',message:`Сервер отклонил авторизацию: ${detail || 'Authentication failed'}. Перезапустите Agent после входа.`});
+      binding.hub.rejectSession?.(token);
       return;
     }
     binding.emitDocumentStatus('offline');binding.scheduleReconnect();

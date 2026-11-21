@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { controlledString } from './protocol-limits.mts';
 import { resolveReservationRange } from './reservation-anchors.mjs';
 import { keysInsideRange } from '../../../packages/shared/src/text.mts';
@@ -41,6 +42,9 @@ export function updateReservation(room, socket, message) {
     // Derive recovery keys from canonical text, not from client-supplied names.
     next.initialKeys = keysInsideRange(room.document.getText('content').toString(), range.start, range.end);
     if (!next.initialKeys.length || next.initialKeys.length > 1000) throw new Error('Invalid reservation key count');
+    // Same bound as reservation-create: Agent rejects a whole snapshot with an overlong key.
+    // A plain Error: the user gets an ordinary failed-update result, not a closed socket.
+    if (next.initialKeys.some((key) => Buffer.byteLength(key, 'utf8') > 256)) throw new Error('Reservation key is too long');
   }
   room.reservations[index] = next;
   try { room.assertMetadataBudget(); }

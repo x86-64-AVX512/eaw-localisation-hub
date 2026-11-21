@@ -2,6 +2,7 @@ import './style.css';
 import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { createAgentConnection } from './agent-connection.ts';
 import { WORKSPACE_BRIDGE } from './workspace-bridge.ts';
+import { readLaunchToken, reviewFragment } from './launch-session.ts';
 import { createWorkspaceTabs, workspaceTabIdentity } from './workspace-tabs.ts';
 import type { WorkspaceTab } from './workspace-tabs.ts';
 import { WORKSPACE_SLEEP_KEY, workspaceSleepCandidates, workspaceSleepSettings } from './workspace-sleep.ts';
@@ -13,7 +14,7 @@ interface Session {
   sleepSent?:boolean; preparationDeadline?:number;
 }
 export function createWorkspaceWindow() {
-  const hash = new URLSearchParams(location.hash.slice(1)), token = hash.get('token') ?? '';
+  const hash = new URLSearchParams(location.hash.slice(1)), token = readLaunchToken(hash);
   const bar = document.querySelector<HTMLElement>('#document-tabs')!;
   const picker = document.querySelector<HTMLDialogElement>('#file-picker-dialog')!;
   const toast = document.querySelector<HTMLElement>('#toast')!;
@@ -57,7 +58,7 @@ export function createWorkspaceWindow() {
   function wake(s:Session) {
     if (s.frame) return;
     s.id = crypto.randomUUID(); s.protected = true; s.connected = false; s.registered = false; s.pending = false;
-    const params = new URLSearchParams({token,path:s.tab.path,session:s.id,foreground:s === active ? '1' : '0'});
+    const params = reviewFragment(token, {path:s.tab.path,session:s.id,foreground:s === active ? '1' : '0'});
     if (s.tab.ticket) params.set('ticket',s.tab.ticket);
     const frame = document.createElement('iframe'); frame.className = 'document-session'; frame.title = s.tab.relativePath || s.tab.path;
     frame.src = `/#${params}`; s.frame = frame; host.append(frame);
@@ -73,7 +74,7 @@ export function createWorkspaceWindow() {
     // Wake allocates a new logical-session ID. Select that ID, not the
     // released sleeping one, before the new editor can publish presence.
     wake(s); if (online) command(s,'select'); renderVisibility();
-    const params = new URLSearchParams({token,path:s.tab.path}); if (s.tab.ticket) params.set('ticket',s.tab.ticket);
+    const params = reviewFragment(token, {path:s.tab.path}); if (s.tab.ticket) params.set('ticket',s.tab.ticket);
     history.replaceState(null,'',`#${params}`);
   }
   function discard(s:Session, sleep = false) {

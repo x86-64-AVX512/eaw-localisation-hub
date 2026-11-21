@@ -7,7 +7,7 @@
 $ErrorActionPreference = 'Stop'
 $sourceRoot = Split-Path -Parent $PSScriptRoot
 $version = (Get-Content -LiteralPath (Join-Path $sourceRoot 'VERSION') -Raw -Encoding utf8).Trim()
-if ($version -notmatch '^\d+\.\d+\.\d+F\d+$') { throw "Invalid client version: $version" }
+if ($version -cnotmatch '^\d+\.\d+\.\d+(?:F|-beta\.)\d+$') { throw "Invalid client version: $version" }
 if (-not $InstallDirectory) {
     $InstallDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "Programs\EaW Localisation Hub\Client-$version"
 }

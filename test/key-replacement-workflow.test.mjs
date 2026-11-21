@@ -213,3 +213,27 @@ test('an external change introducing ambiguous quotes after preview is not overw
   await assert.rejects(s.workflow.apply('key: "Новое"',preview.files),/Предпросмотр содержит ошибки/u);
   assert.equal(await fs.readFile(s.file,'utf8'),changed);
 });
+
+test('batch apply and rollback both preserve external edits made during the write', async t => {
+  const { repository, file, original, workflow } = await experimentalFixture(t);
+  const second = path.join(path.dirname(file), 'b.yml');
+  const third = path.join(path.dirname(file), 'c.yml');
+  await fs.writeFile(second, 'l_russian:\n second: "Старое"\n');
+  await fs.writeFile(third, 'l_russian:\n third: "Старое"\n');
+  const input = 'key: "Новое"\nsecond: "Новое"\nthird: "Новое"';
+  const preview = await workflow.preview(input);
+  const open = fs.open;
+  const externalSecond = 'l_russian:\n second: "Внешняя правка"\n';
+  const externalThird = 'l_russian:\n third: "Тоже изменён"\n';
+  t.mock.method(fs, 'open', async (target, flags, ...rest) => {
+    if (target === third && flags === 'r+') {
+      await fs.writeFile(second, externalSecond);
+      await fs.writeFile(third, externalThird);
+    }
+    return open(target, flags, ...rest);
+  });
+  await assert.rejects(workflow.apply(input, preview.files), /изменился во время применения/u);
+  assert.equal(await fs.readFile(file, 'utf8'), original);
+  assert.equal(await fs.readFile(second, 'utf8'), externalSecond);
+  assert.equal(await fs.readFile(third, 'utf8'), externalThird);
+});

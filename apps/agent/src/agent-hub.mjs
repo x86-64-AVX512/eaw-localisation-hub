@@ -18,6 +18,7 @@ import { TicketWorkflow } from './ticket-workflow.mjs';
 import { KeyReplacementWorkflow } from './key-replacement-workflow.mjs';
 import { resolveReviewAnchors } from './review-document.mjs';
 import { requestAgentJson, SLOW_SERVER_OPERATION_MILLISECONDS } from './agent-http.mjs';
+import { REVIEW_LOGIN_REQUIRED, watchAgentSession } from './agent-session.mjs';
 import { transitionWorkspace } from './workspace-transition.mjs';
 import { runGitAsync, runGitSync } from './git-executable.mts';
 import { DiffCache } from './diff-cache.mjs';
@@ -64,6 +65,13 @@ export class AgentHub {
     this.presenceClientId = `agent-presence-${process.pid}-${crypto.randomUUID()}`;
     this.documents = new Map();
     this.identity = null;
+    this.reviewAccess = 'unknown';
+    this.sessionRevision = 0;
+    this.sessionSocket = null;
+    this.sessionExpiryTimer = null;
+    this.sessionWatchUnsupported = false;
+    /** @type {(() => void) | null} */
+    this.onReviewAccessLost = null;
     this.directory = [];
     this.ticketWorkflow = new TicketWorkflow(this);
     this.keyReplacementWorkflow = new KeyReplacementWorkflow(this);
@@ -83,7 +91,10 @@ export class AgentHub {
     /** @type {Map<string, Map<symbol, { expiresAt: number, closeReason: string }>>} */
     this.ticketRemovals = new Map();
     this.accountRefreshTimer = setInterval(() => {
-      this.refreshAccountStatus().catch(() => {});
+      const rereadCredential = this.reviewAccess === 'denied'
+        && performance.now() - (this.lastCredentialReadAt ?? -Infinity) >= 60_000;
+      const ready = rereadCredential ? this.reloadReviewCredential() : this.refreshAccountStatus();
+      ready.catch(() => {});
     }, 15_000);
     this.accountRefreshTimer.unref();
     this.gitCommit = this.currentDocumentGitCommit();
@@ -546,6 +557,7 @@ export class AgentHub {
   }
 
   receiveClientMessage(client, message) {
+    if (client.kind === 'review' && this.reviewAccess === 'denied') return;
     // Opening/closing files changes the set of rooms checked by preflight.
     if (message.type === 'open' || message.type === 'close') this.repositoryEditEpoch += 1;
     if (message.type === 'recoveryIssue') {
@@ -805,17 +817,93 @@ export class AgentHub {
   }
 
   async authRequest(route, options = {}) {
-    return requestAgentJson(this.options, route, options, this.requestController?.signal);
+    const token = this.options.token;
+    const revision = this.sessionRevision;
+    try {
+      const result = await requestAgentJson(this.options, route, options, this.requestController?.signal);
+      if (revision !== this.sessionRevision) throw new Error(REVIEW_LOGIN_REQUIRED);
+      return result;
+    } catch (error) {
+      if (revision === this.sessionRevision && (
+        ['token_required', 'invalid_session', 'expired_session', 'account_disabled', 'temporary_password_change_required'].includes(error.code)
+        || (route === '/api/auth/me' && [401, 403].includes(error.status))
+      )) this.rejectSession(token);
+      throw error;
+    }
+  }
+
+  rejectSession(token) {
+    if (token !== this.options.token || this.reviewAccess === 'denied') return;
+    this.sessionRevision += 1;
+    this.reviewAccess = 'denied';
+    this.identity = null;
+    this.directory = [];
+    clearTimeout(this.sessionExpiryTimer);
+    this.sessionExpiryTimer = null;
+    const watcher = this.sessionSocket;
+    this.sessionSocket = null;
+    watcher?.terminate();
+    this.onReviewAccessLost?.();
+  }
+
+  async reloadReviewCredential() {
+    if (this.closing || !this.options.readToken) return this.refreshAccountStatus();
+    this.credentialReloadPromise ??= (async () => {
+      this.lastCredentialReadAt = performance.now();
+      const token = await this.options.readToken(this.options.server);
+      if (this.closing) return;
+      if (token !== this.options.token) {
+        this.rejectSession(this.options.token);
+        this.options.token = token;
+        this.reviewAccess = token ? 'unknown' : 'denied';
+        this.sessionRevision += 1;
+        await this.accountRefreshPromise?.catch(() => {});
+      }
+      await this.refreshAccountStatus();
+    })().finally(() => { this.credentialReloadPromise = null; });
+    return this.credentialReloadPromise;
+  }
+
+  async requireReviewAccess() {
+    try {
+      await this.reloadReviewCredential();
+    } catch {
+      // Transport failures leave the current access decision in effect.
+    }
+    if (this.reviewAccess === 'denied') throw new Error(REVIEW_LOGIN_REQUIRED);
+  }
+
+  scheduleSessionExpiry(sessionRemainingMs) {
+    clearTimeout(this.sessionExpiryTimer);
+    this.sessionExpiryTimer = null;
+    if (!Number.isFinite(sessionRemainingMs)) return;
+    const expiry = performance.now() + sessionRemainingMs;
+    const token = this.options.token;
+    const schedule = () => {
+      const remaining = expiry - performance.now();
+      if (remaining <= 0) { this.rejectSession(token); return; }
+      this.sessionExpiryTimer = setTimeout(schedule, Math.min(remaining, 2_147_483_647));
+      this.sessionExpiryTimer.unref();
+    };
+    schedule();
   }
 
   refreshAccountStatus() {
     if (this.closing) return Promise.resolve();
+    const revision = this.sessionRevision;
     this.accountRefreshPromise ??= (async () => {
-      const [payload, health] = await Promise.all([
-        this.authRequest('/api/auth/me', { method: 'GET' }), this.authRequest('/health', { method: 'GET' }),
-      ]);
-      if (this.closing) return;
-      this.serverVersion = String(health.version ?? ''); this.updateIdentity(payload.user);
+      const health = this.authRequest('/health', { method: 'GET' }).then(payload => {
+        this.serverVersion = String(payload.version ?? '');
+      }).catch(() => {});
+      try {
+        const payload = await this.authRequest('/api/auth/me', { method: 'GET' });
+        if (this.closing || revision !== this.sessionRevision || !payload.user) return;
+        if (payload.user.temporaryPassword) { this.rejectSession(this.options.token); return; }
+        this.reviewAccess = 'allowed';
+        this.updateIdentity(payload.user);
+        this.scheduleSessionExpiry(payload.sessionRemainingMs);
+        if (this.onReviewAccessLost && this.reviewAccess === 'allowed') watchAgentSession(this);
+      } finally { await health; }
     })().finally(() => { this.accountRefreshPromise = null; });
     return this.accountRefreshPromise;
   }
@@ -871,6 +959,8 @@ export class AgentHub {
   async close() {
     this.closing = true;
     this.requestController?.abort();
+    this.sessionSocket?.terminate();
+    clearTimeout(this.sessionExpiryTimer);
     clearInterval(this.accountRefreshTimer);
     clearInterval(this.gitCommitTimer);
     if (this.branchDebounce) clearTimeout(this.branchDebounce);

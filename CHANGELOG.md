@@ -1,8 +1,26 @@
 # Changelog
 
-All notable public changes to EaW Localisation Hub are recorded here. Version names shown in the Windows UI use the `0.8.9F3` form; package metadata uses `0.8.9-beta.3`.
+All notable public changes to EaW Localisation Hub are recorded here. The Windows UI and packages use the same beta version format starting with `0.8.9-beta.4`.
 
-## 0.8.9F3 – Unreleased
+## 0.8.9-beta.4 – Unreleased
+
+- Close Review when a Hub session expires or is revoked. Keep local editing available when Hub is unreachable and the session has not been rejected. Reject expired or revoked sessions on the server and reload Windows credentials after signing in again.
+- Add DeepSeek and Kimi as opt-in spelling and grammar providers. Provider API keys stay in Desktop Agent memory until it exits.
+- Skip damaged room metadata during server startup and account anonymisation. Start saving dirty rooms even during continuous edits, retry failed saves and sync temporary state files before replacing the previous versions.
+- Recheck invitation revocation after password hashing and preserve external edits during key replacement and rollback.
+- Preserve unchanged CRDT text during Git refreshes, ticket operations and history restores so delayed edits can keep their anchors.
+- Let the operating system assign a free local Review port when its saved port is occupied or reserved.
+- Lock each Agent state directory before startup so a blocked Agent keeps exclusive access and a forced exit releases the lock.
+- Verify the local Agent before opening Review, keep its origin fixed, and pass signed English-original requests between windows without sharing the Review token. Report success once the requested original loads. Block downloads and external navigation. Open the recovery-code save dialog after the server has issued the code. Windows Setup requires WebView2 Runtime 114.0.1823.32 or later.
+- Harden the server's document socket: a malformed request id can no longer end the server process, a failed reply no longer stalls later messages, and frames queued behind a busy room are capped in memory per socket and across the server.
+- Keep author names with `$` sequences from corrupting saved history, never write a history file larger than the server will load, and set an unreadable history aside (keeping only the newest copy) so its room still opens. History now records texts up to the room size limit.
+- Measure room metadata in the exact form it is saved, check the budget when resolving a discussion, reject reservation ranges containing keys longer than 256 bytes and drop such keys from older saved data, recheck write access after audit logging, refuse history restores over unrecorded newer edits, and reject Yjs updates that add new root types other than the document text.
+
+- The Windows updater recognizes release tags such as `v0.8.9F3` and installs the newest release with a complete installer and checksum in one step.
+- Use `0.8.9-beta.4` in the interface and artifact names. Install this release manually on clients that still use F-style installer names.
+- Update checks, downloads and installation can be cancelled. After a successful update, the updater opens Agent settings for a manual start.
+
+## 0.8.9F3
 
 - Review adds opt-in Russian and English spelling and grammar checking with GPT-6 Luna via a personal Codex account. English article corrections require a clear local error. Background checks batch fully visible edited sentences after 15 seconds without edits, reuse recent results and continue the same Codex conversation within a bounded context.
 - Windows Setup offers optional per-user installation of Codex CLI through WinGet for Review proofreading.

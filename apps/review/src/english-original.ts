@@ -1,4 +1,4 @@
-import { uiText } from '../../../packages/shared/src/ui-language.mts';
+import { uiMessage, uiText } from '../../../packages/shared/src/ui-language.mts';
 interface CursorEditor {
   getModel(): { getLineContent(line: number): string } | null;
   getPosition(): { lineNumber: number } | null;
@@ -42,7 +42,7 @@ export function createEnglishOriginal(options: EnglishOriginalOptions): void {
       });
       const payload: unknown = await response.json().catch(() => ({}));
       const result = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
-      if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : `HTTP ${response.status}`);
+      if (!response.ok) throw new Error(typeof result.error === 'string' ? uiMessage(result.error) : `HTTP ${response.status}`);
       onOpened(pair);
       showToast(uiText("Английский файл открыт: {0}:{1}", result.file, result.line));
     } catch (error) {

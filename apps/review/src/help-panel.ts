@@ -85,7 +85,7 @@ const SEGMENTS = [
 ];
 
 function versionParts(value: string): number[] {
-  const match = /^(\d+)\.(\d+)\.(\d+)F(\d+)$/iu.exec(String(value));
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:F|-beta\.)(\d+)$/iu.exec(String(value));
   return match ? match.slice(1).map(Number) : [0, 0, 0, 0];
 }
 function newer(left: string, right: string): boolean {

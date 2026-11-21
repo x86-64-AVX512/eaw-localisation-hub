@@ -1,6 +1,14 @@
 import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { requiredElement } from './dom-elements.ts';
 
+export function reportReadOnlyOpen(token: string, launch: string | null, result: 'opened' | 'failed'): void {
+  if (!launch) return;
+  const query = new URLSearchParams({ launch, result });
+  void fetch(`/api/review-open-result?${query}`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => {});
+}
+
 interface ReadOnlyReviewOptions {
   data: { relativePath: string };
   editor: {

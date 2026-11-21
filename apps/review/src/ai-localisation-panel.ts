@@ -1,6 +1,6 @@
 import type * as Monaco from 'monaco-editor';
-import { AI_AUTO_INTERVAL_MS, LOCALISATION_AI_MODEL, MAX_AI_AUTOMATIC_ENTRIES, MAX_AI_REQUEST_CHARS, aiRequest, aiSuggestions, aiCorrectionRange } from '../../../packages/shared/src/ai-localisation.mts';
-import type { AiRequest, AiSuggestion, ProofreadingLanguage } from '../../../packages/shared/src/ai-localisation.mts';
+import { AI_AUTO_INTERVAL_MS, PROOFREADING_MODELS, MAX_AI_AUTOMATIC_ENTRIES, MAX_AI_REQUEST_CHARS, aiRequest, aiSuggestions, aiCorrectionRange, isProofreadingProvider } from '../../../packages/shared/src/ai-localisation.mts';
+import type { AiRequest, AiSuggestion, ProofreadingLanguage, ProofreadingProvider } from '../../../packages/shared/src/ai-localisation.mts';
 import { scanLocalisationEntries } from '../../../packages/shared/src/localisation-replace.mts';
 import { uiText, uiMessage } from '../../../packages/shared/src/ui-language.mts';
 import { requiredElement } from './dom-elements.ts';
@@ -12,6 +12,13 @@ import { createAiUsagePanel } from './ai-usage-panel.ts';
 import type { CodexUsage } from './ai-usage-panel.ts';
 
 const AUTO_CHECK_KEY = 'eaw-ai-automatic-proofreading';
+const PROVIDER_KEY = 'eaw-ai-proofreading-provider';
+
+function savedProvider(): ProofreadingProvider {
+  const value = localStorage.getItem(PROVIDER_KEY);
+  return isProofreadingProvider(value) ? value : 'codex';
+}
+
 function proofreadingLanguage(path: string): ProofreadingLanguage | null {
   const language = /^localisation\/(?:replace\/)?(russian|english)\//u.exec(path)?.[1];
   return language === 'russian' || language === 'english' ? language : null;
@@ -59,7 +66,15 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
   const results = requiredElement<HTMLElement>('#ai-localisation-results');
   const check = requiredElement<HTMLButtonElement>('#ai-localisation-check');
   const accountStatus = requiredElement<HTMLElement>('#ai-localisation-account');
+  const modelChoices = requiredElement<HTMLFieldSetElement>('#ai-localisation-models');
+  const providerHint = requiredElement('#ai-localisation-provider-hint');
+  const codexControls = requiredElement('#ai-localisation-codex');
+  const keyForm = requiredElement<HTMLFormElement>('#ai-localisation-api-key');
+  const keyInput = requiredElement<HTMLInputElement>('#ai-localisation-key-value');
+  const keySave = requiredElement<HTMLButtonElement>('#ai-localisation-key-save');
+  const keyRemove = requiredElement<HTMLButtonElement>('#ai-localisation-key-remove');
   const usagePanel = createAiUsagePanel();
+  const usageBar = requiredElement<HTMLElement>('.ai-localisation-usage');
   const loginButton = requiredElement<HTMLButtonElement>('#ai-localisation-login');
   const logoutButton = requiredElement<HTMLButtonElement>('#ai-localisation-logout');
   const cancelLoginButton = requiredElement<HTMLButtonElement>('#ai-localisation-cancel-login');
@@ -87,6 +102,7 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
   let accountController: AbortController | null = null;
   let accountPoll: ReturnType<typeof setTimeout> | undefined;
   let account: CodexAccountStatus | null = null;
+  let selectedProvider = savedProvider();
   let usageController: AbortController | null = null;
   let usageTimer: ReturnType<typeof setTimeout> | undefined;
   let composing = false;
@@ -150,7 +166,7 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
   }
 
   async function request<T>(route: string, signal: AbortSignal, body?: unknown): Promise<T> {
-    const response = await fetch(`/api/ai-localisation/${route}`, {
+    const response = await fetch(`/api/ai-localisation/${route}?provider=${selectedProvider}`, {
       method: body === undefined ? 'GET' : 'POST', cache: 'no-store', signal,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -178,7 +194,8 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
     if (!snapshot || !current(snapshot)) return;
     markedModel = snapshot.model;
     monaco.editor.setModelMarkers(markedModel, 'eaw-ai', issues.map(issue => ({
-      severity: monaco.MarkerSeverity.Warning, source: uiText('Орфография и грамматика · GPT-6 Luna'),
+      severity: monaco.MarkerSeverity.Warning,
+      source: uiText('Орфография и грамматика · {0}', PROOFREADING_MODELS[selectedProvider].name),
       message: issue.reason, ...issue.range,
       endColumn: Math.max(issue.range.startColumn + 1, issue.range.endColumn),
     })));
@@ -218,8 +235,9 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
   function render(result: AiResult, value: Snapshot, append = false): void {
     const suggestions = aiSuggestions(result, value.request);
     if (!append || !issues.length) results.replaceChildren();
-    status.textContent = uiText('GPT-6 Luna · {0} с · токены: вход {1}, из кэша {2}, выход {3}',
-      (result.durationMs / 1000).toFixed(1), result.usage.inputTokens, result.usage.cachedInputTokens ?? 0, result.usage.outputTokens);
+    status.textContent = uiText('{0} · {1} с · токены: вход {2}, из кэша {3}, выход {4}',
+      PROOFREADING_MODELS[selectedProvider].name, (result.durationMs / 1000).toFixed(1),
+      result.usage.inputTokens, result.usage.cachedInputTokens ?? 0, result.usage.outputTokens);
     for (const suggestion of suggestions) {
       const location = value.locations[value.request.entries.findIndex(entry => entry.key === suggestion.key)];
       const changed = aiCorrectionRange(location.text, suggestion.text)!;
@@ -288,6 +306,7 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
     const language = proofreadingLanguage(state.relativePath);
     if (!pending.length || !model || !language || language !== pendingLanguage || !editable() || !automatic.checked
       || composing || controller || automaticController || accountController || account?.signedIn === false || dialog.open
+      || (selectedProvider !== 'codex' && !account?.signedIn)
       || !isWorkspaceVisible() || document.hidden) {
       hideCountdown();
       return;
@@ -334,7 +353,7 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
         nextCheckAt = Math.max(nextCheckAt, performance.now() + result.retryAfterMs);
         return;
       }
-      if (result.model !== LOCALISATION_AI_MODEL) throw new Error(uiText('Получен ответ другой модели.'));
+      if (result.model !== PROOFREADING_MODELS[selectedProvider].id) throw new Error(uiText('Получен ответ другой модели.'));
       const locations: Location[] = [];
       const matched: AiRequest['entries'] = [];
       batch.forEach((item, index) => {
@@ -380,6 +399,11 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
   }
 
   async function run(): Promise<void> {
+    if (selectedProvider !== 'codex' && !account?.signedIn) {
+      accountStatus.textContent = uiText('Добавьте API-ключ выбранного провайдера в окне проверки.');
+      keyInput.focus();
+      return;
+    }
     clearPending();
     cancel();
     clearSuggestions();
@@ -394,7 +418,7 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
       const result = await request<AiResult>('run', active.signal, value.request);
       if (id !== generation) return;
       if (!current(value)) throw new Error(uiText('Текст изменился. Запросите ИИ заново.'));
-      if (result.model !== LOCALISATION_AI_MODEL) throw new Error(uiText('Получен ответ другой модели.'));
+      if (result.model !== PROOFREADING_MODELS[selectedProvider].id) throw new Error(uiText('Получен ответ другой модели.'));
       render(result, value);
     } catch (error) {
       if (id === generation && !active.signal.aborted) {
@@ -406,15 +430,24 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
     }
   }
 
-  async function connection(action: 'status' | 'login' | 'logout' | 'cancel-login' = 'status'): Promise<void> {
+  async function connection(action: 'status' | 'login' | 'logout' | 'cancel-login' | 'api-key' = 'status', body?: { key: string | null }): Promise<void> {
     if (accountController) return;
     clearTimeout(accountPoll);
     const active = new AbortController();
     accountController = active;
-    for (const button of [loginButton, logoutButton, cancelLoginButton, connectionButton]) button.disabled = true;
+    const controls = [loginButton, logoutButton, cancelLoginButton, connectionButton, keyInput, keySave, keyRemove];
+    for (const control of controls) control.disabled = true;
     try {
-      account = await request<CodexAccountStatus>(action, active.signal, action === 'status' ? undefined : {});
+      const result = await request<CodexAccountStatus>(action, active.signal, action === 'status' ? undefined : body ?? {});
       if (active.signal.aborted) return;
+      account = result;
+      if (selectedProvider !== 'codex') {
+        keyRemove.hidden = !account.signedIn;
+        accountStatus.textContent = account.signedIn
+          ? uiText('API-ключ подключён до остановки Desktop Agent.')
+          : uiText('Добавьте API-ключ выбранного провайдера в окне проверки.');
+        return;
+      }
       loginButton.hidden = account.signedIn || Boolean(account.loginPending);
       logoutButton.hidden = !account.signedIn;
       cancelLoginButton.hidden = !account.loginPending;
@@ -435,9 +468,9 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
         clearUsage();
       }
     } finally {
-      accountController = null;
       if (!active.signal.aborted) {
-        for (const button of [loginButton, logoutButton, cancelLoginButton, connectionButton]) button.disabled = false;
+        accountController = null;
+        for (const control of controls) control.disabled = false;
         if (account?.loginPending) accountPoll = setTimeout(() => { void connection(); }, dialog.open ? 1500 : 3000);
         scheduleAutomatic();
       }
@@ -456,7 +489,7 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
   }
 
   async function refreshUsage(): Promise<void> {
-    if (!isWorkspaceVisible() || document.hidden) return;
+    if (selectedProvider !== 'codex' || !isWorkspaceVisible() || document.hidden) return;
     clearTimeout(usageTimer);
     usageController?.abort();
     const active = new AbortController();
@@ -480,8 +513,12 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
     }
   }
 
+  function automaticSettingKey(): string {
+    return selectedProvider === 'codex' ? AUTO_CHECK_KEY : `${AUTO_CHECK_KEY}:${selectedProvider}`;
+  }
+
   function readAutomaticSetting(): void {
-    automatic.checked = localStorage.getItem(AUTO_CHECK_KEY) === '1';
+    automatic.checked = localStorage.getItem(automaticSettingKey()) === '1';
     if (!automatic.checked) {
       lastAutomaticError = '';
       clearPending();
@@ -489,9 +526,69 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
       if (snapshot?.request.automatic) clearSuggestions();
     }
   }
-  readAutomaticSetting();
+  function showProvider(): void {
+    const codex = selectedProvider === 'codex';
+    requiredElement<HTMLInputElement>(`#ai-model-${selectedProvider}`).checked = true;
+    codexControls.hidden = !codex;
+    keyForm.hidden = codex;
+    usageBar.hidden = !codex;
+    providerHint.textContent = codex
+      ? uiText('Проверка отправляет видимый текст русской или английской локализации в OpenAI и расходует лимит личного аккаунта Codex.')
+      : uiText('Видимый текст отправляется в {0}. Запросы расходуют баланс вашего API-ключа.', selectedProvider === 'deepseek' ? 'DeepSeek' : 'Moonshot AI');
+    readAutomaticSetting();
+  }
+
+  function changeProvider(next: ProofreadingProvider): void {
+    if (next === selectedProvider) return;
+    clearTimeout(accountPoll);
+    accountController?.abort();
+    accountController = null;
+    account = null;
+    clearPending();
+    automaticController?.abort();
+    cancel();
+    clearSuggestions();
+    snapshot = null;
+    results.replaceChildren();
+    status.textContent = '';
+    accountStatus.textContent = '';
+    keyInput.value = '';
+    keyRemove.hidden = true;
+    lastAutomaticError = '';
+    clearUsage();
+    usagePanel.hide();
+    selectedProvider = next;
+    showProvider();
+    if (dialog.open || next !== 'codex') void connection();
+    else void refreshUsage();
+  }
+
+  showProvider();
+  const modelChanged = (event: Event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !isProofreadingProvider(input.value)) return;
+    localStorage.setItem(PROVIDER_KEY, input.value);
+    changeProvider(input.value);
+  };
+  const submitKey = (event: SubmitEvent) => {
+    event.preventDefault();
+    const key = keyInput.value;
+    keyInput.value = '';
+    void connection('api-key', { key });
+  };
+  const removeKey = () => {
+    clearPending();
+    automaticController?.abort();
+    cancel();
+    void connection('api-key', { key: null });
+  };
+  const clearKeyInput = () => { keyInput.value = ''; };
+  modelChoices.addEventListener('change', modelChanged);
+  keyForm.addEventListener('submit', submitKey);
+  keyRemove.addEventListener('click', removeKey);
+  dialog.addEventListener('close', clearKeyInput);
   const settingChanged = () => {
-    localStorage.setItem(AUTO_CHECK_KEY, automatic.checked ? '1' : '0');
+    localStorage.setItem(automaticSettingKey(), automatic.checked ? '1' : '0');
     readAutomaticSetting();
     const position = editor.getPosition();
     const model = editor.getModel();
@@ -505,13 +602,15 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
     }
   };
   const storageChanged = (event: StorageEvent) => {
-    if (event.key === AUTO_CHECK_KEY || event.key === null) readAutomaticSetting();
+    if (event.key === PROVIDER_KEY || event.key === null) changeProvider(savedProvider());
+    if (event.key === automaticSettingKey() || event.key === null) readAutomaticSetting();
   };
   automatic.addEventListener('change', settingChanged);
   window.addEventListener('storage', storageChanged);
   const workspaceVisibilityChanged = () => {
     if (isWorkspaceVisible() && !document.hidden) {
-      void refreshUsage();
+      if (selectedProvider === 'codex') void refreshUsage();
+      else void connection();
     } else {
       stopUsageRefresh();
       usagePanel.hide();
@@ -583,7 +682,7 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
   });
   const action = editor.addAction({
     id: 'eaw.ai.review',
-    label: uiText('Проверить орфографию и грамматику (GPT-6 Luna)'),
+    label: uiText('Проверить орфографию и грамматику'),
     precondition: '!editorReadonly && editorLangId == eaw-yaml',
     contextMenuGroupId: '1_modification',
     contextMenuOrder: 3,
@@ -603,6 +702,10 @@ export function createAiLocalisationPanel({ monaco, editor, state, token, showTo
     clearPending(); automaticController?.abort(); cancel(); clearSuggestions();
     clearTimeout(accountPoll);
     accountController?.abort();
+    modelChoices.removeEventListener('change', modelChanged);
+    keyForm.removeEventListener('submit', submitKey);
+    keyRemove.removeEventListener('click', removeKey);
+    dialog.removeEventListener('close', clearKeyInput);
     connectionButton.removeEventListener('click', refreshAccount);
     loginButton.removeEventListener('click', login);
     logoutButton.removeEventListener('click', logout);

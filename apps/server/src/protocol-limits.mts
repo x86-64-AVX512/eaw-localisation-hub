@@ -7,6 +7,12 @@ import {
 
 const MAX_CONTROL_STRING_BYTES = 4096;
 const INBOUND_BURST_BYTES = 16 * 1024 * 1024;
+// Frames waiting in a socket's queue (behind CRDT validation or a disk write) are
+// held in memory before the inbound budget sees them, so they are bounded separately.
+export const MAX_QUEUED_INBOUND_BYTES = 2 * MAX_MESSAGE_BYTES;
+// Across all sockets: each socket's cap alone would let one account's 32 connections
+// queue far more than the container's memory.
+export const MAX_TOTAL_QUEUED_INBOUND_BYTES = 64 * 1024 * 1024;
 const INBOUND_REFILL_BYTES_PER_SECOND = 1024 * 1024;
 const INBOUND_UPDATE_BURST = 100;
 const INBOUND_UPDATE_REFILL_PER_SECOND = 20;

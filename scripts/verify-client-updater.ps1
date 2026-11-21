@@ -36,7 +36,7 @@ $script:mockReleases = @(
         assets = (New-TestRelease '0.8.8F8').assets
     })
 )
-function Invoke-RestMethod { $script:mockReleases }
+function Get-ClientReleaseList { $script:mockReleases }
 
 $selected = Find-NewClientRelease -InstalledVersion '0.8.8F5'
 if ($selected.Version -cne '0.8.8F8') { throw "Wrong installer selected: $($selected.Version)" }
@@ -62,7 +62,22 @@ $selected = Find-NewClientRelease -InstalledVersion '0.8.8F11'
 if ($selected.Version -cne '0.8.9F1') { throw '0.8.9F1 was not offered after 0.8.8F11.' }
 $selected = Find-NewClientRelease -InstalledVersion '0.8.9F1'
 if ($null -ne $selected) { throw '0.8.9F1 must not reinstall itself.' }
-Remove-Item Function:Invoke-RestMethod
+$f3 = New-TestRelease '0.8.9F3'
+$f3.tag_name = 'v0.8.9F3'
+$f3.assets | ForEach-Object { $_.browser_download_url = $_.browser_download_url.Replace('v0.8.9-beta.3', $f3.tag_name) }
+$script:mockReleases = @($f3, (New-TestRelease '0.8.9F2'))
+if ((Find-NewClientRelease -InstalledVersion '0.8.9F1').Version -cne '0.8.9F3') {
+    throw 'An F1 client must select F3 directly when its release tag uses v without a dot.'
+}
+$script:mockReleases += New-TestRelease '0.8.9-beta.4'
+if ((Find-NewClientRelease -InstalledVersion '0.8.9F1').Version -cne '0.8.9-beta.4') {
+    throw 'An F1 installation must select beta.4 directly when it is available.'
+}
+if (Find-NewClientRelease -InstalledVersion '0.8.9-beta.4') {
+    throw 'An up-to-date beta installation must not select itself.'
+}
+Remove-Item Function:Get-ClientReleaseList
+. (Join-Path $PSScriptRoot 'client-update-transfer.ps1')
 
 $rejected = $false
 try {
@@ -112,23 +127,41 @@ try {
 
     $script:installerInvocation = $null
     $script:installerExitCode = 0
+    $script:installerUacCancelled = $false
     function Start-Process {
         param($FilePath, $ArgumentList, $Verb, $WindowStyle, [switch]$Wait, [switch]$PassThru)
+        if ($script:installerUacCancelled) { throw [System.ComponentModel.Win32Exception]::new(1223) }
         $script:installerInvocation = [pscustomobject]@{
             FilePath = $FilePath; Arguments = @($ArgumentList); Verb = $Verb
             Wait = $Wait.IsPresent; PassThru = $PassThru.IsPresent; WindowStyle = $WindowStyle
         }
-        [pscustomobject]@{ ExitCode = $script:installerExitCode; HasExited = $true }
+        $fakeProcess = [pscustomobject]@{ ExitCode = $script:installerExitCode; Handle = [IntPtr]::Zero }
+        $fakeProcess | Add-Member ScriptMethod WaitForExit {}
+        $fakeProcess | Add-Member ScriptMethod Dispose {}
+        $fakeProcess
     }
-    Invoke-ClientInstaller -InstallerPath $installerPath -InstallRoot 'C:\Program Files\EaW Localisation Hub'
+    if (-not (Invoke-ClientInstaller -InstallerPath $installerPath -InstallRoot 'C:\Program Files\EaW Localisation Hub')) {
+        throw 'A successful installation was not reported as successful.'
+    }
     $invocation = $script:installerInvocation
     if ($invocation.Verb -cne 'RunAs' -or $invocation.Wait -or -not $invocation.PassThru -or
-        $invocation.WindowStyle -cne 'Hidden' -or
-        '/VERYSILENT' -cnotin $invocation.Arguments -or
+        $invocation.WindowStyle -eq 'Hidden' -or
+        '/SILENT' -cnotin $invocation.Arguments -or
+        '/NOCANCEL' -in $invocation.Arguments -or
         '/NORESTART' -cnotin $invocation.Arguments -or
         '/DIR="C:\Program Files\EaW Localisation Hub"' -cnotin $invocation.Arguments) {
-        throw 'Installer was not launched elevated, silently, and in the existing directory.'
+        throw 'Installer was not launched elevated with its cancellable progress window and existing directory.'
     }
+    foreach ($script:installerExitCode in @(2, 5)) {
+        if (Invoke-ClientInstaller -InstallerPath $installerPath -InstallRoot 'C:\Program Files\EaW Localisation Hub') {
+            throw 'A cancelled installation was reported as successful.'
+        }
+    }
+    $script:installerUacCancelled = $true
+    if (Invoke-ClientInstaller -InstallerPath $installerPath -InstallRoot 'C:\Program Files\EaW Localisation Hub') {
+        throw 'A declined UAC prompt was reported as a successful installation.'
+    }
+    $script:installerUacCancelled = $false
     $script:installerExitCode = 7
     $failureRejected = $false
     try { Invoke-ClientInstaller -InstallerPath $installerPath -InstallRoot 'C:\Program Files\EaW Localisation Hub' }
@@ -215,7 +248,9 @@ try {
             throw 'Build the client and installer before a controlled reinstall.'
         }
         Write-Output "[client-updater-reinstall] requesting Windows elevation for $builtVersion"
-        Invoke-ClientInstaller -InstallerPath $builtInstaller -InstallRoot $installedRoot
+        if (-not (Invoke-ClientInstaller -InstallerPath $builtInstaller -InstallRoot $installedRoot)) {
+            throw 'The controlled reinstall was cancelled.'
+        }
         $installedAfter = Get-EawHubClientStatusMetadata -ProjectRoot $installedRoot
         $installedUpdater = Join-Path $installedRoot 'scripts\update-client.ps1'
         if ($installedAfter.Version -cne $builtVersion -or
