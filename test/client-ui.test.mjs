@@ -22,8 +22,11 @@ test('Agent exposes a full colour picker and an explicit tray close action', () 
 test('Agent can launch Review from its main window', () => {
   assert.match(agentUi, /\$reviewButton\.Text = \(Get-EawUiText -Text 'Запустить Review'\)/u);
   assert.match(agentUi, /\$reviewButton\.Enabled = \$false/u);
-  assert.match(agentUi, /\$reviewButton\.Add_Click\([\s\S]*start-hub\.ps1/u,
-    'the Agent button must use the same remembered-workspace launcher as the desktop shortcut');
+  assert.match(
+    agentUi,
+    /\$reviewButton\.Add_Click\([\s\S]*start-hub\.ps1/u,
+    'the Agent button must use the same remembered-workspace launcher as the desktop shortcut',
+  );
   assert.match(agentUi, /\$reviewButton\.Enabled = \$script:agentProcess -and -not \$script:agentProcess\.HasExited/u);
 });
 
@@ -35,12 +38,18 @@ test('Russian client UI does not use the hybrid recovery-code wording', () => {
 
 test('only the confirmed Agent update button requests installation', () => {
   assert.match(agentUi, /\$updateClientButton\.Text = \(Get-EawUiText -Text 'Обновить клиент…'\)/u);
-  const handler = agentUi.slice(agentUi.indexOf('$updateClientButton.Add_Click({'), agentUi.indexOf('$showTrayItem.Add_Click'));
+  const handler = agentUi.slice(
+    agentUi.indexOf('$updateClientButton.Add_Click({'),
+    agentUi.indexOf('$showTrayItem.Add_Click'),
+  );
   assert.match(handler, /MessageBox\]::Show\(\$form/u);
   assert.match(handler, /'YesNo', 'Question', 'Button2'/u, 'No is the default confirmation choice');
   assert.match(handler, /if \(\$answer -ne \[System\.Windows\.Forms\.DialogResult\]::Yes\) \{ return \}/u);
   assert.match(handler, /Start-ClientUpdateCheck -Install/u);
-  assert.equal((agentUi.match(/Start-ClientUpdateCheck -Install/gu) ?? []).length, 1,
-    'startup, timers and compatibility checks must never request an install');
+  assert.equal(
+    (agentUi.match(/Start-ClientUpdateCheck -Install/gu) ?? []).length,
+    1,
+    'startup, timers and compatibility checks must never request an install',
+  );
   assert.match(agentUi, /\$updateTimer\.Add_Tick\(\{ try \{ Start-ClientUpdateCheck \}/u);
 });

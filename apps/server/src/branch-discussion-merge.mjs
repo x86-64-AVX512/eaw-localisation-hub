@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { minimalDiscussionMessage } from './room-metadata.mjs';
 import { withRoomForMessages, MAX_DELETED_MESSAGE_IDS, MAX_DISCUSSION_MESSAGES } from './document-review-policy.mjs';
 
-export const discussionMergeOrigin = documentId => crypto.createHash('sha256').update(documentId).digest('hex');
+export const discussionMergeOrigin = (documentId) => crypto.createHash('sha256').update(documentId).digest('hex');
 
 function version(message) {
   const { branchMergeBase, ...snapshot } = minimalDiscussionMessage(message);
@@ -10,15 +10,19 @@ function version(message) {
 }
 
 function sameContent(left, right) {
-  return left.body === right.body && (left.authorId ?? null) === (right.authorId ?? null)
-    && (left.createdAt ?? '') === (right.createdAt ?? '') && Boolean(left.deleted) === Boolean(right.deleted);
+  return (
+    left.body === right.body &&
+    (left.authorId ?? null) === (right.authorId ?? null) &&
+    (left.createdAt ?? '') === (right.createdAt ?? '') &&
+    Boolean(left.deleted) === Boolean(right.deleted)
+  );
 }
 
 function recordBase(target, source, origin) {
   target.branchMergeBase = { origin, source: version(source), target: version(target) };
 }
 
-const deletionLedger = item => [...(item.deletedMessageIds ?? []), ...(item.deletedMessageIdsRecovery ?? [])];
+const deletionLedger = (item) => [...(item.deletedMessageIds ?? []), ...(item.deletedMessageIdsRecovery ?? [])];
 
 // Keeps the wire ledger bounded; the remainder stays in recovery, which still blocks
 // late replays but marks the discussion as damaged for further new messages.
@@ -65,10 +69,11 @@ export function mergeDiscussionMessages(source, target, origin, { overflow = nul
   for (const id of deleted) {
     const moved = overflow?.find(id);
     const copy = moved?.thread.messages[moved.index];
-    if (copy && !copy.deleted) moved.thread.messages[moved.index] = replaceMessage({ ...copy, body: '', deleted: true }, copy, origin);
+    if (copy && !copy.deleted)
+      moved.thread.messages[moved.index] = replaceMessage({ ...copy, body: '', deleted: true }, copy, origin);
   }
   target.messages ??= [];
-  target.messages = target.messages.map(message => {
+  target.messages = target.messages.map((message) => {
     if (!deleted.has(message.id) || message.deleted) return message;
     return replaceMessage({ ...message, body: '', deleted: true }, message, origin);
   });
@@ -103,22 +108,33 @@ export function mergeDiscussionMessages(source, target, origin, { overflow = nul
     // blocked migration would strand the branch's tickets. Keep the target text and add
     // the source text beside it; the id follows the source version, so retries stay idempotent.
     const conflictId = `merge-${version(message).slice(0, 32)}`;
-    if (known.has(conflictId) || deleted.has(conflictId) || overflow?.contains(conflictId)
-      || conflicts.some(item => item.id === conflictId)) continue;
+    if (
+      known.has(conflictId) ||
+      deleted.has(conflictId) ||
+      overflow?.contains(conflictId) ||
+      conflicts.some((item) => item.id === conflictId)
+    )
+      continue;
     const { lastMutationId, branchMergeBase, ...conflict } = structuredClone(message);
     conflicts.push({ ...conflict, id: conflictId, revision: 0, mergeConflict: true });
   }
   writeDeletionLedger(target, deleted);
   const damaged = Boolean(target.deletionHistoryBlocked || target.deletedMessageIdsRecovery?.length);
-  const capacity = damaged ? 0 : MAX_DISCUSSION_MESSAGES - target.messages.filter(message => !message.deleted).length;
+  const capacity = damaged ? 0 : MAX_DISCUSSION_MESSAGES - target.messages.filter((message) => !message.deleted).length;
   let accepted = [...missing, ...conflicts];
   let spilled = accepted.splice(Math.max(capacity, 0));
   let compacted = null;
   if (accepted.length) {
-    try { compacted = withRoomForMessages(target, accepted.length); }
-    catch (error) { if (error.message !== 'This discussion has reached its deletion history limit') throw error; }
+    try {
+      compacted = withRoomForMessages(target, accepted.length);
+    } catch (error) {
+      if (error.message !== 'This discussion has reached its deletion history limit') throw error;
+    }
     // Evicting tombstones would overfill the ledger: move everything aside instead.
-    if (!compacted) { spilled = [...accepted, ...spilled]; accepted = []; }
+    if (!compacted) {
+      spilled = [...accepted, ...spilled];
+      accepted = [];
+    }
   }
   if (spilled.length && !overflow) throw new Error('Merged discussion exceeds the target message limit');
   for (const message of spilled) overflow.append(message);

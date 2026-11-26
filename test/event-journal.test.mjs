@@ -7,15 +7,29 @@ import { EventJournal } from '../apps/server/src/event-journal.mjs';
 
 test('event journal keeps typing events immutable so incremental readers receive every edit', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-events-'));
-  const atomicWrite = async (target, data) => { await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, data); };
+  const atomicWrite = async (target, data) => {
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, data);
+  };
   try {
-    const journal = new EventJournal(directory, atomicWrite); await journal.initialise();
+    const journal = new EventJournal(directory, atomicWrite);
+    await journal.initialise();
     journal.append('comment-reply', { id: 'actor', displayName: 'Actor' }, ['one'], {});
     journal.append('comment-reply', { id: 'actor', displayName: 'Actor' }, ['two'], {});
-    journal.append('ticket-edited', { id: 'actor', displayName: 'Actor' }, ['one'], { ticketId: 't', characters: 1, words: 0, lines: 0 });
+    journal.append('ticket-edited', { id: 'actor', displayName: 'Actor' }, ['one'], {
+      ticketId: 't',
+      characters: 1,
+      words: 0,
+      lines: 0,
+    });
     const firstRead = journal.list('one', 0, 500);
     const firstEvent = structuredClone(firstRead.events.at(-1));
-    journal.append('ticket-edited', { id: 'actor', displayName: 'Actor' }, ['one'], { ticketId: 't', characters: 2, words: 1, lines: 0 });
+    journal.append('ticket-edited', { id: 'actor', displayName: 'Actor' }, ['one'], {
+      ticketId: 't',
+      characters: 2,
+      words: 1,
+      lines: 0,
+    });
     const one = journal.list('one', 0, 500);
     assert.equal(one.events.length, 3);
     assert.deepEqual(one.events[1], firstEvent);
@@ -29,7 +43,9 @@ test('event journal keeps typing events immutable so incremental readers receive
     const restored = new EventJournal(directory, atomicWrite);
     await restored.initialise();
     assert.deepEqual(restored.list('one', firstRead.cursor, 500), incremental);
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('event journal batches synchronous appends into one durable snapshot', async () => {

@@ -14,49 +14,58 @@ test('clean versioned and versionless entries, comments and legacy inner quotes 
 });
 
 test('a broken quote is reported on its own line without hiding later errors', () => {
-  const diagnostics = parseLocalisationDiagnostics([
-    'l_russian:',
-    ' first:0 "Не закрыто',
-    ' second:0 "Работает"',
-    ' third:0 "Плохое \\q значение"',
-  ].join('\n'));
-  assert.deepEqual(diagnostics.map(({ code, lineNumber }) => [code, lineNumber]), [
-    ['unclosed-quote', 2], ['unknown-escape', 4],
-  ]);
+  const diagnostics = parseLocalisationDiagnostics(
+    ['l_russian:', ' first:0 "Не закрыто', ' second:0 "Работает"', ' third:0 "Плохое \\q значение"'].join('\n'),
+  );
+  assert.deepEqual(
+    diagnostics.map(({ code, lineNumber }) => [code, lineNumber]),
+    [
+      ['unclosed-quote', 2],
+      ['unknown-escape', 4],
+    ],
+  );
   assert.equal(diagnostics[0].startColumn, 10);
   assert.equal(diagnostics[1].startColumn, 18);
 });
 
 test('duplicate keys ignore the optional numeric version and point to the first occurrence', () => {
-  const diagnostics = parseLocalisationDiagnostics([
-    'l_russian:',
-    ' event.5.d:0 "Первый"',
-    ' event.5.d: "Второй"',
-    ' event.5.d:3 "Третий"',
-  ].join('\n'));
-  assert.deepEqual(diagnostics.map(({ code, lineNumber }) => [code, lineNumber]), [
-    ['duplicate-key', 3], ['duplicate-key', 4],
-  ]);
+  const diagnostics = parseLocalisationDiagnostics(
+    ['l_russian:', ' event.5.d:0 "Первый"', ' event.5.d: "Второй"', ' event.5.d:3 "Третий"'].join('\n'),
+  );
+  assert.deepEqual(
+    diagnostics.map(({ code, lineNumber }) => [code, lineNumber]),
+    [
+      ['duplicate-key', 3],
+      ['duplicate-key', 4],
+    ],
+  );
   assert.equal(diagnostics[0].related.lineNumber, 2);
 });
 
 test('only backslashes in values are checked and escaped quotes do not close them', () => {
-  const diagnostics = parseLocalisationDiagnostics([
-    'l_russian:',
-    ' key_one:0 "Путь \\q"',
-    ' key_two:0 "Строка с \\"внутренней\\" кавычкой"',
-    ' key_three:0 "Конец \\"',
-  ].join('\n'));
-  assert.deepEqual(diagnostics.map(({ code, lineNumber }) => [code, lineNumber]), [
-    ['unknown-escape', 2], ['unclosed-quote', 4],
-  ]);
+  const diagnostics = parseLocalisationDiagnostics(
+    [
+      'l_russian:',
+      ' key_one:0 "Путь \\q"',
+      ' key_two:0 "Строка с \\"внутренней\\" кавычкой"',
+      ' key_three:0 "Конец \\"',
+    ].join('\n'),
+  );
+  assert.deepEqual(
+    diagnostics.map(({ code, lineNumber }) => [code, lineNumber]),
+    [
+      ['unknown-escape', 2],
+      ['unclosed-quote', 4],
+    ],
+  );
 });
 
 test('a missing value quote is diagnosed without interpreting the next line as its continuation', () => {
   const diagnostics = parseLocalisationDiagnostics('l_russian:\n key_one:0 значение\n key_two:0 "ОК"\n');
-  assert.deepEqual(diagnostics.map(({ code, lineNumber }) => [code, lineNumber]), [
-    ['missing-opening-quote', 2],
-  ]);
+  assert.deepEqual(
+    diagnostics.map(({ code, lineNumber }) => [code, lineNumber]),
+    [['missing-opening-quote', 2]],
+  );
 });
 
 test('common Paradox references, nested colour changes, icons and dynamic expressions stay clean', () => {
@@ -77,11 +86,18 @@ test('broken reference and markup delimiters are local warnings', () => {
     ' malformed:0 "$EYE other$"',
   ].join('\n');
   const diagnostics = parseLocalisationDiagnostics(source);
-  assert.deepEqual(diagnostics.map(({ code, lineNumber }) => [code, lineNumber]), [
-    ['invalid-colour-tag', 2], ['unclosed-reference', 2], ['unclosed-command', 2],
-    ['invalid-icon-tag', 2], ['stray-colour-reset', 3], ['unclosed-colour-tag', 4],
-    ['malformed-reference', 5],
-  ]);
+  assert.deepEqual(
+    diagnostics.map(({ code, lineNumber }) => [code, lineNumber]),
+    [
+      ['invalid-colour-tag', 2],
+      ['unclosed-reference', 2],
+      ['unclosed-command', 2],
+      ['invalid-icon-tag', 2],
+      ['stray-colour-reset', 3],
+      ['unclosed-colour-tag', 4],
+      ['malformed-reference', 5],
+    ],
+  );
 });
 
 test('mod-local key existence is checked conservatively and includes later keys in the file', () => {
@@ -91,18 +107,20 @@ test('mod-local key existence is checked conservatively and includes later keys 
     ' EYE_second:0 "Есть"',
   ].join('\n');
   const diagnostics = parseLocalisationDiagnostics(source, {
-    knownKeys: new Set(['EYE_first']), knownPrefixes: new Set(['EYE']),
+    knownKeys: new Set(['EYE_first']),
+    knownPrefixes: new Set(['EYE']),
   });
-  assert.deepEqual(diagnostics.map(({ code, severity }) => [code, severity]), [
-    ['unresolved-local-reference', 'info'],
-  ]);
+  assert.deepEqual(
+    diagnostics.map(({ code, severity }) => [code, severity]),
+    [['unresolved-local-reference', 'info']],
+  );
   assert.equal(diagnostics[0].lineNumber, 2);
 });
 
 test('the first meaningful line must contain the header matching the opened file', () => {
   const filePath = 'localisation/russian/country_EYE_l_russian.yml';
-  const check = (source, path = filePath) => parseLocalisationDiagnostics(source, { filePath: path })
-    .map((issue) => issue.code);
+  const check = (source, path = filePath) =>
+    parseLocalisationDiagnostics(source, { filePath: path }).map((issue) => issue.code);
   assert.deepEqual(check(' TEST:0 "Текст"'), ['missing-header']);
   assert.deepEqual(check('l_russian\n TEST:0 "Текст"'), ['malformed-header']);
   assert.deepEqual(check('l_english:\n TEST:0 "Текст"'), ['wrong-language-header']);
@@ -114,21 +132,40 @@ test('the first meaningful line must contain the header matching the opened file
 
 test('valid HOI4 reference, variable, colour and icon forms are not diagnosed', () => {
   const values = [
-    '$OTHER_KEY$', '$COUNTRY|H$', '$VALUE|0$', '$VALUE|%0$', '$VALUE|+0$',
-    '$VALUE|+=%0$', '$VALUE|$', '$VALUE|%x$', '[?value|]',
-    '§YЖёлтый§! §Gзелёный§!', '§YЖёлтый §Gзелёный§!', '§Y$OTHER_KEY$§!',
-    '[GetSomething]', '[Root.GetName]', '[Root.GetNameDef]', '[From.GetAdjective]',
-    '[?my_variable]', '[?ROOT.my_variable]', '[?value|G0]', '[?MIT_cost|+=2Y]',
-    '[?modifier@some_modifier|+=%0]', '[?.Root.party_popularity@democratic|%0G]',
-    '[?ABY_parliament_seats_array^0]', '[?ABY_prov_@var:prov_v^current_state.GetName]',
-    '[?ZAI_mane_six_mana^m6_idx|0|%%]', '[3.OWNER.GetNameDef]', '[!button_click]',
-    '£pol_power $VALUE|0$', '£faction_initiative_texticon£ $VALUE|0$',
+    '$OTHER_KEY$',
+    '$COUNTRY|H$',
+    '$VALUE|0$',
+    '$VALUE|%0$',
+    '$VALUE|+0$',
+    '$VALUE|+=%0$',
+    '$VALUE|$',
+    '$VALUE|%x$',
+    '[?value|]',
+    '§YЖёлтый§! §Gзелёный§!',
+    '§YЖёлтый §Gзелёный§!',
+    '§Y$OTHER_KEY$§!',
+    '[GetSomething]',
+    '[Root.GetName]',
+    '[Root.GetNameDef]',
+    '[From.GetAdjective]',
+    '[?my_variable]',
+    '[?ROOT.my_variable]',
+    '[?value|G0]',
+    '[?MIT_cost|+=2Y]',
+    '[?modifier@some_modifier|+=%0]',
+    '[?.Root.party_popularity@democratic|%0G]',
+    '[?ABY_parliament_seats_array^0]',
+    '[?ABY_prov_@var:prov_v^current_state.GetName]',
+    '[?ZAI_mane_six_mana^m6_idx|0|%%]',
+    '[3.OWNER.GetNameDef]',
+    '[!button_click]',
+    '£pol_power $VALUE|0$',
+    '£faction_initiative_texticon£ $VALUE|0$',
     '£pol_power£ $VALUE|0$',
     '§Y$TITLE$§!\\n§G[GetSomething]§!\\n[?ROOT.value|+%0]',
   ];
-  for (const value of values) assert.deepEqual(
-    parseLocalisationDiagnostics(`l_russian:\n TEST:0 "${value}"`), [], value,
-  );
+  for (const value of values)
+    assert.deepEqual(parseLocalisationDiagnostics(`l_russian:\n TEST:0 "${value}"`), [], value);
 });
 
 test('broken reference, bracket and variable forms have independent diagnostics', () => {
@@ -166,9 +203,9 @@ test('broken reference, bracket and variable forms have independent diagnostics'
     const codes = parseLocalisationDiagnostics(`l_russian:\n TEST:0 "${value}"`).map((issue) => issue.code);
     assert.ok(codes.includes(expected), `${value}: expected ${expected}, got ${codes}`);
   }
-  const combined = parseLocalisationDiagnostics(
-    'l_russian:\n TEST:0 "§Y$TITLE§!\\n[Root.GetName: [?value|G0]"',
-  ).map((issue) => issue.code);
+  const combined = parseLocalisationDiagnostics('l_russian:\n TEST:0 "§Y$TITLE§!\\n[Root.GetName: [?value|G0]"').map(
+    (issue) => issue.code,
+  );
   assert.ok(combined.includes('unclosed-reference'));
   assert.ok(combined.includes('nested-dynamic-loc'));
 });
@@ -176,17 +213,42 @@ test('broken reference, bracket and variable forms have independent diagnostics'
 test('templated diagnostics translate by catalogue template, never by reverse-matching formatted text', async () => {
   const { hasEnglishMessage, setUiLanguage, uiText } = await import('../packages/shared/src/ui-language.mts');
   const sources = [
-    ['localisation/russian/a_l_russian.yml', 'l_english:\n KEY:0 "x"\n KEY:0 "y"\n BAD:0 x\n ESC:0 "a\\q"\n OPEN:0 "z\n'],
+    [
+      'localisation/russian/a_l_russian.yml',
+      'l_english:\n KEY:0 "x"\n KEY:0 "y"\n BAD:0 x\n ESC:0 "a\\q"\n OPEN:0 "z\n',
+    ],
     ['localisation/russian/b_l_russian.yml', ' KEY:0 "x"\n'],
     ['notes.yml', 'l_x\n'],
     ['notes.yml', ' KEY:0 "x"\n'],
-    ['localisation/russian/c_l_russian.yml', 'l_russian:\n EYE_a:0 "$EYE_b$ [Root.GetNmae]"\n EYE_b:0 "$EYE_a$ $EYE_gone$"\n'],
+    [
+      'localisation/russian/c_l_russian.yml',
+      'l_russian:\n EYE_a:0 "$EYE_b$ [Root.GetNmae]"\n EYE_b:0 "$EYE_a$ $EYE_gone$"\n',
+    ],
   ];
-  const issues = sources.flatMap(([filePath, text]) => parseLocalisationDiagnostics(text, { filePath,
-    knownKeys: new Set(), knownPrefixes: new Set(['EYE']), knownGetters: new Set(['GetName']) }));
-  for (const code of ['wrong-language-header', 'duplicate-key', 'missing-opening-quote', 'unknown-escape',
-    'unclosed-quote', 'missing-header', 'malformed-header', 'unresolved-local-reference', 'likely-getter-typo', 'local-reference-cycle']) {
-    assert.ok(issues.some((issue) => issue.code === code), code);
+  const issues = sources.flatMap(([filePath, text]) =>
+    parseLocalisationDiagnostics(text, {
+      filePath,
+      knownKeys: new Set(),
+      knownPrefixes: new Set(['EYE']),
+      knownGetters: new Set(['GetName']),
+    }),
+  );
+  for (const code of [
+    'wrong-language-header',
+    'duplicate-key',
+    'missing-opening-quote',
+    'unknown-escape',
+    'unclosed-quote',
+    'missing-header',
+    'malformed-header',
+    'unresolved-local-reference',
+    'likely-getter-typo',
+    'local-reference-cycle',
+  ]) {
+    assert.ok(
+      issues.some((issue) => issue.code === code),
+      code,
+    );
   }
   try {
     setUiLanguage('en');
@@ -200,5 +262,7 @@ test('templated diagnostics translate by catalogue template, never by reverse-ma
         setUiLanguage('en');
       }
     }
-  } finally { setUiLanguage('ru'); }
+  } finally {
+    setUiLanguage('ru');
+  }
 });

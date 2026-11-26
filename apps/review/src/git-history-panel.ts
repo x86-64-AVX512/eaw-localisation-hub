@@ -54,7 +54,8 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
   const fromSelect = requiredSelect('#git-history-from');
   const toSelect = requiredSelect('#git-history-to');
   const diffViews = createGitHistoryDiffViews({
-    monaco, container: requiredElement('#git-history-diff'),
+    monaco,
+    container: requiredElement('#git-history-diff'),
   });
   let entries: GitHistoryEntry[] = [];
   let nextOffset = 0;
@@ -69,15 +70,18 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
   let pendingPair = '';
   let savedSelection = '';
   let cacheCleared = false;
-  const onCacheCleared = () => { cacheCleared = true; };
+  const onCacheCleared = () => {
+    cacheCleared = true;
+  };
   window.addEventListener('eaw-diff-cache-cleared', onCacheCleared);
 
   async function request<T>(url: string): Promise<T> {
     const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
     });
-    const payload = await response.json() as T & { error?: string };
-    if (!response.ok) throw new Error(payload.error || uiText("Не удалось прочитать историю Git."));
+    const payload = (await response.json()) as T & { error?: string };
+    if (!response.ok) throw new Error(payload.error || uiText('Не удалось прочитать историю Git.'));
     return payload;
   }
 
@@ -86,7 +90,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
   }
 
   function shortLabel(revision: string): string {
-    if (revision === 'HEAD') return uiText("текущий HEAD");
+    if (revision === 'HEAD') return uiText('текущий HEAD');
     return entryFor(revision)?.shortCommit ?? revision.slice(0, 10);
   }
 
@@ -97,7 +101,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       select.replaceChildren();
       const head = document.createElement('option');
       head.value = 'HEAD';
-      head.textContent = uiText("HEAD · текущая версия Git");
+      head.textContent = uiText('HEAD · текущая версия Git');
       select.append(head);
       for (const entry of entries) {
         const option = document.createElement('option');
@@ -107,9 +111,9 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       }
     }
     fromSelect.value = entries.some(({ commit }) => commit === previousFrom)
-      ? previousFrom : (entries[0]?.commit ?? 'HEAD');
-    toSelect.value = previousTo === 'HEAD' || entries.some(({ commit }) => commit === previousTo)
-      ? previousTo : 'HEAD';
+      ? previousFrom
+      : (entries[0]?.commit ?? 'HEAD');
+    toSelect.value = previousTo === 'HEAD' || entries.some(({ commit }) => commit === previousTo) ? previousTo : 'HEAD';
   }
 
   function render() {
@@ -132,7 +136,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       author.title = entry.author;
       const date = new Date(entry.date);
       requiredElement('small', item).textContent = Number.isNaN(date.valueOf()) ? '' : date.toLocaleString(uiLocale());
-      item.title = uiText("Выбрать эту версию слева");
+      item.title = uiText('Выбрать эту версию слева');
       item.addEventListener('click', () => {
         fromSelect.value = entry.commit;
         compare();
@@ -158,7 +162,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       shownPair = '';
       pendingPair = '';
       diffViews.clear();
-      selection.textContent = uiText("Загрузка истории Git…");
+      selection.textContent = uiText('Загрузка истории Git…');
     }
     render();
     try {
@@ -167,20 +171,23 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       if (generation !== loadId || !dialog.open || state.path !== requestedPath) return;
       const headCommit = payload.headCommit ?? '';
       if (!/^[0-9a-f]{40,64}$/iu.test(headCommit)) {
-        throw new Error(uiText("Agent не сообщил текущий Git HEAD. Обновите Desktop Agent."));
+        throw new Error(uiText('Agent не сообщил текущий Git HEAD. Обновите Desktop Agent.'));
       }
-      if (!reset && headCommit !== loadedHead) { reload = true; return; }
+      if (!reset && headCommit !== loadedHead) {
+        reload = true;
+        return;
+      }
       loadedPath = requestedPath;
       loadedHead = headCommit;
-      entries.push(...(payload.entries ?? []).filter(
-        (entry) => !entries.some((known) => known.commit === entry.commit),
-      ));
+      entries.push(
+        ...(payload.entries ?? []).filter((entry) => !entries.some((known) => known.commit === entry.commit)),
+      );
       nextOffset = payload.nextOffset ?? entries.length;
       hasMore = payload.hasMore === true;
       updateSelectors();
       if (entries.length) await compare();
       else {
-        savedSelection = uiText("История файла пуста");
+        savedSelection = uiText('История файла пуста');
         selection.textContent = savedSelection;
       }
     } catch (error) {
@@ -209,8 +216,12 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
     const selectedFrom = from === 'HEAD' ? headAtRequest : from;
     const selectedTo = to === 'HEAD' ? headAtRequest : to;
     const pair = JSON.stringify([
-      requestedPath, headAtRequest, selectedFrom, fromEntry?.historicalPath ?? state.relativePath,
-      selectedTo, toEntry?.historicalPath ?? state.relativePath,
+      requestedPath,
+      headAtRequest,
+      selectedFrom,
+      fromEntry?.historicalPath ?? state.relativePath,
+      selectedTo,
+      toEntry?.historicalPath ?? state.relativePath,
     ]);
     if (shownPair === pair || pendingPair === pair) return;
     const requestId = ++comparisonId;
@@ -224,7 +235,7 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
       render();
       return;
     }
-    selection.textContent = uiText("{0} · загрузка…", pairLabel);
+    selection.textContent = uiText('{0} · загрузка…', pairLabel);
     shownPair = '';
     diffViews.showLoading();
     render();
@@ -237,20 +248,19 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
         toPath: toEntry?.historicalPath ?? state.relativePath,
       });
       const payload = await request<GitHistoryDiff>(`/api/git-history/diff?${query}`);
-      if (requestId !== comparisonId || !dialog.open || state.path !== requestedPath
-        || loadedHead !== headAtRequest) return;
-      selection.textContent = uiText("{0} · вычисление отличий…", pairLabel);
+      if (requestId !== comparisonId || !dialog.open || state.path !== requestedPath || loadedHead !== headAtRequest)
+        return;
+      selection.textContent = uiText('{0} · вычисление отличий…', pairLabel);
       diffViews.prepare(pair, decodeBase64(payload.baseBase64), decodeBase64(payload.headBase64), () => {
-        if (requestId !== comparisonId || !dialog.open || state.path !== requestedPath
-          || loadedHead !== headAtRequest) return;
+        if (requestId !== comparisonId || !dialog.open || state.path !== requestedPath || loadedHead !== headAtRequest)
+          return;
         shownPair = pair;
         pendingPair = '';
         savedSelection = `${String(payload.fromCommit).slice(0, 10)} → ${String(payload.toCommit).slice(0, 10)}`;
         selection.textContent = savedSelection;
       });
     } catch (error) {
-      if (requestId === comparisonId && dialog.open && state.path === requestedPath
-        && loadedHead === headAtRequest) {
+      if (requestId === comparisonId && dialog.open && state.path === requestedPath && loadedHead === headAtRequest) {
         pendingPair = '';
         selection.textContent = errorMessage(error);
         showToast(errorMessage(error), true);
@@ -262,17 +272,20 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
     const requestedPath = state.path;
     const generation = ++headCheckId;
     const comparisonAtStart = comparisonId;
-    selection.textContent = uiText("{0} · проверка Git…", savedSelection);
+    selection.textContent = uiText('{0} · проверка Git…', savedSelection);
     try {
       const query = new URLSearchParams({ path: requestedPath });
       const { headCommit } = await request<{ headCommit: string }>(`/api/git-history/head?${query}`);
       if (generation !== headCheckId || !dialog.open || state.path !== requestedPath) return;
-      if (headCommit !== loadedHead) { load(true); return; }
+      if (headCommit !== loadedHead) {
+        load(true);
+        return;
+      }
       if (comparisonId === comparisonAtStart) selection.textContent = savedSelection;
       if (!shownPair && entries.length) compare();
     } catch (error) {
       if (generation !== headCheckId || !dialog.open || state.path !== requestedPath) return;
-      selection.textContent = uiText("{0} · актуальность Git не проверена", savedSelection);
+      selection.textContent = uiText('{0} · актуальность Git не проверена', savedSelection);
       showToast(errorMessage(error), true);
     }
   }
@@ -307,19 +320,23 @@ export function createGitHistoryPanel({ monaco, state, token, showToast }: GitHi
     suspend();
     dialog.close();
   });
-  const onResize = () => { if (dialog.open) diffViews.layout(); };
+  const onResize = () => {
+    if (dialog.open) diffViews.layout();
+  };
   window.addEventListener('resize', onResize);
   requiredButton('#git-history-fullscreen').addEventListener('click', (event) => {
     dialog.classList.toggle('fullscreen');
     const button = event.currentTarget;
     if (button instanceof HTMLButtonElement) {
-      button.textContent = dialog.classList.contains('fullscreen') ? uiText("Обычный размер") : uiText("На весь экран");
+      button.textContent = dialog.classList.contains('fullscreen') ? uiText('Обычный размер') : uiText('На весь экран');
     }
     requestAnimationFrame(diffViews.layout);
   });
 
   return {
-    setAvailable(available: boolean) { openButton.disabled = !available; },
+    setAvailable(available: boolean) {
+      openButton.disabled = !available;
+    },
     dispose() {
       window.removeEventListener('eaw-diff-cache-cleared', onCacheCleared);
       window.removeEventListener('resize', onResize);

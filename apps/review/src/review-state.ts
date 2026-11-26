@@ -63,15 +63,40 @@ export interface ReservationUpdateResult {
 }
 
 export type CollaborationCommand =
-  | { type: 'reservationCreate'; path: string; startByte: number; endByte: number;
-      assigneeId: string; assignee: string; assigneeColor: string; comment: string }
+  | {
+      type: 'reservationCreate';
+      path: string;
+      startByte: number;
+      endByte: number;
+      assigneeId: string;
+      assignee: string;
+      assigneeColor: string;
+      comment: string;
+    }
   | { type: 'reservationDeleteAt'; path: string; positionByte: number }
   | { type: 'reservationDelete'; path: string; id: string }
-  | { type: 'reservationUpdate'; path: string; id: string; requestId: string; expectedRevision: number;
-      assigneeId?: string; assignee?: string; assigneeColor?: string; comment?: string;
-      startByte?: number; endByte?: number; reviewAnchors?: string }
-  | { type: 'externalConflictResolve'; path: string; key: string; source: string; conflictId: string;
-      choice: 'collaborative' | 'external' };
+  | {
+      type: 'reservationUpdate';
+      path: string;
+      id: string;
+      requestId: string;
+      expectedRevision: number;
+      assigneeId?: string;
+      assignee?: string;
+      assigneeColor?: string;
+      comment?: string;
+      startByte?: number;
+      endByte?: number;
+      reviewAnchors?: string;
+    }
+  | {
+      type: 'externalConflictResolve';
+      path: string;
+      key: string;
+      source: string;
+      conflictId: string;
+      choice: 'collaborative' | 'external';
+    };
 
 export interface CollaborationPanelOptions {
   state: ReviewCollaborationState;

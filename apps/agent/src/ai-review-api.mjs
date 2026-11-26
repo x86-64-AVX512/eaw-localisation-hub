@@ -9,12 +9,17 @@ export async function handleAiReviewApi(request, response, url, { assistant, rea
     if (!isProofreadingProvider(provider)) throw new Error('Неизвестный провайдер ИИ.');
     let payload;
     if (url.pathname === '/api/ai-localisation/status' && request.method === 'GET') {
-      payload = provider === 'codex' ? await assistant.status(controller.signal) : assistant.providers[provider].status();
+      payload =
+        provider === 'codex' ? await assistant.status(controller.signal) : assistant.providers[provider].status();
     } else if (provider === 'codex' && url.pathname === '/api/ai-localisation/usage' && request.method === 'GET') {
       payload = await assistant.usage(controller.signal);
-    } else if (provider === 'codex' && request.method === 'POST' && [
-      '/api/ai-localisation/login', '/api/ai-localisation/cancel-login', '/api/ai-localisation/logout',
-    ].includes(url.pathname)) {
+    } else if (
+      provider === 'codex' &&
+      request.method === 'POST' &&
+      ['/api/ai-localisation/login', '/api/ai-localisation/cancel-login', '/api/ai-localisation/logout'].includes(
+        url.pathname,
+      )
+    ) {
       payload = await assistant.changeAccount(url.pathname.split('/').at(-1));
     } else if (provider !== 'codex' && request.method === 'POST' && url.pathname === '/api/ai-localisation/api-key') {
       const body = await readJsonBody(request, 2048);

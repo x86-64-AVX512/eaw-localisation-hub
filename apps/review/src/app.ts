@@ -6,93 +6,180 @@ import { createSuggestionContextMenu } from './suggestion-context-menu.ts';
 import { createThemedSelects } from './themed-select.ts';
 import { createWorkspaceRuntime, isWorkspaceVisible } from './workspace-runtime.ts';
 import { createDocumentCloser } from './document-close.ts';
-import * as monaco from 'monaco-editor'; import './style.css';
+import * as monaco from 'monaco-editor';
+import './style.css';
 import { initialiseUiLanguage, createLanguageSelector } from './ui-language.ts';
 import { canEditDocument } from '../../../packages/shared/src/document-permissions.mts';
 import { applyDocumentPermissions } from './document-permissions.ts';
 import { applyAgentIdentity } from './agent-identity.ts';
 import { loadReviewDashFont, reviewFontFamily } from './editor-font.ts';
-import { createAvatarProfile } from './avatar-profile.ts'; import { createCollaborationPanel } from './collaboration-panel.ts';
-import { createDecorationRenderer } from './editor-decorations.ts'; import { applyDocumentStatus } from './document-status.ts';
-import { createEditingModeController } from './editing-mode.ts'; import { createEditorCoordinates } from './editor-coordinates.ts';
-import { createEnglishOriginal } from './english-original.ts'; import { createGitHistoryPanel, createHistoryPanel } from './history-panel.ts';
+import { createAvatarProfile } from './avatar-profile.ts';
+import { createCollaborationPanel } from './collaboration-panel.ts';
+import { createDecorationRenderer } from './editor-decorations.ts';
+import { applyDocumentStatus } from './document-status.ts';
+import { createEditingModeController } from './editing-mode.ts';
+import { createEditorCoordinates } from './editor-coordinates.ts';
+import { createEnglishOriginal } from './english-original.ts';
+import { createGitHistoryPanel, createHistoryPanel } from './history-panel.ts';
 import { createKeyReplacementPanel } from './key-replacement-panel.ts';
 import { createAiLocalisationPanel } from './ai-localisation-panel.ts';
-import { createPresenceController } from './presence-controller.ts'; import { createReviewCards } from './review-cards.ts';
-import { createReviewNavigation } from './review-navigation.ts'; import { createCollaborationRefresh, createReviewRefresh } from './review-refresh.ts';
+import { createPresenceController } from './presence-controller.ts';
+import { createReviewCards } from './review-cards.ts';
+import { createReviewNavigation } from './review-navigation.ts';
+import { createCollaborationRefresh, createReviewRefresh } from './review-refresh.ts';
 import { createRecoveryBanner } from './recovery-banner.ts';
-import { createTicketPanel } from './ticket-panel.ts'; import { createDeletedBranchesPanel } from './deleted-branches-panel.ts';
-import { createScrollSync } from './scroll-sync.ts'; import { createSyntaxDiagnostics } from './syntax-diagnostics.ts';
+import { createTicketPanel } from './ticket-panel.ts';
+import { createDeletedBranchesPanel } from './deleted-branches-panel.ts';
+import { createScrollSync } from './scroll-sync.ts';
+import { createSyntaxDiagnostics } from './syntax-diagnostics.ts';
 import { configureReadOnlyReview, reportReadOnlyOpen } from './read-only-review.ts';
 import { createAgentConnection } from './agent-connection.ts';
-import { createGitConflictDiff } from './git-conflict-diff.ts'; import { resetExternalConflicts } from './git-conflict-state.ts';
+import { createGitConflictDiff } from './git-conflict-diff.ts';
+import { resetExternalConflicts } from './git-conflict-state.ts';
 import { applyCollaborationMessage } from './collaboration-messages.ts';
 import { createDocumentVariants } from './document-variants.ts';
 import { createRemoteDocument } from './remote-document.ts';
-import { createLocalisationAuditPanel } from './localisation-audit-panel.ts'; import { createHelpPanel } from './help-panel.ts';
+import { createLocalisationAuditPanel } from './localisation-audit-panel.ts';
+import { createHelpPanel } from './help-panel.ts';
 import { createNotificationCenter } from './notification-center.ts';
 import { requiredButton, requiredElement } from './dom-elements.ts';
 import { createAppState } from './app-state.ts';
-import { createCommentActions } from './comment-actions.ts'; import { createRepositorySyncPanel } from './repository-sync-panel.ts';
+import { createCommentActions } from './comment-actions.ts';
+import { createRepositorySyncPanel } from './repository-sync-panel.ts';
 import { parseAgentMessage } from './agent-message.ts';
 import type { BootstrapPayload } from './app-state.ts';
-import { createAppbarLayout } from './appbar-layout.ts'; import { createEditorSettings } from './editor-settings.ts'; import { createSpellcheck } from './spellcheck.ts'; import { createWorkspaceTabs } from './workspace-tabs.ts';
-import {
-  createDialogController, decodeBase64, encodeBase64,
-} from './review-utilities.ts';
-(self as typeof self & { MonacoEnvironment?: { getWorker: () => Worker } }).MonacoEnvironment = { getWorker: () => new Worker('/editor.worker.js', { type: 'module' }) };
-const hash = new URLSearchParams(location.hash.slice(1)), token = readLaunchToken(hash);
+import { createAppbarLayout } from './appbar-layout.ts';
+import { createEditorSettings } from './editor-settings.ts';
+import { createSpellcheck } from './spellcheck.ts';
+import { createWorkspaceTabs } from './workspace-tabs.ts';
+import { createDialogController, decodeBase64, encodeBase64 } from './review-utilities.ts';
+(self as typeof self & { MonacoEnvironment?: { getWorker: () => Worker } }).MonacoEnvironment = {
+  getWorker: () => new Worker('/editor.worker.js', { type: 'module' }),
+};
+const hash = new URLSearchParams(location.hash.slice(1)),
+  token = readLaunchToken(hash);
 const languageSettings = await initialiseUiLanguage(token);
 const themedSelects = createThemedSelects();
-const requestedPath = hash.get('path') ?? '', requestedTicket = hash.get('ticket') ?? '', readOnlyMode = hash.get('readOnly') ?? hash.get('readonly') ?? '', requestedPair = hash.get('pair') ?? '', requestedCommit = hash.get('commit') ?? '', requestedLine = Number(hash.get('line') ?? 0);
-const state = createAppState(), statusElement = requiredElement('#status'), toastElement = requiredElement('#toast');
+const requestedPath = hash.get('path') ?? '',
+  requestedTicket = hash.get('ticket') ?? '',
+  readOnlyMode = hash.get('readOnly') ?? hash.get('readonly') ?? '',
+  requestedPair = hash.get('pair') ?? '',
+  requestedCommit = hash.get('commit') ?? '',
+  requestedLine = Number(hash.get('line') ?? 0);
+const state = createAppState(),
+  statusElement = requiredElement('#status'),
+  toastElement = requiredElement('#toast');
 const appbarLayout = createAppbarLayout(requiredElement('.appbar'));
-const askText = createDialogController(); let toastTimer: ReturnType<typeof setTimeout> | undefined;
-function setStatus(text: string, error = false): void { statusElement.textContent = text; statusElement.classList.toggle('error', error); }
-function showToast(text: string, error = false): void { clearTimeout(toastTimer); toastElement.textContent = uiMessage(text);
-  toastElement.classList.toggle('error', error); toastElement.classList.add('visible');
+const askText = createDialogController();
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+function setStatus(text: string, error = false): void {
+  statusElement.textContent = text;
+  statusElement.classList.toggle('error', error);
+}
+function showToast(text: string, error = false): void {
+  clearTimeout(toastTimer);
+  toastElement.textContent = uiMessage(text);
+  toastElement.classList.toggle('error', error);
+  toastElement.classList.add('visible');
   toastTimer = setTimeout(() => toastElement.classList.remove('visible'), 4200);
 }
 const workspaceTabs = createWorkspaceTabs({ token, requestedPath, requestedTicket, readOnlyMode, showToast });
 monaco.languages.register({ id: 'eaw-yaml' });
-monaco.languages.setMonarchTokensProvider('eaw-yaml', { tokenizer: { root: [
-  [/^\s*l_[a-z_]+:/, 'keyword'], [/^\s*[^#\s][^:]*?(?=:(?:\d+)?\s)/, 'type.identifier'],
-  [/:\d+/, 'number'], [/"(?:[^"\\]|\\.)*"/, 'string'], [/#.*$/, 'comment'],
-] } });
+monaco.languages.setMonarchTokensProvider('eaw-yaml', {
+  tokenizer: {
+    root: [
+      [/^\s*l_[a-z_]+:/, 'keyword'],
+      [/^\s*[^#\s][^:]*?(?=:(?:\d+)?\s)/, 'type.identifier'],
+      [/:\d+/, 'number'],
+      [/"(?:[^"\\]|\\.)*"/, 'string'],
+      [/#.*$/, 'comment'],
+    ],
+  },
+});
 await loadReviewDashFont();
 const editor = monaco.editor.create(requiredElement('#editor'), {
-  value: '', language: 'eaw-yaml', theme: 'vs-dark', automaticLayout: true, readOnly: true,
-  fontFamily: reviewFontFamily(), fontSize: 15, lineHeight: 23, minimap: { enabled: false },
-  wordWrap: 'on', wrappingStrategy: 'advanced', glyphMargin: true, padding: { top: 12, bottom: 40 }, scrollBeyondLastLine: false,
-  renderWhitespace: 'selection', roundedSelection: false, unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
-}); let agentConnection: ReturnType<typeof createAgentConnection> | undefined;
+  value: '',
+  language: 'eaw-yaml',
+  theme: 'vs-dark',
+  automaticLayout: true,
+  readOnly: true,
+  fontFamily: reviewFontFamily(),
+  fontSize: 15,
+  lineHeight: 23,
+  minimap: { enabled: false },
+  wordWrap: 'on',
+  wrappingStrategy: 'advanced',
+  glyphMargin: true,
+  padding: { top: 12, bottom: 40 },
+  scrollBeyondLastLine: false,
+  renderWhitespace: 'selection',
+  roundedSelection: false,
+  unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
+});
+let agentConnection: ReturnType<typeof createAgentConnection> | undefined;
 appbarLayout.connectEditor(editor);
 createEditorSettings({ monaco, editor, showToast });
-const spellcheck = createSpellcheck({ monaco, editor, token, showToast }); const syntaxDiagnostics = createSyntaxDiagnostics({ monaco, editor, token, showToast, getFilePath: () => state.relativePath });
+const spellcheck = createSpellcheck({ monaco, editor, token, showToast });
+const syntaxDiagnostics = createSyntaxDiagnostics({
+  monaco,
+  editor,
+  token,
+  showToast,
+  getFilePath: () => state.relativePath,
+});
 const anchor = <T extends { type: string }>(message: T): T => state.reviewDocument?.anchor(message) ?? message;
 function send(message: { type: string; [field: string]: unknown }): boolean {
-  if (!isWorkspaceVisible() && ['activate','cursor'].includes(message.type)) return false;
+  if (!isWorkspaceVisible() && ['activate', 'cursor'].includes(message.type)) return false;
   return agentConnection?.send(message.reviewAnchors ? message : anchor(message)) ?? false;
 }
-const { rangeFromBytes, selectionBytes, jumpToBytes, positionByteAt } = createEditorCoordinates({ monaco, state, editor });
+const { rangeFromBytes, selectionBytes, jumpToBytes, positionByteAt } = createEditorCoordinates({
+  monaco,
+  state,
+  editor,
+});
 let editingMode!: ReturnType<typeof createEditingModeController>;
 let reviewCards!: ReturnType<typeof createReviewCards>;
-const discussionEditor = createDiscussionEditor({state,editor,rangeFromBytes,send,showToast,refresh:()=>reviewCards?.render()});
+const discussionEditor = createDiscussionEditor({
+  state,
+  editor,
+  rangeFromBytes,
+  send,
+  showToast,
+  refresh: () => reviewCards?.render(),
+});
 reviewCards = createReviewCards({
-  state, editor, rangeFromBytes, send, discussionEditor, showToast,
+  state,
+  editor,
+  rangeFromBytes,
+  send,
+  discussionEditor,
+  showToast,
   onEditSuggestion: (item) => editingMode?.editSuggestion(item),
   onAcceptSuggestion: (item) => editingMode?.acceptSuggestion(item),
   onRevertSuggestion: (item) => editingMode?.revertSuggestion(item),
 });
 const gitConflictDiff = createGitConflictDiff({ monaco, state, send });
 const collaborationPanel = createCollaborationPanel({
-  state, editor, send, selectionBytes, jumpToBytes, showToast,
+  state,
+  editor,
+  send,
+  selectionBytes,
+  jumpToBytes,
+  showToast,
   openConflictDiff: gitConflictDiff.open,
   anchor,
-  canEditReservations: () => state.ready && state.documentView === 'shared' && !editor.getOption(monaco.editor.EditorOption.readOnly),
+  canEditReservations: () =>
+    state.ready && state.documentView === 'shared' && !editor.getOption(monaco.editor.EditorOption.readOnly),
 });
 const refreshDecorations = createDecorationRenderer({
-  monaco, state, editor, rangeFromBytes, onLayout: () => { reviewCards.layout(); appbarLayout.updatePosition(); },
+  monaco,
+  state,
+  editor,
+  rangeFromBytes,
+  onLayout: () => {
+    reviewCards.layout();
+    appbarLayout.updatePosition();
+  },
 });
 const reviewRefresh = createReviewRefresh(() => {
   refreshDecorations();
@@ -100,43 +187,81 @@ const reviewRefresh = createReviewRefresh(() => {
 });
 const presenceController = createPresenceController({ state, editor, send });
 editingMode = createEditingModeController({
-  state, editor, send, showToast,
+  state,
+  editor,
+  send,
+  showToast,
   onDraftStateChange: reviewRefresh.schedule,
 });
 const avatarProfile = createAvatarProfile({ state, send, showToast });
 const recoveryBanner = createRecoveryBanner({ state, send, showToast });
-const closeActiveDocument = createDocumentCloser({ state,editingMode,refresh:() => collaborationRefresh.refreshAll(),connection:() => agentConnection });
+const closeActiveDocument = createDocumentCloser({
+  state,
+  editingMode,
+  refresh: () => collaborationRefresh.refreshAll(),
+  connection: () => agentConnection,
+});
 createLanguageSelector(token, languageSettings, closeActiveDocument, showToast);
 const ticketPanel = createTicketPanel({
-  monaco, state, editor, token, requestedPath, showToast, beforeNavigate: closeActiveDocument,
+  monaco,
+  state,
+  editor,
+  token,
+  requestedPath,
+  showToast,
+  beforeNavigate: closeActiveDocument,
 });
 const deletedBranchesPanel = createDeletedBranchesPanel({ monaco, token, showToast });
-const keyReplacementPanel = createKeyReplacementPanel({ state, token, showToast }); const localisationAuditPanel = createLocalisationAuditPanel({ monaco, state, token, showToast });
+const keyReplacementPanel = createKeyReplacementPanel({ state, token, showToast });
+const localisationAuditPanel = createLocalisationAuditPanel({ monaco, state, token, showToast });
 const aiLocalisationPanel = createAiLocalisationPanel({ monaco, editor, state, token, showToast });
-const helpPanel = createHelpPanel({ state, token, showToast }); const notificationCenter = createNotificationCenter({ token, showToast });
-const repositorySyncPanel = createRepositorySyncPanel({ token, showToast }); const scrollSync = createScrollSync({ editor, initialPair: requestedPair });
+const helpPanel = createHelpPanel({ state, token, showToast });
+const notificationCenter = createNotificationCenter({ token, showToast });
+const repositorySyncPanel = createRepositorySyncPanel({ token, showToast });
+const scrollSync = createScrollSync({ editor, initialPair: requestedPair });
 createEnglishOriginal({ state, editor, token, showToast, onOpened: (pair) => scrollSync.setPair(pair) });
-const historyPanel = createHistoryPanel({ monaco, state, editor, send, showToast }); const gitHistoryPanel = createGitHistoryPanel({ monaco, state, token, showToast });
+const historyPanel = createHistoryPanel({ monaco, state, editor, send, showToast });
+const gitHistoryPanel = createGitHistoryPanel({ monaco, state, token, showToast });
 const documentVariants = createDocumentVariants({
-  monaco, state, editor, send, showToast,
+  monaco,
+  state,
+  editor,
+  send,
+  showToast,
   beforeChange: () => editingMode.beforeRemoteChange(),
   afterChange: () => editingMode.afterRemoteChange(),
-  onChanged: () => { reviewRefresh.schedule(); collaborationPanel.refresh(); },
+  onChanged: () => {
+    reviewRefresh.schedule();
+    collaborationPanel.refresh();
+  },
 });
 const collaborationRefresh = createCollaborationRefresh(refreshDecorations, collaborationPanel);
 const applyRemoteReplace = createRemoteDocument({
-  state, editor, editingMode, send,
-  onChanged: () => { reviewRefresh.schedule(); collaborationPanel.refresh(); },
+  state,
+  editor,
+  editingMode,
+  send,
+  onChanged: () => {
+    reviewRefresh.schedule();
+    collaborationPanel.refresh();
+  },
 });
 function handleMessage(raw: unknown): void {
   const message = parseAgentMessage(raw);
   if (!message) return;
-  if (message.type === 'ticketCatalogChanged') { ticketPanel.refresh(message.revision); return; }
+  if (message.type === 'ticketCatalogChanged') {
+    ticketPanel.refresh(message.revision);
+    return;
+  }
   if (message.type === 'ticketUnavailable' && message.ticketId === state.ticket?.id) {
-    ticketPanel.leaveUnavailable(message.reason); return;
+    ticketPanel.leaveUnavailable(message.reason);
+    return;
   }
   if (message.path && message.path.toLowerCase() !== state.path.toLowerCase()) return;
-  if (message.type === 'discussionResult') { discussionEditor.receive(message); return; }
+  if (message.type === 'discussionResult') {
+    discussionEditor.receive(message);
+    return;
+  }
   if (reviewRefresh.handleBatch(message.type)) return;
   if (applyCollaborationMessage(state, message, collaborationPanel.receiveReservationUpdate)) {
     scheduleRefresh(message.type);
@@ -145,27 +270,36 @@ function handleMessage(raw: unknown): void {
   if (message.type === 'agentHello') {
     applyAgentIdentity(state, message);
     setStatus(`${message.user} · ${message.workspace}`);
-    collaborationPanel.refresh(); discussionEditor.refresh();
+    collaborationPanel.refresh();
+    discussionEditor.refresh();
     avatarProfile.refresh();
     recoveryBanner.refresh();
     helpPanel.refresh();
     applyDocumentPermissions(state, editor);
-    reviewRefresh.schedule(); commentActions.refresh();
+    reviewRefresh.schedule();
+    commentActions.refresh();
   } else if (message.type === 'documentStatus') {
     applyDocumentStatus(message, state, editor, setStatus);
     if (['offline', 'unauthorized', 'syncing'].includes(message.status)) state.reservationUpdates = false;
-    collaborationPanel.refresh(); discussionEditor.refresh();
+    collaborationPanel.refresh();
+    discussionEditor.refresh();
   } else if (message.type === 'documentReady') {
-    state.ready = true; spellcheck.start();
+    state.ready = true;
+    spellcheck.start();
     discussionEditor.refresh();
     collaborationPanel.refresh();
     state.reviewDocument?.replay();
     send({ type: 'activate', path: state.path, positionByte: 0, anchorByte: 0 });
     ticketPanel.refresh();
-    editor.updateOptions({ readOnly: !canEditDocument(state, state.relativePath) || state.documentView !== 'shared'
-      || ['applied', 'closed'].includes(state.ticket?.status ?? '') });
-    setStatus(uiText("Совместный документ подключён"));
-    presenceController.publish(); workspaceRuntime.ready();
+    editor.updateOptions({
+      readOnly:
+        !canEditDocument(state, state.relativePath) ||
+        state.documentView !== 'shared' ||
+        ['applied', 'closed'].includes(state.ticket?.status ?? ''),
+    });
+    setStatus(uiText('Совместный документ подключён'));
+    presenceController.publish();
+    workspaceRuntime.ready();
   } else if (message.type === 'documentSync') state.reviewDocument?.receive(message);
   else if (message.type === 'replace') applyRemoteReplace(message);
   else if (message.type === 'documentVariants') documentVariants.update(message);
@@ -198,8 +332,12 @@ function scheduleRefresh(type: string): void {
   if (/^(presence|reservation|externalConflict)/.test(type)) collaborationRefresh.schedule(type);
   if (/^(comment|suggestion)/.test(type)) reviewRefresh.schedule();
 }
-function collaborativeUndo() { if (state.ready) editingMode.undo(); }
-function collaborativeRedo() { if (state.ready) editingMode.redo(); }
+function collaborativeUndo() {
+  if (state.ready) editingMode.undo();
+}
+function collaborativeRedo() {
+  if (state.ready) editingMode.redo();
+}
 requiredButton('#undo').addEventListener('click', collaborativeUndo);
 requiredButton('#redo').addEventListener('click', collaborativeRedo);
 editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ, collaborativeUndo);
@@ -207,7 +345,8 @@ editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY, collaborativeRedo
 editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ, collaborativeRedo);
 editor.addCommand(monaco.KeyCode.Enter, () => state.ready && editingMode.insertLineBreak());
 const reviewNavigation = createReviewNavigation({
-  state, editor,
+  state,
+  editor,
   positionByteAt,
   focusCard: reviewCards.focusCard,
   finishSuggestionAt: editingMode.finishSuggestionAt,
@@ -221,49 +360,81 @@ const reviewNavigation = createReviewNavigation({
 editor.onDidScrollChange(reviewCards.syncScroll);
 requiredElement('#review-lane').addEventListener('scroll', reviewCards.layout);
 window.addEventListener('resize', reviewCards.layout);
-const commentActions = createCommentActions({ monaco, editor, state,
-  button: requiredButton('#comment-create'), selectionBytes, openDraft:discussionEditor.create, showToast,
+const commentActions = createCommentActions({
+  monaco,
+  editor,
+  state,
+  button: requiredButton('#comment-create'),
+  selectionBytes,
+  openDraft: discussionEditor.create,
+  showToast,
   anchor,
 });
 const textStatistics = createTextStatisticsAction({ editor, showToast });
 const suggestionContextMenu = createSuggestionContextMenu(editor);
-const hasDraft = () => editingMode.hasDraft() || collaborationPanel.hasDraft() || discussionEditor.hasDraft()
-  || recoveryBanner.hasDraft();
-const workspaceRuntime = createWorkspaceRuntime({ state, editor, hasDraft, send, close:closeActiveDocument,
-  onVisible:() => { presenceController.publish(); syntaxDiagnostics.refresh(); reviewRefresh.schedule(); } });
+const hasDraft = () =>
+  editingMode.hasDraft() || collaborationPanel.hasDraft() || discussionEditor.hasDraft() || recoveryBanner.hasDraft();
+const workspaceRuntime = createWorkspaceRuntime({
+  state,
+  editor,
+  hasDraft,
+  send,
+  close: closeActiveDocument,
+  onVisible: () => {
+    presenceController.publish();
+    syntaxDiagnostics.refresh();
+    reviewRefresh.schedule();
+  },
+});
 async function start() {
   if (readOnlyMode) {
     agentConnection = createAgentConnection({
-      token, multiplex: true,
-      onMessage() {}, onOpen() {}, onWaiting() {},
+      token,
+      multiplex: true,
+      onMessage() {},
+      onOpen() {},
+      onWaiting() {},
     });
   }
-  if (!token || !requestedPath) throw new Error(uiText("Review-приложение запущено без локальной сессии или файла."));
+  if (!token || !requestedPath) throw new Error(uiText('Review-приложение запущено без локальной сессии или файла.'));
   const bootstrapQuery = new URLSearchParams({ path: requestedPath });
-  if (hash.has('session')) bootstrapQuery.set('workspace','1');
+  if (hash.has('session')) bootstrapQuery.set('workspace', '1');
   if (requestedTicket) bootstrapQuery.set('ticket', requestedTicket);
   if (readOnlyMode) bootstrapQuery.set('readonly', readOnlyMode);
   if (requestedCommit) bootstrapQuery.set('commit', requestedCommit);
   const bootstrap = await fetch(`/api/bootstrap?${bootstrapQuery}`, {
-    headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
   });
-  const data = await bootstrap.json() as BootstrapPayload;
-  if (!bootstrap.ok) throw new Error(data.error || uiText("Не удалось открыть файл."));
+  const data = (await bootstrap.json()) as BootstrapPayload;
+  if (!bootstrap.ok) throw new Error(data.error || uiText('Не удалось открыть файл.'));
   Object.assign(state, {
-    path: data.path, relativePath: data.relativePath, workspace: data.workspace,
-    ticket: data.ticket, user: data.user, color: data.color,
-  }); gitHistoryPanel.setAvailable(true);
+    path: data.path,
+    relativePath: data.relativePath,
+    workspace: data.workspace,
+    ticket: data.ticket,
+    user: data.user,
+    color: data.color,
+  });
+  gitHistoryPanel.setAvailable(true);
   workspaceTabs.confirmPath(data.path, data.relativePath, data.ticket);
   const ticketReadOnly = ['applied', 'closed'].includes(state.ticket?.status ?? '');
   for (const id of [
-    'mode-edit', 'mode-suggest', 'undo', 'redo', 'comment-create',
-    'reservation-create', 'reservation-delete-at', 'reservation-delete',
+    'mode-edit',
+    'mode-suggest',
+    'undo',
+    'redo',
+    'comment-create',
+    'reservation-create',
+    'reservation-delete-at',
+    'reservation-delete',
   ]) {
     requiredButton(`#${id}`).disabled = ticketReadOnly;
   }
-  const contextName = data.ticket ? uiText("тикет «{0}»", data.ticket.title) : data.workspace;
+  const contextName = data.ticket ? uiText('тикет «{0}»', data.ticket.title) : data.workspace;
   requiredElement('#document-name').textContent = `${data.relativePath} · ${contextName}`;
-  editor.setValue(decodeBase64(data.textBase64)); syntaxDiagnostics.refresh();
+  editor.setValue(decodeBase64(data.textBase64));
+  syntaxDiagnostics.refresh();
   if (!requestedLine) workspaceTabs.restore(editor, data.path);
   if (data.readOnly) {
     configureReadOnlyReview({ data, editor, requestedLine, setStatus });
@@ -277,7 +448,11 @@ async function start() {
     onMessage: handleMessage,
     onOpen: () => {
       send({
-        type: 'open', path: state.path, textBase64: encodeBase64(editor.getValue()), crdt: 'yjs-v1', variants: 'compact-v1',
+        type: 'open',
+        path: state.path,
+        textBase64: encodeBase64(editor.getValue()),
+        crdt: 'yjs-v1',
+        variants: 'compact-v1',
         ...(state.ticket ? { ticketId: state.ticket.id } : {}),
       });
     },
@@ -287,7 +462,7 @@ async function start() {
       discussionEditor.refresh();
       collaborationPanel.refresh();
       editor.updateOptions({ readOnly: true });
-      setStatus(error || uiText("Desktop Agent отключён – ожидается автоматическое переподключение…"), true);
+      setStatus(error || uiText('Desktop Agent отключён – ожидается автоматическое переподключение…'), true);
     },
   });
 }
@@ -298,12 +473,36 @@ start().catch((error: unknown) => {
 window.addEventListener('beforeunload', () => {
   workspaceTabs.remember(editor);
   void closeActiveDocument({ flush: false });
-  ticketPanel.dispose(); deletedBranchesPanel.dispose(); keyReplacementPanel.dispose(); localisationAuditPanel.dispose(); helpPanel.dispose();
+  ticketPanel.dispose();
+  deletedBranchesPanel.dispose();
+  keyReplacementPanel.dispose();
+  localisationAuditPanel.dispose();
+  helpPanel.dispose();
   aiLocalisationPanel.dispose();
-  notificationCenter.dispose(); repositorySyncPanel.dispose(); editingMode.flushSuggestion(); editingMode.dispose();
-  state.reviewDocument?.dispose(); presenceController.dispose();
-  historyPanel.dispose(); gitHistoryPanel.dispose(); documentVariants.dispose();
-  scrollSync.dispose(); reviewRefresh.dispose(); refreshDecorations.dispose(); themedSelects.dispose(); collaborationRefresh.dispose(); spellcheck.dispose(); syntaxDiagnostics.dispose();
-  workspaceRuntime.dispose(); reviewNavigation.dispose(); commentActions.dispose(); textStatistics.dispose(); suggestionContextMenu.dispose(); appbarLayout.dispose(); agentConnection?.dispose(); gitConflictDiff.dispose();
-  discussionEditor.dispose(); collaborationPanel.dispose();
+  notificationCenter.dispose();
+  repositorySyncPanel.dispose();
+  editingMode.flushSuggestion();
+  editingMode.dispose();
+  state.reviewDocument?.dispose();
+  presenceController.dispose();
+  historyPanel.dispose();
+  gitHistoryPanel.dispose();
+  documentVariants.dispose();
+  scrollSync.dispose();
+  reviewRefresh.dispose();
+  refreshDecorations.dispose();
+  themedSelects.dispose();
+  collaborationRefresh.dispose();
+  spellcheck.dispose();
+  syntaxDiagnostics.dispose();
+  workspaceRuntime.dispose();
+  reviewNavigation.dispose();
+  commentActions.dispose();
+  textStatistics.dispose();
+  suggestionContextMenu.dispose();
+  appbarLayout.dispose();
+  agentConnection?.dispose();
+  gitConflictDiff.dispose();
+  discussionEditor.dispose();
+  collaborationPanel.dispose();
 });

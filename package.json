@@ -21,8 +21,10 @@
     "typecheck": "tsc --project tsconfig.typecheck.json && tsc --project tsconfig.boundary.json && tsc --project tsconfig.review-typescript.json && tsc --project tsconfig.review.json",
     "typecheck:boundary": "tsc --project tsconfig.boundary.json",
     "typecheck:review-ts": "tsc --project tsconfig.review-typescript.json",
+    "format": "prettier --write \"apps/**/*.{mjs,mts,ts}\" \"packages/**/*.{mjs,mts,ts}\" \"test/**/*.mjs\"",
+    "check:format": "prettier --check \"apps/**/*.{mjs,mts,ts}\" \"packages/**/*.{mjs,mts,ts}\" \"test/**/*.mjs\"",
     "test": "node --test --test-concurrency=1 \"test/*.test.mjs\"",
-    "check": "npm run typecheck && npm run check:publication && npm test && npm run build:client && npm run build:installer && npm run build:deployer && npm run build:source && npm run test:launcher && npm run test:credentials && npm run test:status && npm run test:updater && npm run test:update-flow && npm run test:backup-client && npm run test:client && npm run test:deployer && npm run test:source && npm run test:installer",
+    "check": "npm run typecheck && npm run check:format && npm run check:publication && npm test && npm run build:client && npm run build:installer && npm run build:deployer && npm run build:source && npm run test:launcher && npm run test:credentials && npm run test:status && npm run test:updater && npm run test:update-flow && npm run test:backup-client && npm run test:client && npm run test:deployer && npm run test:source && npm run test:installer",
     "check:publication": "node scripts/check-publication.mjs",
     "test:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-powershell.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-backup-schedule.ps1",
     "test:client": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-client-package.ps1",
@@ -63,6 +65,7 @@
   "devDependencies": {
     "@types/node": "^22.20.4",
     "esbuild": "0.28.2",
+    "prettier": "3.9.10",
     "ssh2": "^1.17.0",
     "typescript": "^7.0.2"
   },

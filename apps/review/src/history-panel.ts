@@ -27,7 +27,10 @@ type HistoryCommand =
   | { type: 'historyRestore'; path: string; id: string; headId: string };
 
 const reasonLabels: Record<string, string> = {
-  baseline: uiText("Исходное состояние"), edit: uiText("Редактирование"), suggestion: uiText("Принята правка"), restore: uiText("Восстановление"),
+  baseline: uiText('Исходное состояние'),
+  edit: uiText('Редактирование'),
+  suggestion: uiText('Принята правка'),
+  restore: uiText('Восстановление'),
 };
 export { createGitHistoryPanel } from './git-history-panel.ts';
 
@@ -37,15 +40,20 @@ export function historyEntryLabels(entry: HistoryEntry): { primary: string; seco
     return { primary: entry.author, secondary: reason, selection: `${entry.author} · ${reason}` };
   }
   const creator = entry.suggestionAuthor ?? entry.author;
-  const accepter = entry.suggestionAuthor ? entry.author : uiText("не записано");
+  const accepter = entry.suggestionAuthor ? entry.author : uiText('не записано');
   return {
-    primary: uiText("Создал: {0}", creator),
-    secondary: uiText("Принял: {0} · {1}", accepter, reason),
-    selection: uiText("Создал: {0} · Принял: {1} · {2}", creator, accepter, reason),
+    primary: uiText('Создал: {0}', creator),
+    secondary: uiText('Принял: {0} · {1}', accepter, reason),
+    selection: uiText('Создал: {0} · Принял: {1} · {2}', creator, accepter, reason),
   };
 }
 
-export function createHistoryPanel({ monaco, state, send, showToast }: {
+export function createHistoryPanel({
+  monaco,
+  state,
+  send,
+  showToast,
+}: {
   monaco: typeof Monaco;
   state: HistoryState;
   editor?: unknown;
@@ -59,7 +67,8 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
   const restore = requiredElement<HTMLButtonElement>('#history-restore');
   const selectionLabel = requiredElement<HTMLElement>('#history-selection');
   const diffView = createStandardDiffView({
-    monaco, container: requiredElement<HTMLElement>('#history-diff'),
+    monaco,
+    container: requiredElement<HTMLElement>('#history-diff'),
   });
   diffView.setActive(false);
   let selectedId = '';
@@ -93,7 +102,9 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
       secondary.textContent = labels.secondary;
       primary.title = labels.primary;
       secondary.title = labels.secondary;
-      requiredElement<HTMLElement>('small', item).textContent = Number.isNaN(date.valueOf()) ? '' : date.toLocaleString(uiLocale());
+      requiredElement<HTMLElement>('small', item).textContent = Number.isNaN(date.valueOf())
+        ? ''
+        : date.toLocaleString(uiLocale());
       item.addEventListener('click', () => select(entry));
       list.append(item);
     }
@@ -105,7 +116,10 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
     const index = state.history.findIndex((item) => item.id === entry.id);
     previousId = state.history[index + 1]?.id ?? '';
     diffView.clear();
-    restore.disabled = !canEditDocument(state, state.relativePath ?? '') || entry.id === state.historyHeadId || ['applied', 'closed'].includes(state.ticket?.status ?? '');
+    restore.disabled =
+      !canEditDocument(state, state.relativePath ?? '') ||
+      entry.id === state.historyHeadId ||
+      ['applied', 'closed'].includes(state.ticket?.status ?? '');
     selectionLabel.textContent = labels.selection;
     send({ type: 'historyRequest', path: state.path, id: entry.id });
     if (previousId) send({ type: 'historyRequest', path: state.path, id: previousId });
@@ -115,9 +129,7 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
   function receiveVersion(message: { id: string; textBase64: string }): void {
     if (!dialog.open || (message.id !== selectedId && message.id !== previousId)) return;
     const binary = atob(message.textBase64);
-    const value = new TextDecoder().decode(
-      Uint8Array.from(binary, (character) => character.charCodeAt(0)),
-    );
+    const value = new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
     if (message.id === selectedId) diffView.setModified(value);
     else diffView.setOriginal(value);
   }
@@ -126,7 +138,7 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
     selectedId = '';
     previousId = '';
     diffView.clear();
-    selectionLabel.textContent = uiText("Выберите версию слева");
+    selectionLabel.textContent = uiText('Выберите версию слева');
     restore.disabled = true;
     render();
     dialog.showModal();
@@ -136,11 +148,18 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
     if (!selectedId || !canEditDocument(state, state.relativePath ?? '')) return;
     const entry = state.history.find((item) => item.id === selectedId);
     const date = entry ? new Date(entry.updatedAt || entry.createdAt).toLocaleString(uiLocale()) : '';
-    const id = selectedId, headId = state.historyHeadId;
-    if (!await confirmAction(restore, uiText("Применить версию от {0}? Текущее состояние останется в истории.", date), { label: uiText("Применить") }) || selectedId !== id) return;
+    const id = selectedId,
+      headId = state.historyHeadId;
+    if (
+      !(await confirmAction(restore, uiText('Применить версию от {0}? Текущее состояние останется в истории.', date), {
+        label: uiText('Применить'),
+      })) ||
+      selectedId !== id
+    )
+      return;
     send({ type: 'historyRestore', path: state.path, id, headId });
     closeHistory();
-    showToast(uiText("Запрошено восстановление версии…"));
+    showToast(uiText('Запрошено восстановление версии…'));
   });
   requiredElement<HTMLButtonElement>('#history-close').addEventListener('click', closeHistory);
   dialog.addEventListener('close', suspendHistory);
@@ -152,11 +171,13 @@ export function createHistoryPanel({ monaco, state, send, showToast }: {
       if (selectedId && !entries.some((entry) => entry.id === selectedId)) {
         selectedId = '';
         restore.disabled = true;
-        selectionLabel.textContent = uiText("Документ изменился – выберите версию заново");
+        selectionLabel.textContent = uiText('Документ изменился – выберите версию заново');
       }
       render();
     },
     receiveVersion,
-    dispose() { diffView.dispose(); },
+    dispose() {
+      diffView.dispose();
+    },
   };
 }

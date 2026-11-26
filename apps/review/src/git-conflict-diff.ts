@@ -4,11 +4,21 @@ import { reviewFontFamily } from './editor-font.ts';
 import { requiredElement } from './dom-elements.ts';
 import type { ReviewExternalConflict } from './review-state.ts';
 
-export function createGitConflictDiff({ monaco, state, send }: {
+export function createGitConflictDiff({
+  monaco,
+  state,
+  send,
+}: {
   monaco: typeof Monaco;
   state: { path: string };
-  send: (message: { type: 'externalConflictResolve'; path: string; key: string; source: string;
-    conflictId: string; choice: 'collaborative' | 'external' }) => void;
+  send: (message: {
+    type: 'externalConflictResolve';
+    path: string;
+    key: string;
+    source: string;
+    conflictId: string;
+    choice: 'collaborative' | 'external';
+  }) => void;
 }) {
   const dialog = requiredElement<HTMLDialogElement>('#git-conflict-dialog');
   const heading = requiredElement<HTMLElement>('#git-conflict-heading');
@@ -27,16 +37,22 @@ export function createGitConflictDiff({ monaco, state, send }: {
 
   function open(conflict: ReviewExternalConflict): void {
     selected = conflict;
-    heading.textContent = uiText("Конфликт Git: {0}", conflict.label);
+    heading.textContent = uiText('Конфликт Git: {0}', conflict.label);
     disposeModels();
     originalModel = monaco.editor.createModel(conflict.collaborativeLine || '', 'eaw-yaml');
     modifiedModel = monaco.editor.createModel(conflict.externalLine || '', 'eaw-yaml');
     diffEditor ??= monaco.editor.createDiffEditor(container, {
-      automaticLayout: true, readOnly: true, fontFamily: reviewFontFamily(),
-      renderSideBySide: true, originalEditable: false,
+      automaticLayout: true,
+      readOnly: true,
+      fontFamily: reviewFontFamily(),
+      renderSideBySide: true,
+      originalEditable: false,
       hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 2 },
-      minimap: { enabled: false }, scrollBeyondLastLine: false,
-      wordWrap: 'on', diffWordWrap: 'on', wrappingStrategy: 'advanced',
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      wordWrap: 'on',
+      diffWordWrap: 'on',
+      wrappingStrategy: 'advanced',
       unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
     });
     diffEditor.setModel({ original: originalModel, modified: modifiedModel });
@@ -50,8 +66,14 @@ export function createGitConflictDiff({ monaco, state, send }: {
 
   function resolve(choice: 'collaborative' | 'external'): void {
     if (!selected) return;
-    send({ type: 'externalConflictResolve', path: state.path, key: selected.key,
-      source: selected.source || 'disk', conflictId: selected.conflictId, choice });
+    send({
+      type: 'externalConflictResolve',
+      path: state.path,
+      key: selected.key,
+      source: selected.source || 'disk',
+      conflictId: selected.conflictId,
+      choice,
+    });
     dialog.close();
   }
   requiredElement<HTMLButtonElement>('#git-conflict-keep').addEventListener('click', () => resolve('collaborative'));
@@ -60,8 +82,16 @@ export function createGitConflictDiff({ monaco, state, send }: {
   const fullscreen = requiredElement<HTMLButtonElement>('#git-conflict-fullscreen');
   fullscreen.addEventListener('click', () => {
     dialog.classList.toggle('fullscreen');
-    fullscreen.textContent = dialog.classList.contains('fullscreen') ? uiText("Обычный размер") : uiText("На весь экран");
+    fullscreen.textContent = dialog.classList.contains('fullscreen')
+      ? uiText('Обычный размер')
+      : uiText('На весь экран');
     requestAnimationFrame(() => diffEditor?.layout());
   });
-  return { open, dispose() { disposeModels(); diffEditor?.dispose(); } };
+  return {
+    open,
+    dispose() {
+      disposeModels();
+      diffEditor?.dispose();
+    },
+  };
 }

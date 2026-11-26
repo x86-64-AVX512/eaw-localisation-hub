@@ -31,10 +31,13 @@ function copyComments(source, target) {
   for (const thread of source.commentThreads) {
     const current = existing.get(thread.id);
     if (current) {
-      if (mergeDiscussionMessages(thread, current, origin, {
-        overflow: createDiscussionOverflow(next, current, origin),
-        onConflict: id => notices.push(`${thread.id}/${id}`),
-      })) changed = true;
+      if (
+        mergeDiscussionMessages(thread, current, origin, {
+          overflow: createDiscussionOverflow(next, current, origin),
+          onConflict: (id) => notices.push(`${thread.id}/${id}`),
+        })
+      )
+        changed = true;
       if (thread.status === 'resolved' && current.status !== 'resolved') {
         current.status = 'resolved';
         changed = true;
@@ -77,14 +80,21 @@ export class BranchMergeService {
   candidates() {
     const branches = new Set(this.roomRegistry.branchHints.keys());
     for (const ticket of this.ticketStore.list({ archived: true })) branches.add(ticket.baseBranch);
-    return [...branches].filter((branch) => branch && branch !== this.targetBranch
-      && !PROTECTED_BRANCHES.has(branch) && !branch.startsWith('ticket-')
-      && !this.roomRegistry.mergedBranches.has(branch));
+    return [...branches].filter(
+      (branch) =>
+        branch &&
+        branch !== this.targetBranch &&
+        !PROTECTED_BRANCHES.has(branch) &&
+        !branch.startsWith('ticket-') &&
+        !this.roomRegistry.mergedBranches.has(branch),
+    );
   }
 
   refresh() {
     if (this.pending) return this.pending;
-    this.pending = this.refreshExclusive().finally(() => { this.pending = null; });
+    this.pending = this.refreshExclusive().finally(() => {
+      this.pending = null;
+    });
     return this.pending;
   }
 
@@ -95,17 +105,23 @@ export class BranchMergeService {
     for (const branch of this.candidates()) {
       try {
         let source;
-        try { source = await this.canonicalSource.head(branch, { force: true }); } catch { /* deleted branch */ }
+        try {
+          source = await this.canonicalSource.head(branch, { force: true });
+        } catch {
+          /* deleted branch */
+        }
         const hint = this.roomRegistry.branchHints.get(branch);
-        const commit = source?.commit ?? hint?.commit
-          ?? this.ticketStore.list({ archived: true }).find((ticket) => ticket.baseBranch === branch)?.baseCommit;
+        const commit =
+          source?.commit ??
+          hint?.commit ??
+          this.ticketStore.list({ archived: true }).find((ticket) => ticket.baseBranch === branch)?.baseCommit;
         if (!commit) continue;
-        const sourceDeleted = source?.deleted === true || (!source
-          && await this.canonicalSource.branchDeleted(branch));
-        const merged = await this.canonicalSource.mergedInto(
-          branch, this.targetBranch, commit, target.commit,
-          { sourceStale: !source || source.stale, sourceDeleted },
-        );
+        const sourceDeleted =
+          source?.deleted === true || (!source && (await this.canonicalSource.branchDeleted(branch)));
+        const merged = await this.canonicalSource.mergedInto(branch, this.targetBranch, commit, target.commit, {
+          sourceStale: !source || source.stale,
+          sourceDeleted,
+        });
         if (merged) await this.migrate(branch, target.commit, commit);
       } catch (error) {
         console.error(`[server] branch merge migration failed for ${branch}: ${error.message}`);
@@ -121,8 +137,7 @@ export class BranchMergeService {
     if (unidentified.length) throw new Error(`${unidentified.length} legacy document(s) cannot be mapped safely`);
     const unavailable = sourceIds.filter((id) => !available.has(id.slice(branch.length + 1)));
     if (unavailable.length) throw new Error(`${unavailable.length} source document(s) have no target file`);
-    const affectedTickets = this.ticketStore.list({ archived: true })
-      .filter((ticket) => ticket.baseBranch === branch);
+    const affectedTickets = this.ticketStore.list({ archived: true }).filter((ticket) => ticket.baseBranch === branch);
     const missingTickets = affectedTickets.filter((ticket) => ticket.files.some((file) => !available.has(file)));
     if (missingTickets.length) throw new Error(`${missingTickets.length} ticket(s) have no target file`);
 

@@ -23,7 +23,9 @@ test('workspace transition waits for the Git index and a stable checkout', async
     quietMilliseconds: 100,
     pollMilliseconds: 50,
     now: () => clock,
-    sleep: async (milliseconds) => { clock += milliseconds; },
+    sleep: async (milliseconds) => {
+      clock += milliseconds;
+    },
   });
   assert.equal(result.indexFingerprint, 'two');
   assert.equal(calls, 6);
@@ -33,13 +35,21 @@ test('workspace transition fails closed when checkout never settles', async () =
   let clock = 0;
   const hub = {
     gitCheckoutObservation: () => ({
-      workspace: 'feature', commit: 'a'.repeat(40), locked: true, indexFingerprint: 'locked',
+      workspace: 'feature',
+      commit: 'a'.repeat(40),
+      locked: true,
+      indexFingerprint: 'locked',
     }),
   };
-  await assert.rejects(waitForGitCheckout(hub, 'feature', {
-    timeoutMilliseconds: 100,
-    pollMilliseconds: 50,
-    now: () => clock,
-    sleep: async (milliseconds) => { clock += milliseconds; },
-  }), /did not settle/u);
+  await assert.rejects(
+    waitForGitCheckout(hub, 'feature', {
+      timeoutMilliseconds: 100,
+      pollMilliseconds: 50,
+      now: () => clock,
+      sleep: async (milliseconds) => {
+        clock += milliseconds;
+      },
+    }),
+    /did not settle/u,
+  );
 });

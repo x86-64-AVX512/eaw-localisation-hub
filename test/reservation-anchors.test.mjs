@@ -36,8 +36,11 @@ test('reservation anchors are rebuilt after full replacement and recover when ke
 
   text.delete(0, text.length);
   text.insert(0, 'l_russian:\n first:0 "Changed"\n second:0 "Still here"\n');
-  assert.equal(resolveReservationRange(document, reservation).start, 0,
-    'the uncorrected Yjs anchor should demonstrate the collapse');
+  assert.equal(
+    resolveReservationRange(document, reservation).start,
+    0,
+    'the uncorrected Yjs anchor should demonstrate the collapse',
+  );
   assert.equal(repairReservationAnchors(document, [reservation], { force: true }), true);
   let range = resolveReservationRange(document, reservation);
   assert.match(text.toString().slice(range.start, range.end), /second:0 "Still here"/u);

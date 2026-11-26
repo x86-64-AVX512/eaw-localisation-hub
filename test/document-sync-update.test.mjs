@@ -4,8 +4,12 @@ import * as Y from 'yjs';
 import { documentUpdateForServer } from '../apps/agent/src/document-sync-update.mjs';
 
 function pair(t, text = 'l_russian:\n same:0 "One"\n same:0 "Two"\n') {
-  const remote = new Y.Doc(), local = new Y.Doc();
-  t.after(() => { remote.destroy(); local.destroy(); });
+  const remote = new Y.Doc(),
+    local = new Y.Doc();
+  t.after(() => {
+    remote.destroy();
+    local.destroy();
+  });
   remote.getText('content').insert(0, text);
   const snapshot = Y.encodeStateAsUpdate(remote);
   Y.applyUpdate(local, snapshot);

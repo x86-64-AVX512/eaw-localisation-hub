@@ -11,7 +11,16 @@ export function assertCanManageTicket(actor, ticket) {
   }
 }
 
-const STATUSES = new Set(['draft', 'in_progress', 'review', 'needs_changes', 'ready', 'git_conflict', 'applied', 'closed']);
+const STATUSES = new Set([
+  'draft',
+  'in_progress',
+  'review',
+  'needs_changes',
+  'ready',
+  'git_conflict',
+  'applied',
+  'closed',
+]);
 const USER_STATUSES = new Set(['draft', 'in_progress', 'review', 'needs_changes', 'ready', 'closed']);
 const TICKET_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const BRANCH_PATTERN = /^(?![./])(?!.*(?:\.\.|@\{|[~^:?*[\\]))(?!.*[./]$)[^\u0000-\u0020\u007f]{1,200}$/u;
@@ -27,8 +36,11 @@ function boundedText(value, name, maximum, required = false) {
 
 export function trackedTicketFile(value) {
   const result = String(value ?? '').replaceAll('\\', '/');
-  if (!TRACKED_PATH_PATTERN.test(result) || result.includes('//')
-      || result.split('/').some((part) => !part || part === '.' || part === '..')) {
+  if (
+    !TRACKED_PATH_PATTERN.test(result) ||
+    result.includes('//') ||
+    result.split('/').some((part) => !part || part === '.' || part === '..')
+  ) {
     throw new AuthError('Ticket file is outside supported localisation paths', 400, 'invalid_ticket_file');
   }
   return result;
@@ -43,7 +55,9 @@ function ticketFiles(value) {
 }
 
 function validCommit(value) {
-  const result = String(value ?? '').trim().toLowerCase();
+  const result = String(value ?? '')
+    .trim()
+    .toLowerCase();
   if (!/^[0-9a-f]{40}$/u.test(result)) throw new AuthError('Base commit is invalid', 400, 'invalid_ticket');
   return result;
 }
@@ -82,14 +96,17 @@ export class TicketStore {
   async initialise() {
     try {
       const loaded = JSON.parse(await fs.readFile(this.target, 'utf8'));
-      if (![1, 2].includes(loaded.schema) || !Array.isArray(loaded.tickets)) throw new Error('Unsupported ticket store');
-      this.tickets = loaded.tickets.filter((ticket) => TICKET_ID_PATTERN.test(ticket.id)).map((ticket) => ({
-        ...ticket,
-        files: ticketFiles(ticket.files),
-        participantIds: Array.isArray(ticket.participantIds) ? ticket.participantIds.map(String) : [],
-        archivedAt: String(ticket.archivedAt ?? ''),
-        events: Array.isArray(ticket.events) ? ticket.events.slice(-MAX_EVENTS) : [],
-      }));
+      if (![1, 2].includes(loaded.schema) || !Array.isArray(loaded.tickets))
+        throw new Error('Unsupported ticket store');
+      this.tickets = loaded.tickets
+        .filter((ticket) => TICKET_ID_PATTERN.test(ticket.id))
+        .map((ticket) => ({
+          ...ticket,
+          files: ticketFiles(ticket.files),
+          participantIds: Array.isArray(ticket.participantIds) ? ticket.participantIds.map(String) : [],
+          archivedAt: String(ticket.archivedAt ?? ''),
+          events: Array.isArray(ticket.events) ? ticket.events.slice(-MAX_EVENTS) : [],
+        }));
       if (loaded.schema === 1) await this.persist();
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
@@ -98,17 +115,21 @@ export class TicketStore {
 
   persist() {
     const data = `${JSON.stringify({ schema: 2, tickets: this.tickets }, null, 2)}\n`;
-    this.persistence = this.persistence.catch(() => {}).then(async () => {
-      await this.atomicWrite(this.target, data);
-      this.revision = crypto.randomUUID();
-      await this.onChanged?.(this.revision);
-    });
+    this.persistence = this.persistence
+      .catch(() => {})
+      .then(async () => {
+        await this.atomicWrite(this.target, data);
+        this.revision = crypto.randomUUID();
+        await this.onChanged?.(this.revision);
+      });
     return this.persistence;
   }
 
   list({ archived = false } = {}) {
-    return this.tickets.filter((ticket) => archived || !ticket.archivedAt)
-      .map(publicTicket).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return this.tickets
+      .filter((ticket) => archived || !ticket.archivedAt)
+      .map(publicTicket)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
   get(id) {
@@ -125,12 +146,20 @@ export class TicketStore {
 
   addEvent(ticket, actor, type, details = {}) {
     ticket.events.push({
-      id: crypto.randomUUID(), type, ...actorSummary(actor), at: new Date().toISOString(), details,
+      id: crypto.randomUUID(),
+      type,
+      ...actorSummary(actor),
+      at: new Date().toISOString(),
+      details,
     });
     if (ticket.events.length > MAX_EVENTS) ticket.events.splice(0, ticket.events.length - MAX_EVENTS);
-    if (ticket.creatorId) this.eventJournal?.append('ticket-state', actor, [ticket.creatorId], {
-      ticketId: ticket.id, ticketTitle: ticket.title, action: type, ...details,
-    });
+    if (ticket.creatorId)
+      this.eventJournal?.append('ticket-state', actor, [ticket.creatorId], {
+        ticketId: ticket.id,
+        ticketTitle: ticket.title,
+        action: type,
+        ...details,
+      });
   }
 
   touch(ticket, actor) {
@@ -151,8 +180,14 @@ export class TicketStore {
       baseBranch,
       baseCommit,
       files: ticketFiles(input.files),
-      status: 'draft', creatorId: actor.id, creator: actor.displayName || 'Local user',
-      participantIds: [actor.id], createdAt: now, updatedAt: now, archivedAt: '', events: [],
+      status: 'draft',
+      creatorId: actor.id,
+      creator: actor.displayName || 'Local user',
+      participantIds: [actor.id],
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: '',
+      events: [],
     };
     this.addEvent(ticket, actor, 'created', { files: ticket.files.length, baseCommit: ticket.baseCommit });
     this.tickets.push(ticket);
@@ -263,7 +298,10 @@ export class TicketStore {
       const previousCommit = ticket.baseCommit;
       ticket.baseBranch = branch;
       this.addEvent(ticket, actor, 'branch_merged', {
-        previousBranch, previousCommit, baseBranch: branch, baseCommit: previousCommit,
+        previousBranch,
+        previousCommit,
+        baseBranch: branch,
+        baseCommit: previousCommit,
         mergedIntoCommit: commit,
       });
       this.touch(ticket, actor);

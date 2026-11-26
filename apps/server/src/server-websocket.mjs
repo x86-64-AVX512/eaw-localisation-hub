@@ -4,11 +4,19 @@ import { sendStartupChangedFiles } from './document-startup.mjs';
 import { attachDocumentSocket } from './document-socket.mts';
 import { ProtocolLimitError, createInboundBudget, validDocumentId } from './protocol-limits.mts';
 import {
-  MAX_CONNECTIONS_PER_USER, MAX_CONNECTIONS_TOTAL, MAX_MESSAGE_BYTES,
+  MAX_CONNECTIONS_PER_USER,
+  MAX_CONNECTIONS_TOTAL,
+  MAX_MESSAGE_BYTES,
 } from '../../../packages/shared/src/constants.mts';
 
 export function attachServerWebSockets({
-  httpServer, authStore, ticketStore, roomRegistry, canonicalSource, getRoom, isShuttingDown,
+  httpServer,
+  authStore,
+  ticketStore,
+  roomRegistry,
+  canonicalSource,
+  getRoom,
+  isShuttingDown,
 }) {
   const websocketServer = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
   async function disconnectAuthenticatedSockets(predicate, reason, closeCode = 1008) {
@@ -39,7 +47,9 @@ export function attachServerWebSockets({
         const delay = Date.parse(active.session.expiresAt) - authStore.now();
         timer = setTimeout(schedule, Math.max(1, Math.min(delay, 2_147_483_647)));
         timer.unref();
-      } catch { /* authoriseSocket already closed the connection */ }
+      } catch {
+        /* authoriseSocket already closed the connection */
+      }
     };
     socket.once('close', () => clearTimeout(timer));
     schedule();
@@ -48,7 +58,11 @@ export function attachServerWebSockets({
   authStore.onSessionChange = () => {
     for (const socket of websocketServer.clients) {
       if (!socket.identity || socket.readyState !== WebSocket.OPEN) continue;
-      try { authoriseSocket(socket); } catch { /* connection closed */ }
+      try {
+        authoriseSocket(socket);
+      } catch {
+        /* connection closed */
+      }
     }
   };
 
@@ -77,9 +91,10 @@ export function attachServerWebSockets({
       if (!validDocumentId(documentId)) throw new ProtocolLimitError('Missing or invalid document id');
       if (roomRegistry.isUnavailableBranch(documentId)) {
         const branch = documentId.split(':', 1)[0];
-        throw new ProtocolLimitError(roomRegistry.mergedBranches.has(branch)
-          ? 'Branch merged into general-dev' : 'Branch merge is in progress',
-        roomRegistry.mergedBranches.has(branch) ? 4002 : 1013);
+        throw new ProtocolLimitError(
+          roomRegistry.mergedBranches.has(branch) ? 'Branch merged into general-dev' : 'Branch merge is in progress',
+          roomRegistry.mergedBranches.has(branch) ? 4002 : 1013,
+        );
       }
       ticketStore.assertDocumentAccess(documentId);
       await ticketStore.noteParticipant(documentId, socket.identity);
@@ -98,16 +113,21 @@ export function attachServerWebSockets({
       room.addClient(socket);
 
       attachDocumentSocket({
-        socket, documentId, room, ticketStore, isShuttingDown,
-        authoriseSession: () => { authoriseSocket(socket); },
+        socket,
+        documentId,
+        room,
+        ticketStore,
+        isShuttingDown,
+        authoriseSession: () => {
+          authoriseSocket(socket);
+        },
       });
       socket.on('close', () => room.removeClient(socket));
       void sendStartupChangedFiles(canonicalSource, documentId, socket, room, canonicalSnapshot);
     } catch (error) {
       if (!(error instanceof AuthError)) console.error('[server] connection failed');
-      const closeCode = error instanceof ProtocolLimitError
-        ? error.closeCode
-        : error instanceof AuthError ? 1008 : 1011;
+      const closeCode =
+        error instanceof ProtocolLimitError ? error.closeCode : error instanceof AuthError ? 1008 : 1011;
       socket.close(closeCode, error.message || 'Server error');
     }
   });

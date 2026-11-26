@@ -1,10 +1,7 @@
 import path from 'node:path';
 import { runGitSync } from './git-executable.mts';
 import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mts';
-import {
-  readTrackedTextFile,
-  withoutUtf8Bom,
-} from '../../../packages/shared/src/text.mts';
+import { readTrackedTextFile, withoutUtf8Bom } from '../../../packages/shared/src/text.mts';
 
 function decode(value) {
   return Buffer.from(String(value ?? ''), 'base64').toString('utf8');
@@ -16,7 +13,10 @@ function encode(value) {
 
 function gitText(repository, commit, relativePath) {
   const shown = runGitSync(['show', `${commit}:${relativePath}`], {
-    cwd: repository, encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024,
+    cwd: repository,
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 16 * 1024 * 1024,
   });
   if (shown.status !== 0) throw new Error(`Файл ${relativePath} отсутствует в коммите ${commit.slice(0, 12)}.`);
   return withoutUtf8Bom(shown.stdout);
@@ -34,14 +34,21 @@ function changedLineCounts(before, after) {
   let removed = 0;
   for (const [line, count] of right) added += Math.max(0, count - (left.get(line) ?? 0));
   for (const [line, count] of left) removed += Math.max(0, count - (right.get(line) ?? 0));
-  const keys = (text) => new Map(text.split(/\r?\n/u).map((line) => {
-    const match = /^\s*([^#\s][^:]*?):(?:\d+)?\s/u.exec(line);
-    return match ? [match[1].trim(), line] : null;
-  }).filter(Boolean));
+  const keys = (text) =>
+    new Map(
+      text
+        .split(/\r?\n/u)
+        .map((line) => {
+          const match = /^\s*([^#\s][^:]*?):(?:\d+)?\s/u.exec(line);
+          return match ? [match[1].trim(), line] : null;
+        })
+        .filter(Boolean),
+    );
   const beforeKeys = keys(before);
   const afterKeys = keys(after);
-  const changedKeys = [...new Set([...beforeKeys.keys(), ...afterKeys.keys()])]
-    .filter((key) => beforeKeys.get(key) !== afterKeys.get(key));
+  const changedKeys = [...new Set([...beforeKeys.keys(), ...afterKeys.keys()])].filter(
+    (key) => beforeKeys.get(key) !== afterKeys.get(key),
+  );
   return { added, removed, changedKeys: changedKeys.slice(0, 200) };
 }
 
@@ -70,10 +77,18 @@ export class TicketWorkflow {
       const ticket = file.ticketInitialised === false ? base : withoutUtf8Bom(decode(file.ticketTextBase64));
       return { path: file.path, ...changedLineCounts(base, ticket), changed: base !== ticket };
     });
-    return { ticket: snapshot.ticket, files, totals: files.reduce((sum, file) => ({
-      added: sum.added + file.added, removed: sum.removed + file.removed,
-      changedFiles: sum.changedFiles + Number(file.changed),
-    }), { added: 0, removed: 0, changedFiles: 0 }) };
+    return {
+      ticket: snapshot.ticket,
+      files,
+      totals: files.reduce(
+        (sum, file) => ({
+          added: sum.added + file.added,
+          removed: sum.removed + file.removed,
+          changedFiles: sum.changedFiles + Number(file.changed),
+        }),
+        { added: 0, removed: 0, changedFiles: 0 },
+      ),
+    };
   }
 
   async diff(id, requestedFile = '') {
@@ -87,11 +102,9 @@ export class TicketWorkflow {
       path.resolve(this.hub.options.repo),
       id,
       snapshot.ticket.baseCommit,
-      snapshot.files.map((file) => [
-        file.path, file.ticketHash ?? '', file.ticketInitialised !== false,
-      ]),
+      snapshot.files.map((file) => [file.path, file.ticketHash ?? '', file.ticketInitialised !== false]),
     ]);
-    const create = async () => (
+    const create = async () =>
       snapshot.files.map((file) => {
         const base = gitText(this.hub.options.repo, snapshot.ticket.baseCommit, file.path);
         const ticket = file.ticketInitialised === false ? base : withoutUtf8Bom(decode(file.ticketTextBase64));
@@ -101,18 +114,17 @@ export class TicketWorkflow {
           ticketTextBase64: encode(ticket),
           changed: base !== ticket,
         };
-      })
-    );
-    const files = this.hub.diffCache
-      ? this.hub.diffCache.getOrCreate('ticket-diff', cacheKey, create)
-      : create();
+      });
+    const files = this.hub.diffCache ? this.hub.diffCache.getOrCreate('ticket-diff', cacheKey, create) : create();
     return { ticket: snapshot.ticket, files: await files };
   }
 
   async apply(id) {
     const snapshot = await this.snapshot(id);
     if (snapshot.ticket.baseBranch !== this.hub.options.workspace) {
-      throw new Error(`Тикет относится к ветке ${snapshot.ticket.baseBranch}, а Agent запущен для ${this.hub.options.workspace}.`);
+      throw new Error(
+        `Тикет относится к ветке ${snapshot.ticket.baseBranch}, а Agent запущен для ${this.hub.options.workspace}.`,
+      );
     }
     const results = [];
     const conflicts = [];
@@ -120,9 +132,7 @@ export class TicketWorkflow {
       const base = gitText(this.hub.options.repo, snapshot.ticket.baseCommit, file.path);
       const ticket = file.ticketInitialised === false ? base : withoutUtf8Bom(decode(file.ticketTextBase64));
       const absolutePath = path.resolve(this.hub.options.repo, file.path);
-      const collaborativeMain = file.mainInitialised === false
-        ? base
-        : withoutUtf8Bom(decode(file.mainTextBase64));
+      const collaborativeMain = file.mainInitialised === false ? base : withoutUtf8Bom(decode(file.mainTextBase64));
       const local = withoutUtf8Bom(await readTrackedTextFile(this.hub.options.repo, absolutePath));
       const mainMerge = mergeLocalisationThreeWay(base, collaborativeMain, local);
       const merge = mainMerge.conflicts.length
@@ -133,12 +143,16 @@ export class TicketWorkflow {
         continue;
       }
       results.push({
-        path: file.path, ticketHash: file.ticketHash, mainHash: file.mainHash, textBase64: encode(merge.text),
+        path: file.path,
+        ticketHash: file.ticketHash,
+        mainHash: file.mainHash,
+        textBase64: encode(merge.text),
       });
     }
     if (conflicts.length) return this.markConflict(id, 'apply', conflicts);
     const applied = await this.hub.ticketRequest(`/api/tickets/${encodeURIComponent(id)}/apply`, {
-      method: 'POST', body: JSON.stringify({ results }),
+      method: 'POST',
+      body: JSON.stringify({ results }),
     });
     for (const binding of this.hub.documents?.values?.() ?? []) binding.requestPersonalDocument?.();
     return { ok: true, ticket: applied.ticket, warnings: [] };
@@ -147,7 +161,9 @@ export class TicketWorkflow {
   async rebase(id) {
     const snapshot = await this.snapshot(id);
     if (snapshot.ticket.baseBranch !== this.hub.options.workspace) {
-      throw new Error(`Тикет относится к ветке ${snapshot.ticket.baseBranch}, а Agent запущен для ${this.hub.options.workspace}.`);
+      throw new Error(
+        `Тикет относится к ветке ${snapshot.ticket.baseBranch}, а Agent запущен для ${this.hub.options.workspace}.`,
+      );
     }
     const baseCommit = this.hub.currentGitCommit();
     const results = [];
@@ -161,14 +177,20 @@ export class TicketWorkflow {
         conflicts.push({ path: file.path, keys: merge.conflicts.map((item) => item.label) });
       } else {
         results.push({
-          path: file.path, ticketHash: file.ticketHash, mainHash: file.mainHash, textBase64: encode(merge.text),
+          path: file.path,
+          ticketHash: file.ticketHash,
+          mainHash: file.mainHash,
+          textBase64: encode(merge.text),
         });
       }
     }
     if (conflicts.length) return this.markConflict(id, 'rebase', conflicts);
     const rebased = await this.hub.ticketRequest(`/api/tickets/${encodeURIComponent(id)}/rebase`, {
-      method: 'POST', body: JSON.stringify({
-        baseBranch: this.hub.options.workspace, baseCommit, results,
+      method: 'POST',
+      body: JSON.stringify({
+        baseBranch: this.hub.options.workspace,
+        baseCommit,
+        results,
       }),
     });
     return { ok: true, ticket: rebased.ticket };

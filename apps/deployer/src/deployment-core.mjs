@@ -7,17 +7,26 @@ import { spawn } from 'node:child_process';
 
 const SAFE_REMOTE_ROOT = /^\/[A-Za-z0-9._/-]+$/;
 const SAFE_RELEASE_ID = /^[A-Za-z0-9._-]+$/;
-const LOCAL_DEPLOY_FILES = ['.env', 'docker-compose.override.yml', 'docker-compose.override.yaml', 'compose.override.yml', 'compose.override.yaml'];
+const LOCAL_DEPLOY_FILES = [
+  '.env',
+  'docker-compose.override.yml',
+  'docker-compose.override.yaml',
+  'compose.override.yml',
+  'compose.override.yaml',
+];
 const RUNTIME_SECURITY_BASELINE = '2026-10-21';
 
 export function validateDeploymentRequest(request) {
   const host = String(request?.host ?? '').trim();
   const username = String(request?.username ?? '').trim();
-  const remoteRoot = String(request?.remoteRoot ?? '').trim().replace(/\/+$/, '');
+  const remoteRoot = String(request?.remoteRoot ?? '')
+    .trim()
+    .replace(/\/+$/, '');
   const port = Number(request?.port ?? 22);
   if (!host || /[\s/\\]/.test(host)) throw new Error('Укажите корректный адрес VPS.');
   if (!username || !/^[A-Za-z0-9._-]+$/.test(username)) throw new Error('Укажите корректного SSH-пользователя.');
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('SSH-порт должен быть числом от 1 до 65535.');
+  if (!Number.isInteger(port) || port < 1 || port > 65535)
+    throw new Error('SSH-порт должен быть числом от 1 до 65535.');
   if (!SAFE_REMOTE_ROOT.test(remoteRoot) || remoteRoot === '/' || remoteRoot.includes('/../')) {
     throw new Error('Удалённый каталог должен быть безопасным абсолютным путём, но не корнем файловой системы.');
   }
@@ -34,7 +43,10 @@ export function fingerprintSha256(rawKey) {
 }
 
 export function deploymentId(version, now = new Date()) {
-  const stamp = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  const stamp = now
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}Z$/, 'Z');
   const result = `${version}-${stamp}`;
   if (!SAFE_RELEASE_ID.test(result)) throw new Error('Не удалось сформировать безопасный идентификатор выпуска.');
   return result;
@@ -129,7 +141,9 @@ export function remoteDeploymentCommand({ remoteRoot, uploadPath, releaseId, exp
     'attempt=0',
     'while [ "$attempt" -lt 30 ]; do',
     `  if command -v curl >/dev/null 2>&1 && curl -fsS ${healthUrl} >/tmp/eaw-hub-health.json 2>/dev/null; then healthy=1; break; fi`,
-    '  if command -v wget >/dev/null 2>&1 && wget -qO /tmp/eaw-hub-health.json "' + healthUrl + '" 2>/dev/null; then healthy=1; break; fi',
+    '  if command -v wget >/dev/null 2>&1 && wget -qO /tmp/eaw-hub-health.json "' +
+      healthUrl +
+      '" 2>/dev/null; then healthy=1; break; fi',
     '  attempt=$((attempt + 1))',
     '  sleep 2',
     'done',
@@ -145,8 +159,12 @@ function runProcess(file, args, options = {}) {
     const child = spawn(file, args, { windowsHide: true, ...options });
     let stdout = '';
     let stderr = '';
-    child.stdout?.on('data', (chunk) => { stdout += chunk; });
-    child.stderr?.on('data', (chunk) => { stderr += chunk; });
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk;
+    });
     child.once('error', reject);
     child.once('exit', (code) => {
       if (code === 0) resolve({ stdout, stderr });
@@ -187,13 +205,20 @@ export async function createServerPayload(projectRoot, version) {
     await mkdir(path.dirname(destination), { recursive: true });
     await cp(path.join(projectRoot, relative), destination, {
       recursive: true,
-      filter: (source) => !/(?:^|[\\/])(?:backups|rollbacks)(?:[\\/]|$)/i.test(source)
-        && !LOCAL_DEPLOY_FILES.includes(path.basename(source).toLowerCase()),
+      filter: (source) =>
+        !/(?:^|[\\/])(?:backups|rollbacks)(?:[\\/]|$)/i.test(source) &&
+        !LOCAL_DEPLOY_FILES.includes(path.basename(source).toLowerCase()),
     });
   }
-  await writeFile(path.join(stageRoot, 'deployment.json'), JSON.stringify({ version, createdAt: new Date().toISOString() }), 'utf8');
+  await writeFile(
+    path.join(stageRoot, 'deployment.json'),
+    JSON.stringify({ version, createdAt: new Date().toISOString() }),
+    'utf8',
+  );
   await runProcess(systemTar(), ['-czf', archivePath, '-C', stageRoot, '.']);
-  const digest = createHash('sha256').update(await readFile(archivePath)).digest('hex');
+  const digest = createHash('sha256')
+    .update(await readFile(archivePath))
+    .digest('hex');
   return {
     archivePath,
     digest,

@@ -1,7 +1,13 @@
 import { russianDictionaryPayload } from './spelling-dictionary.mjs';
 
 export async function handleSpellingHttp({
-  request, response, url, authStore, authenticatedUser, readJsonBody, sendJson,
+  request,
+  response,
+  url,
+  authStore,
+  authenticatedUser,
+  readJsonBody,
+  sendJson,
 }) {
   if (request.method === 'GET' && url.pathname === '/api/spelling/dictionary') {
     await authenticatedUser(request);

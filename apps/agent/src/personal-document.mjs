@@ -1,19 +1,26 @@
 import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
-import { applyUtf8ByteEdit, computeSingleReplace, normaliseLineEndings, utf8ByteOffsetToUtf16Index } from '../../../packages/shared/src/text.mts';
 import {
-  localisationSelectionChanges,
-  setLocalisationSelection,
-} from '../../../packages/shared/src/merge.mts';
+  applyUtf8ByteEdit,
+  computeSingleReplace,
+  normaliseLineEndings,
+  utf8ByteOffsetToUtf16Index,
+} from '../../../packages/shared/src/text.mts';
+import { localisationSelectionChanges, setLocalisationSelection } from '../../../packages/shared/src/merge.mts';
 
 const PERSONAL_REFRESH_DELAY_MS = 250;
 const PERSONAL_REFRESH_MAX_WAIT_MS = 2_000;
 
 function variantsPayload(binding) {
   const commit = binding.hub.gitCommit;
-  const git = commit && binding.variantGitCommit === commit && binding.variantGitText !== undefined
-    ? binding.variantGitText : binding.hub.readGitHeadText(binding.relativePath);
-  if (commit) { binding.variantGitCommit = commit; binding.variantGitText = git; }
+  const git =
+    commit && binding.variantGitCommit === commit && binding.variantGitText !== undefined
+      ? binding.variantGitText
+      : binding.hub.readGitHeadText(binding.relativePath);
+  if (commit) {
+    binding.variantGitCommit = commit;
+    binding.variantGitText = git;
+  }
   const shared = binding.text.toString();
   const local = localFileText(binding) ?? binding.personalText;
   const selection = localisationSelectionChanges(git, shared, local);
@@ -22,7 +29,8 @@ function variantsPayload(binding) {
   binding.personalSelectionShared = shared;
   binding.personalSelectionLocal = local;
   return {
-    shared, mine: binding.personalText,
+    shared,
+    mine: binding.personalText,
     mineRevision: crypto.createHash('sha256').update(binding.personalText).digest('hex'),
     git,
     contributors: binding.personalContributors,
@@ -37,11 +45,16 @@ function variantsPayload(binding) {
 }
 
 function sendVariants(client, state, absolutePath, payload) {
-  const message = { type: 'documentVariants', path: absolutePath,
-    contributors: payload.contributors, conflicts: payload.conflicts,
-    gitConflicts: payload.gitConflicts, localSelections: payload.localSelections,
+  const message = {
+    type: 'documentVariants',
+    path: absolutePath,
+    contributors: payload.contributors,
+    conflicts: payload.conflicts,
+    gitConflicts: payload.gitConflicts,
+    localSelections: payload.localSelections,
     localSelectionBlocked: payload.localSelectionBlocked,
-    localSelectionRevision: payload.localSelectionRevision };
+    localSelectionRevision: payload.localSelectionRevision,
+  };
   const compact = client.reviewCrdt && client.compactVariants && state.reviewSynced;
   if (!state.variantSharedSent && !compact) {
     message.sharedBase64 = Buffer.from(payload.shared, 'utf8').toString('base64');
@@ -53,12 +66,17 @@ function sendVariants(client, state, absolutePath, payload) {
   }
   if (state.variantMineText !== payload.mine) {
     const baseRevision = state.variantMineRevision ?? '';
-    const patch = !(compact && payload.mine === payload.git) && typeof state.variantMineText === 'string'
-      ? computeSingleReplace(state.variantMineText, payload.mine) : null;
+    const patch =
+      !(compact && payload.mine === payload.git) && typeof state.variantMineText === 'string'
+        ? computeSingleReplace(state.variantMineText, payload.mine)
+        : null;
     if (compact && payload.mine === payload.git) message.mineFromGit = true;
     else if (patch && Buffer.byteLength(patch.insertText, 'utf8') < Buffer.byteLength(payload.mine, 'utf8') / 2) {
-      message.minePatch = { positionByte: patch.positionByte, deleteBytes: patch.deleteBytes,
-        insertBase64: Buffer.from(patch.insertText, 'utf8').toString('base64') };
+      message.minePatch = {
+        positionByte: patch.positionByte,
+        deleteBytes: patch.deleteBytes,
+        insertBase64: Buffer.from(patch.insertText, 'utf8').toString('base64'),
+      };
       message.mineBaseRevision = baseRevision;
     } else message.mineBase64 = Buffer.from(payload.mine, 'utf8').toString('base64');
     state.variantMineText = payload.mine;
@@ -94,16 +112,22 @@ export function resetPersonalRequest(binding) {
 }
 
 export function schedulePersonalDocumentRefresh(binding) {
-  if (!binding.personalReady) { requestPersonalDocument(binding); return; }
+  if (!binding.personalReady) {
+    requestPersonalDocument(binding);
+    return;
+  }
   const now = Date.now();
   binding.personalRefreshStartedAt ??= now;
   const remaining = PERSONAL_REFRESH_MAX_WAIT_MS - (now - binding.personalRefreshStartedAt);
   clearTimeout(binding.personalRefreshTimer);
-  binding.personalRefreshTimer = setTimeout(() => {
-    binding.personalRefreshTimer = null;
-    binding.personalRefreshStartedAt = null;
-    requestPersonalDocument(binding);
-  }, Math.max(0, Math.min(PERSONAL_REFRESH_DELAY_MS, remaining)));
+  binding.personalRefreshTimer = setTimeout(
+    () => {
+      binding.personalRefreshTimer = null;
+      binding.personalRefreshStartedAt = null;
+      requestPersonalDocument(binding);
+    },
+    Math.max(0, Math.min(PERSONAL_REFRESH_DELAY_MS, remaining)),
+  );
   binding.personalRefreshTimer.unref?.();
 }
 
@@ -122,7 +146,14 @@ export function seedAttachedDocument(binding) {
 }
 
 export function requestPersonalDocument(binding) {
-  if (binding.ticketId || binding.closing || binding.paused || !binding.synced || binding.socket?.readyState !== WebSocket.OPEN) return;
+  if (
+    binding.ticketId ||
+    binding.closing ||
+    binding.paused ||
+    !binding.synced ||
+    binding.socket?.readyState !== WebSocket.OPEN
+  )
+    return;
   if (binding.personalRequestId) {
     binding.personalRefreshPending = true;
     return;
@@ -133,23 +164,29 @@ export function requestPersonalDocument(binding) {
     requestPersonalDocument(binding);
   }, 10_000);
   binding.personalRequestTimer.unref?.();
-  binding.socket.send(JSON.stringify({
-    type: 'personal-projection-get', requestId: binding.personalRequestId,
-    baseRevision: binding.personalRevision ?? '',
-    author: binding.hub.options.user, color: binding.hub.options.color,
-  }));
+  binding.socket.send(
+    JSON.stringify({
+      type: 'personal-projection-get',
+      requestId: binding.personalRequestId,
+      baseRevision: binding.personalRevision ?? '',
+      author: binding.hub.options.user,
+      color: binding.hub.options.color,
+    }),
+  );
 }
 
 export function handlePersonalDocument(binding, message) {
   const variantRequest = binding.variantRequests.get(message.requestId);
   if (variantRequest) {
     binding.variantRequests.delete(message.requestId);
-    if (!variantRequest.client.closed) variantRequest.client.send({
-      type: 'documentVariant', path: variantRequest.absolutePath,
-      authorId: message.subjectAuthorId,
-      variantEpoch: variantRequest.variantEpoch,
-      textBase64: message.textBase64,
-    });
+    if (!variantRequest.client.closed)
+      variantRequest.client.send({
+        type: 'documentVariant',
+        path: variantRequest.absolutePath,
+        authorId: message.subjectAuthorId,
+        variantEpoch: variantRequest.variantEpoch,
+        textBase64: message.textBase64,
+      });
     return;
   }
   if (!binding.personalRequestId || message.requestId !== binding.personalRequestId) return;
@@ -166,8 +203,10 @@ export function handlePersonalDocument(binding, message) {
       return;
     }
     projected = applyUtf8ByteEdit(
-      binding.serverPersonalText ?? binding.personalText, Number(message.patch.positionByte),
-      Number(message.patch.deleteBytes), Buffer.from(message.patch.insertBase64 ?? '', 'base64').toString('utf8'),
+      binding.serverPersonalText ?? binding.personalText,
+      Number(message.patch.positionByte),
+      Number(message.patch.deleteBytes),
+      Buffer.from(message.patch.insertBase64 ?? '', 'base64').toString('utf8'),
     );
   } else {
     projected = Buffer.from(message.textBase64 ?? '', 'base64').toString('utf8');
@@ -180,8 +219,9 @@ export function handlePersonalDocument(binding, message) {
     binding.personalSelectionSnapshot = null;
     saved = null;
   }
-  binding.personalSelectionStale = Boolean(saved
-    && crypto.createHash('sha256').update(git).digest('hex') !== saved.gitHash);
+  binding.personalSelectionStale = Boolean(
+    saved && crypto.createHash('sha256').update(git).digest('hex') !== saved.gitHash,
+  );
   if (saved && projected === saved.text) {
     binding.hub.clearPersonalSelection?.(binding.relativePath);
     binding.personalSelectionSnapshot = null;
@@ -189,12 +229,22 @@ export function handlePersonalDocument(binding, message) {
     saved = null;
   }
   let migrationSentNow = false;
-  if (saved && !binding.personalSelectionStale && !binding.personalSelectionMigrationSent
-    && binding.socket?.readyState === WebSocket.OPEN) {
+  if (
+    saved &&
+    !binding.personalSelectionStale &&
+    !binding.personalSelectionMigrationSent &&
+    binding.socket?.readyState === WebSocket.OPEN
+  ) {
     binding.personalSelectionMigrationSent = true;
     migrationSentNow = true;
-    binding.socket.send(JSON.stringify({ type: 'personal-projection-set', text: saved.text,
-      author: binding.hub.options.user, color: binding.hub.options.color }));
+    binding.socket.send(
+      JSON.stringify({
+        type: 'personal-projection-set',
+        text: saved.text,
+        author: binding.hub.options.user,
+        color: binding.hub.options.color,
+      }),
+    );
   }
   binding.personalText = saved && !binding.personalSelectionStale ? saved.text : projected;
   binding.personalRevision = String(message.revision ?? '');
@@ -226,10 +276,15 @@ export function requestDocumentVariant(binding, client, absolutePath, authorId, 
   if (binding.ticketId || !binding.synced || binding.socket?.readyState !== WebSocket.OPEN) return;
   const requestId = crypto.randomUUID();
   binding.variantRequests.set(requestId, { client, absolutePath, authorId, variantEpoch });
-  binding.socket.send(JSON.stringify({
-    type: 'personal-projection-get', requestId, subjectAuthorId: authorId,
-    author: binding.hub.options.user, color: binding.hub.options.color,
-  }));
+  binding.socket.send(
+    JSON.stringify({
+      type: 'personal-projection-get',
+      requestId,
+      subjectAuthorId: authorId,
+      author: binding.hub.options.user,
+      color: binding.hub.options.color,
+    }),
+  );
 }
 
 export function replacePersonalDocument(binding, text) {
@@ -243,25 +298,36 @@ export function replacePersonalDocument(binding, text) {
   binding.personalReady = true;
   binding.personalGitConflicts = [];
   binding.personalRevision = '';
-  if (binding.ticketId || binding.closing || binding.paused || !binding.synced
-    || binding.socket?.readyState !== WebSocket.OPEN) return false;
+  if (
+    binding.ticketId ||
+    binding.closing ||
+    binding.paused ||
+    !binding.synced ||
+    binding.socket?.readyState !== WebSocket.OPEN
+  )
+    return false;
   resetPersonalRequest(binding);
-  binding.socket.send(JSON.stringify({
-    type: 'personal-projection-set',
-    text: binding.personalText,
-    author: binding.hub.options.user,
-    color: binding.hub.options.color,
-  }));
+  binding.socket.send(
+    JSON.stringify({
+      type: 'personal-projection-set',
+      text: binding.personalText,
+      author: binding.hub.options.user,
+      color: binding.hub.options.color,
+    }),
+  );
   requestPersonalDocument(binding);
   return true;
 }
 
 export function localFileText(binding) {
-  const text = binding.personalMaterialisationMode === 'git'
-    ? binding.hub.readGitHeadText(binding.relativePath)
-    : (binding.ticketId ? binding.text.toString()
-      : binding.personalReady && !binding.personalSelectionStale
-        && !binding.personalGitConflicts?.length ? binding.personalText : null);
+  const text =
+    binding.personalMaterialisationMode === 'git'
+      ? binding.hub.readGitHeadText(binding.relativePath)
+      : binding.ticketId
+        ? binding.text.toString()
+        : binding.personalReady && !binding.personalSelectionStale && !binding.personalGitConflicts?.length
+          ? binding.personalText
+          : null;
   // Wire snapshots and their byte patches retain the server's exact encoding.
   // Disk comparisons instead use LF, just like readDiskText and secure writes.
   return text === null ? null : normaliseLineEndings(text);
@@ -282,23 +348,38 @@ export function setPersonalMaterialisation(binding, mode, absolutePath) {
     if (!state || state.binding !== binding) continue;
     binding.syncClientView(client, absolutePath);
     client.scheduleMaterialisation?.(absolutePath);
-    if (client.kind === 'review') client.send({
-      type: 'personalFileStatus', path: absolutePath, mode,
-      message: mode === 'git'
-        ? 'В рабочий файл записывается чистая версия Git HEAD.'
-        : 'Рабочий файл содержит Git HEAD и только ваши изменения.',
-    });
+    if (client.kind === 'review')
+      client.send({
+        type: 'personalFileStatus',
+        path: absolutePath,
+        mode,
+        message:
+          mode === 'git'
+            ? 'В рабочий файл записывается чистая версия Git HEAD.'
+            : 'Рабочий файл содержит Git HEAD и только ваши изменения.',
+      });
   }
 }
 
 export function setPersonalSelection(binding, absolutePath, changeId, include, revision) {
-  if (binding.ticketId || !binding.synced || !binding.gitWritable || binding.personalGitConflicts?.length
-    || binding.personalSelectionStale) return false;
+  if (
+    binding.ticketId ||
+    !binding.synced ||
+    !binding.gitWritable ||
+    binding.personalGitConflicts?.length ||
+    binding.personalSelectionStale
+  )
+    return false;
   const git = binding.hub.readGitHeadText(binding.relativePath);
   const shared = binding.text.toString();
-  if (!revision || revision !== binding.personalSelectionRevision
-    || git !== binding.personalSelectionGit || shared !== binding.personalSelectionShared
-    || localFileText(binding) !== binding.personalSelectionLocal) return false;
+  if (
+    !revision ||
+    revision !== binding.personalSelectionRevision ||
+    git !== binding.personalSelectionGit ||
+    shared !== binding.personalSelectionShared ||
+    localFileText(binding) !== binding.personalSelectionLocal
+  )
+    return false;
   const current = localFileText(binding);
   if (current === null) return false;
   let next;
@@ -332,8 +413,14 @@ export function edit(binding, client, absolutePath, message) {
   if (!binding.ticketId && client.kind !== 'review') {
     state.mirror = nextVisible;
     binding.personalText = nextVisible;
-    binding.queueExternalMerge(client, absolutePath, state, previousVisible, nextVisible,
-      'Изменения объединены с совместным документом.');
+    binding.queueExternalMerge(
+      client,
+      absolutePath,
+      state,
+      previousVisible,
+      nextVisible,
+      'Изменения объединены с совместным документом.',
+    );
     if (binding.personalMaterialisationMode === 'git') {
       binding.personalMaterialisationMode = 'mine';
       binding.hub.savePersonalMode(binding.relativePath, 'mine').catch(() => {});
@@ -357,7 +444,8 @@ export function snapshot(binding, client, absolutePath, message) {
   const replacement = computeSingleReplace(state.mirror, nextText);
   if (!replacement) return true;
   return edit(binding, client, absolutePath, {
-    positionByte: replacement.positionByte, deleteBytes: replacement.deleteBytes,
+    positionByte: replacement.positionByte,
+    deleteBytes: replacement.deleteBytes,
     insertBase64: Buffer.from(replacement.insertText, 'utf8').toString('base64'),
   });
 }

@@ -20,28 +20,44 @@ function fixture({ deleted = true, indexed = true, stored = true } = {}) {
   const content = document.getText('content');
   content.insert(0, text);
   const start = text.indexOf('Второе');
-  const relative = (offset, associate) => Buffer.from(Y.encodeRelativePosition(
-    Y.createRelativePositionFromTypeIndex(content, offset, associate),
-  )).toString('base64');
+  const relative = (offset, associate) =>
+    Buffer.from(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(content, offset, associate))).toString(
+      'base64',
+    );
   const room = {
-    document, gitBase: { branch, commit }, currentText: () => content.toString(),
-    commentThreads: [{
-      id: 'thread', author: 'Reviewer', status: 'open',
-      startRelative: relative(start, -1), endRelative: relative(start + 6, 0),
-      messages: [{ id: 'message', author: 'Reviewer', body: 'Проверить перевод' }],
-    }],
+    document,
+    gitBase: { branch, commit },
+    currentText: () => content.toString(),
+    commentThreads: [
+      {
+        id: 'thread',
+        author: 'Reviewer',
+        status: 'open',
+        startRelative: relative(start, -1),
+        endRelative: relative(start + 6, 0),
+        messages: [{ id: 'message', author: 'Reviewer', body: 'Проверить перевод' }],
+      },
+    ],
     suggestions: [],
   };
   const registry = {
-    branchHints: new Map([[branch, { commit }]]), mergedBranches: new Map(),
+    branchHints: new Map([[branch, { commit }]]),
+    mergedBranches: new Map(),
     persisted: new Map(stored ? [[hash, 100]] : []),
-    documentIdsForBranch: () => indexed ? [documentId] : [],
-    unresolvedLegacyHashes: () => indexed ? [] : [hash],
-    get: async (id) => { assert.equal(id, documentId); return room; },
+    documentIdsForBranch: () => (indexed ? [documentId] : []),
+    unresolvedLegacyHashes: () => (indexed ? [] : [hash]),
+    get: async (id) => {
+      assert.equal(id, documentId);
+      return room;
+    },
   };
   const canonical = {
-    enabled: true, githubRepository: 'EaW-Team/equestria_dev',
-    branchDeleted: async (name) => { assert.equal(name, branch); return deleted; },
+    enabled: true,
+    githubRepository: 'EaW-Team/equestria_dev',
+    branchDeleted: async (name) => {
+      assert.equal(name, branch);
+      return deleted;
+    },
   };
   const tickets = { list: () => [{ baseBranch: branch }] };
   return { archive: new DeletedBranchArchive(canonical, registry, tickets), document, registry };
@@ -50,14 +66,24 @@ function fixture({ deleted = true, indexed = true, stored = true } = {}) {
 test('deleted branch archive lists saved files and opens text with positioned comments', async () => {
   const { archive, document } = fixture();
   try {
-    assert.deepEqual(await archive.list(), { branches: [{
-      branch, commit, files: [file], unknownCount: 0, tickets: 1,
-    }] });
+    assert.deepEqual(await archive.list(), {
+      branches: [
+        {
+          branch,
+          commit,
+          files: [file],
+          unknownCount: 0,
+          tickets: 1,
+        },
+      ],
+    });
     const snapshot = await archive.document(branch, file);
     assert.equal(Buffer.from(snapshot.textBase64, 'base64').toString('utf8'), text);
     assert.equal(snapshot.comments[0].line, 3);
     assert.equal(snapshot.comments[0].messages[0].body, 'Проверить перевод');
-  } finally { document.destroy(); }
+  } finally {
+    document.destroy();
+  }
 });
 
 test('missing path index remains discoverable by manual path, without inventing rooms', async () => {
@@ -67,7 +93,9 @@ test('missing path index remains discoverable by manual path, without inventing 
     assert.equal((await archive.document(branch, file)).relativePath, file);
     assert.equal(await archive.document(branch, 'localisation/russian/absent_l_russian.yml'), null);
     assert.equal(await archive.document(branch, '../secret.yml'), null);
-  } finally { document.destroy(); }
+  } finally {
+    document.destroy();
+  }
 });
 
 test('a live or merged branch is never exposed as a deleted-branch archive', async () => {
@@ -77,13 +105,18 @@ test('a live or merged branch is never exposed as a deleted-branch archive', asy
     assert.equal(await archive.document(branch, file), null);
     registry.mergedBranches.set(branch, { target: 'general-dev' });
     assert.deepEqual((await archive.list()).branches, []);
-  } finally { document.destroy(); }
+  } finally {
+    document.destroy();
+  }
 });
 
 test('a persisted record is required before an archived file can be opened', async () => {
   const { archive, document } = fixture({ stored: false });
-  try { assert.equal(await archive.document(branch, file), null); }
-  finally { document.destroy(); }
+  try {
+    assert.equal(await archive.document(branch, file), null);
+  } finally {
+    document.destroy();
+  }
 });
 
 test('an indexed hash without both saved document files cannot create an archive room', async () => {

@@ -132,10 +132,8 @@ test('local prototype exercises the production canonical Git path', () => {
   assert.match(common, /GitOriginDirectory/u);
   assert.match(start, /EAW_HUB_CANONICAL_REPOSITORY/u);
   assert.match(start, /local-prototype-git\.ps1'\) -Action Prepare/u);
-  assert.match(gitLab, /'localisation\\replace'/u,
-    'the canonical probe must also cover localisation/replace');
-  assert.match(gitLab, /'pull', '--ff-only'/u,
-    'updating a test participant must never overwrite local work');
+  assert.match(gitLab, /'localisation\\replace'/u, 'the canonical probe must also cover localisation/replace');
+  assert.match(gitLab, /'pull', '--ff-only'/u, 'updating a test participant must never overwrite local work');
   assert.match(launcher, /Invoke-GitLabAction 'Publish'/u);
   assert.match(launcher, /Invoke-GitLabAction 'SyncA'/u);
   assert.match(launcher, /Invoke-GitLabAction 'SyncB'/u);
@@ -151,26 +149,54 @@ test('Review owns the complete collaboration UI without a native editor plugin',
     'apps/review/src/review-cards.ts',
     'apps/review/src/avatar-profile.ts',
     'apps/review/src/recovery-banner.ts',
-  ].map(source).join('\n');
+  ]
+    .map(source)
+    .join('\n');
   for (const command of [
-    'undo', 'redo', 'reservationCreate', 'reservationDeleteAt', 'reservationDelete',
-    'commentCreate', 'commentReply', 'commentStatus', 'commentDelete', 'discussionMessageUpdate', 'discussionMessageDelete',
-    'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept', 'suggestionReject',
-    'suggestionDelete', 'avatarSet', 'avatarDelete', 'recoveryIssue', 'recoveryConfirm',
-    'recoveryDiscard', 'externalConflictResolve',
+    'undo',
+    'redo',
+    'reservationCreate',
+    'reservationDeleteAt',
+    'reservationDelete',
+    'commentCreate',
+    'commentReply',
+    'commentStatus',
+    'commentDelete',
+    'discussionMessageUpdate',
+    'discussionMessageDelete',
+    'suggestionCreate',
+    'suggestionUpdate',
+    'suggestionReply',
+    'suggestionAccept',
+    'suggestionReject',
+    'suggestionDelete',
+    'avatarSet',
+    'avatarDelete',
+    'recoveryIssue',
+    'recoveryConfirm',
+    'recoveryDiscard',
+    'externalConflictResolve',
   ]) {
     assert.match(reviewSources, new RegExp(`['\"]${command}['\"]`, 'u'), `${command} is absent from Review`);
   }
   assert.match(source('apps/review/src/presence-controller.ts'), /setInterval\(publish, HEARTBEAT_MILLISECONDS\)/u);
-  assert.match(source('apps/review/src/editor-coordinates.ts'), /byteToUtf16, utf16ToByte/u,
-    'Review coordinate commands must import their UTF-8 offset converters');
-  assert.match(source('apps/review/src/app.ts'), /positionByteAt,/u,
-    'Review navigation must use the dedicated coordinate converter');
+  assert.match(
+    source('apps/review/src/editor-coordinates.ts'),
+    /byteToUtf16, utf16ToByte/u,
+    'Review coordinate commands must import their UTF-8 offset converters',
+  );
+  assert.match(
+    source('apps/review/src/app.ts'),
+    /positionByteAt,/u,
+    'Review navigation must use the dedicated coordinate converter',
+  );
   const cursorLayer = source('apps/review/src/presence-cursors.ts');
-  assert.match(cursorLayer, /addContentWidget/u,
-    'Review caret must use a non-layout-shifting Monaco content widget');
-  assert.match(cursorLayer, /ContentWidgetPositionPreference\.EXACT/u,
-    'Review caret must be anchored at the exact Monaco column');
+  assert.match(cursorLayer, /addContentWidget/u, 'Review caret must use a non-layout-shifting Monaco content widget');
+  assert.match(
+    cursorLayer,
+    /ContentWidgetPositionPreference\.EXACT/u,
+    'Review caret must be anchored at the exact Monaco column',
+  );
 });
 
 test('standalone Review has no Notepad++ bridge or plugin build', () => {
@@ -185,16 +211,16 @@ test('standalone Review has no Notepad++ bridge or plugin build', () => {
 test('inline suggestion editing validates the canonical range before projecting text', () => {
   const editing = source('apps/review/src/editing-mode.ts');
   const app = source('apps/review/src/app.ts');
-  const block = editing.slice(
-    editing.indexOf('function editSuggestion'),
-    editing.indexOf('const contentSubscription'),
-  );
+  const block = editing.slice(editing.indexOf('function editSuggestion'), editing.indexOf('const contentSubscription'));
   assert.match(block, /byteToUtf16/u);
   assert.match(block, /baseText\.slice\(start, end\) !== original/u);
   assert.match(block, /state\.applyingRemote = true[\s\S]*pushEditOperations/u);
   assert.match(block, /type: 'suggestionUpdate'/u);
-  assert.match(app, /state\.editingSuggestionId \|\| !editingMode\.isSuggesting\(\)/u,
-    'ordinary editing mode must not reopen a suggestion merely because it was clicked');
+  assert.match(
+    app,
+    /state\.editingSuggestionId \|\| !editingMode\.isSuggesting\(\)/u,
+    'ordinary editing mode must not reopen a suggestion merely because it was clicked',
+  );
 });
 
 test('suggestion typing is not split by an idle finalisation timer', () => {
@@ -209,14 +235,26 @@ test('Review keeps inserted and deleted suggestion text visible without hover', 
   assert.match(decorations, /before: \{ content: part\.text, inlineClassName: strikeClass \}/u);
   assert.match(decorations, /inlineClassName: replacementClass/u);
   assert.doesNotMatch(decorations, /[бБ]ыло:|стало:/u);
-  assert.match(decorations, /part\.kind === 'delete' && !part\.text\.includes\('\\n'\)/u,
-    'only actually deleted text must remain as struck injected text');
-  assert.match(decorations, /changeViewZones[\s\S]*active-suggestion-original-zone/u,
-    'a multiline original must use a view zone instead of invalid multiline injected text');
-  assert.match(decorations, /showIfCollapsed: true/u,
-    'a zero-width insertion must be rendered even when its Monaco range is collapsed');
-  assert.doesNotMatch(decorations, /before: original && replacement/u,
-    'a completed replacement must be displayed after its struck original');
+  assert.match(
+    decorations,
+    /part\.kind === 'delete' && !part\.text\.includes\('\\n'\)/u,
+    'only actually deleted text must remain as struck injected text',
+  );
+  assert.match(
+    decorations,
+    /changeViewZones[\s\S]*active-suggestion-original-zone/u,
+    'a multiline original must use a view zone instead of invalid multiline injected text',
+  );
+  assert.match(
+    decorations,
+    /showIfCollapsed: true/u,
+    'a zero-width insertion must be rendered even when its Monaco range is collapsed',
+  );
+  assert.doesNotMatch(
+    decorations,
+    /before: original && replacement/u,
+    'a completed replacement must be displayed after its struck original',
+  );
 });
 
 test('Review lane anchors cards beside their text and resolves vertical collisions', () => {
@@ -225,15 +263,24 @@ test('Review lane anchors cards beside their text and resolves vertical collisio
   const styles = source('apps/review/src/style.css');
   assert.match(layout, /desiredTop: editor\.getTopForLineNumber/u);
   assert.match(layout, /nextTop = top \+ height \+ 8/u);
-  assert.match(layout, /requestAnimationFrame\(performLayout\)/u,
-    'multiple scroll and collaboration updates share one layout frame');
+  assert.match(
+    layout,
+    /requestAnimationFrame\(performLayout\)/u,
+    'multiple scroll and collaboration updates share one layout frame',
+  );
   assert.match(styles, /#review-lane[\s\S]*overflow-y: auto/u);
   assert.match(styles, /#cards[\s\S]*position: relative/u);
   assert.match(styles, /\.review-card[\s\S]*position: absolute/u);
-  assert.match(styles, /\.comparison \.empty-marker[\s\S]*white-space: nowrap/u,
-    'the insertion/deletion marker must never collapse into a vertical word');
-  assert.match(cards, /visibleComparisonText\(part\.text\)/u,
-    'a newline-only suggestion must not render as an empty card');
+  assert.match(
+    styles,
+    /\.comparison \.empty-marker[\s\S]*white-space: nowrap/u,
+    'the insertion/deletion marker must never collapse into a vertical word',
+  );
+  assert.match(
+    cards,
+    /visibleComparisonText\(part\.text\)/u,
+    'a newline-only suggestion must not render as an empty card',
+  );
 });
 
 test('Review editor preferences and spelling remain explicit user-controlled aids', () => {
@@ -257,41 +304,74 @@ test('Review editor preferences and spelling remain explicit user-controlled aid
   assert.match(spelling, /kind: 'quickfix'/u);
   assert.match(spelling, /editor\.action\.codeAction/u);
   assert.match(spelling, /KeyCode\.Period/u);
-  assert.match(spelling, /event\.key !== '\.'/u,
-    'the quick-fix shortcut must recognise the period on a different physical key');
+  assert.match(
+    spelling,
+    /event\.key !== '\.'/u,
+    'the quick-fix shortcut must recognise the period on a different physical key',
+  );
   assert.match(spelling, /MAX_CHECKED_LINES = 240/u);
   assert.match(spelling, /\/api\/spelling\/dictionary/u);
   assert.match(spelling, /общий словарь сервера/u);
   assert.match(spelling, /new Worker\('\/spellcheck-worker\.js'/u);
-  assert.match(spelling, /start\(\)[\s\S]*started = true[\s\S]*schedule\(\)/u,
-    'spellcheck must wait until the collaborative document is ready');
+  assert.match(
+    spelling,
+    /start\(\)[\s\S]*started = true[\s\S]*schedule\(\)/u,
+    'spellcheck must wait until the collaborative document is ready',
+  );
   assert.match(source('apps/review/src/app.ts'), /documentReady[\s\S]*spellcheck\.start\(\)/u);
-  assert.doesNotMatch(spelling, /onDidChangeModelContent\([^)]*clear/u,
-    'typing must keep the previous markers visible until the replacement result is ready');
-  assert.doesNotMatch(spelling, /onDidScrollChange[\s\S]{0,240}clear\(\)/u,
-    'scrolling must not flash markers while the next viewport check is pending');
+  assert.doesNotMatch(
+    spelling,
+    /onDidChangeModelContent\([^)]*clear/u,
+    'typing must keep the previous markers visible until the replacement result is ready',
+  );
+  assert.doesNotMatch(
+    spelling,
+    /onDidScrollChange[\s\S]{0,240}clear\(\)/u,
+    'scrolling must not flash markers while the next viewport check is pending',
+  );
   assert.match(spellingWorker, /spellingIssues/u);
   assert.match(spellingWorker, /checker\.suggest/u);
-  assert.match(spellingWorker, /new TextDecoder\('utf-8'\)[\s\S]*nspell\(\{ aff: decodeBase64Text/u,
-    'nspell dictionaries must be decoded as text so browser suggestions are not silently empty');
+  assert.match(
+    spellingWorker,
+    /new TextDecoder\('utf-8'\)[\s\S]*nspell\(\{ aff: decodeBase64Text/u,
+    'nspell dictionaries must be decoded as text so browser suggestions are not silently empty',
+  );
   assert.match(spelling, /createDecorationsCollection/u);
   assert.match(spelling, /onMouseDown[\s\S]*rightButton/u);
   assert.match(spelling, /addAction\([\s\S]*Добавить слово в общий словарь/u);
   assert.match(spelling, /addAction\([\s\S]*Открыть быстрые исправления/u);
-  assert.match(spelling, /Открыть быстрые исправления[\s\S]*openQuickFixPanel\(issue\)/u,
-    'the context action must open the application-owned quick-fix panel');
-  assert.match(spelling, /button\.addEventListener\('click', \(\) => replaceIssue\(issue, suggestion\)\)/u,
-    'a replacement must run only after the user chooses that suggestion');
-  assert.doesNotMatch(spelling, /setModelMarkers|hoverMessage/u,
-    'spelling underlines must not open anything on pointer hover');
+  assert.match(
+    spelling,
+    /Открыть быстрые исправления[\s\S]*openQuickFixPanel\(issue\)/u,
+    'the context action must open the application-owned quick-fix panel',
+  );
+  assert.match(
+    spelling,
+    /button\.addEventListener\('click', \(\) => replaceIssue\(issue, suggestion\)\)/u,
+    'a replacement must run only after the user chooses that suggestion',
+  );
+  assert.doesNotMatch(
+    spelling,
+    /setModelMarkers|hoverMessage/u,
+    'spelling underlines must not open anything on pointer hover',
+  );
   assert.match(styles, /\.spelling-error[\s\S]*text-decoration-style: wavy/u);
   assert.match(styles, /\.spelling-quick-fix-panel[\s\S]*position: fixed/u);
-  assert.match(spellingDictionary, /new Worker/u,
-    'building the large supplemental dictionary must not block authentication or document sockets');
-  assert.doesNotMatch(spellingHttp, /body\.text|spellingIssues|suggestRussianSpelling/u,
-    'the server must distribute dictionaries, not process user documents');
-  assert.doesNotMatch(source('apps/review/src/app.ts'), /KeyCode\.(?:Equal|NumpadAdd)/u,
-    'the application zoom shortcut must remain available');
+  assert.match(
+    spellingDictionary,
+    /new Worker/u,
+    'building the large supplemental dictionary must not block authentication or document sockets',
+  );
+  assert.doesNotMatch(
+    spellingHttp,
+    /body\.text|spellingIssues|suggestRussianSpelling/u,
+    'the server must distribute dictionaries, not process user documents',
+  );
+  assert.doesNotMatch(
+    source('apps/review/src/app.ts'),
+    /KeyCode\.(?:Equal|NumpadAdd)/u,
+    'the application zoom shortcut must remain available',
+  );
 });
 
 test('Review suppresses ambiguous Unicode boxes in every editor while retaining invisible-character warnings', () => {
@@ -301,7 +381,11 @@ test('Review suppresses ambiguous Unicode boxes in every editor while retaining 
     'apps/review/src/ticket-panel.ts',
     'apps/review/src/git-conflict-diff.ts',
   ]) {
-    assert.match(source(file), /unicodeHighlight:\s*\{\s*ambiguousCharacters:\s*false,\s*invisibleCharacters:\s*true\s*\}/u, file);
+    assert.match(
+      source(file),
+      /unicodeHighlight:\s*\{\s*ambiguousCharacters:\s*false,\s*invisibleCharacters:\s*true\s*\}/u,
+      file,
+    );
   }
 });
 
@@ -309,12 +393,18 @@ test('Review hides the Git conflict section unless unresolved conflicts exist', 
   const markup = source('apps/review/src/index.html');
   const panel = source('apps/review/src/collaboration-panel.ts');
   const styles = source('apps/review/src/style.css');
-  assert.match(markup, /class="side-section conflicts-section" hidden/u,
-    'the empty section must not flash while Review is loading');
+  assert.match(
+    markup,
+    /class="side-section conflicts-section" hidden/u,
+    'the empty section must not flash while Review is loading',
+  );
   assert.match(panel, /conflictSection\.hidden = values\.length === 0/u);
   assert.doesNotMatch(panel, /emptyList\(conflictList, 'Конфликтов нет\.'/u);
-  assert.match(styles, /\.conflicts-section\[hidden\] \{ display: none; \}/u,
-    'the flex display rule must not override the hidden attribute');
+  assert.match(
+    styles,
+    /\.conflicts-section\[hidden\] \{ display: none; \}/u,
+    'the flex display rule must not override the hidden attribute',
+  );
 });
 
 test('Review workspace tabs persist document position and the launcher restores the last file', () => {
@@ -351,17 +441,26 @@ test('Review workbench keeps menus, a wrapping toolbar and shared tabs aligned a
   assert.match(styles, /\.workspace-window > \.document-tabs \{[^}]*position:absolute/u);
   assert.ok(markup.indexOf('class="actions"') < markup.indexOf('id="document-tabs"'));
   assert.match(markup, /<footer class="review-statusbar">/u);
-  assert.match(layout, /postWorkspace\('layout',layout\)/u);
-  assert.match(layout, /target && !target.disabled && !target.hidden/u,
-    'menu proxies must never bypass disabled collaboration actions');
+  assert.match(layout, /postWorkspace\('layout',\s*layout\)/u);
+  assert.match(
+    layout,
+    /target && !target.disabled && !target.hidden/u,
+    'menu proxies must never bypass disabled collaboration actions',
+  );
   assert.match(layout, /signature !== lastLayout/u, 'unchanged layout must not flood the workspace bridge');
   assert.match(layout, /document.querySelector\('dialog\[open\]'\)/u);
   assert.match(shell, /if \(picker.open\) return/u, 'file shortcuts must not close a document behind a modal');
-  assert.match(shell, /document.addEventListener\('keydown',shortcuts\)/u,
-    'file shortcuts must also work when the shared tab strip owns keyboard focus');
+  assert.match(
+    shell,
+    /document.addEventListener\('keydown',\s*shortcuts\)/u,
+    'file shortcuts must also work when the shared tab strip owns keyboard focus',
+  );
   assert.match(shell, /data.operation === 'layout' && s === active/u);
-  assert.match(shell, /bar.classList.toggle\('occluded',Boolean\(data.overlay\)\)/u,
-    'child menus and modals must paint above the cross-document tab bar');
+  assert.match(
+    shell,
+    /bar.classList.toggle\('occluded',\s*Boolean\(data.overlay\)\)/u,
+    'child menus and modals must paint above the cross-document tab bar',
+  );
   assert.match(layout, /new ResizeObserver\(refresh\)/u);
 });
 
@@ -374,26 +473,44 @@ test('personal file controls expose per-key gutter and dialog selection with a v
   assert.match(markup, /id="local-file-notice"/u);
   assert.match(markup, /id="personal-file-selections"/u);
   assert.match(variants, /openButton\.addEventListener\('click', openDialog\)/u);
-  assert.match(variants, /editor\.getValue\(\) === text/u,
-    'an unchanged personal-file preview must not flush the Monaco model');
-  assert.match(variants, /renderSelections\(true\)[\s\S]*renderConflicts\(true\)[\s\S]*dialog\.showModal\(\)/u,
-    'the local-file dialog must render its current contents before opening');
+  assert.match(
+    variants,
+    /editor\.getValue\(\) === text/u,
+    'an unchanged personal-file preview must not flush the Monaco model',
+  );
+  assert.match(
+    variants,
+    /renderSelections\(true\)[\s\S]*renderConflicts\(true\)[\s\S]*dialog\.showModal\(\)/u,
+    'the local-file dialog must render its current contents before opening',
+  );
   assert.match(variants, /type: 'personalFileSelectionSet'/u);
   assert.match(variants, /checkbox\.addEventListener\('change'/u);
   assert.match(variants, /GUTTER_GLYPH_MARGIN/u);
-  assert.match(variants, /isWholeLine: false/u,
-    'one local-file glyph must belong to one model line, not every visual wrap row');
+  assert.match(
+    variants,
+    /isWholeLine: false/u,
+    'one local-file glyph must belong to one model line, not every visual wrap row',
+  );
   assert.doesNotMatch(variants, /isWholeLine: true/u);
-  assert.match(variants, /classList\?\.contains\('local-file-check'\)/u,
-    'clicking another Monaco gutter decoration must not toggle local-file selection');
+  assert.match(
+    variants,
+    /classList\?\.contains\('local-file-check'\)/u,
+    'clicking another Monaco gutter decoration must not toggle local-file selection',
+  );
   assert.match(hub, /message\.type === 'personalFileSelectionSet'/u);
-  assert.match(hub, /reviewContentMutations[\s\S]*setPersonalMaterialisation\('mine', absolutePath\)/u,
-    'a content-changing Review action must resume personal-file materialisation');
+  assert.match(
+    hub,
+    /reviewContentMutations[\s\S]*setPersonalMaterialisation\('mine', absolutePath\)/u,
+    'a content-changing Review action must resume personal-file materialisation',
+  );
 });
 
 test('Review updates its document context and becomes read-only while Git switches branches', () => {
   const app = source('apps/review/src/app.ts');
-  const handler = app.slice(app.indexOf("message.type === 'workspaceChanged'"), app.indexOf("message.type === 'error'"));
+  const handler = app.slice(
+    app.indexOf("message.type === 'workspaceChanged'"),
+    app.indexOf("message.type === 'error'"),
+  );
   assert.match(handler, /#document-name/u);
   assert.match(handler, /state\.ready = false/u);
   assert.match(handler, /readOnly: true/u);
@@ -426,7 +543,10 @@ test('Git history, document history, and localisation audit share the compact wr
   assert.match(standard, /hideUnchangedRegions: \{ enabled: false \}/u);
   assert.match(standard, /diff\.onDidUpdateDiff\(showChangedRegionsOnly\)/u);
   assert.match(standard, /setHiddenAreas\(diff\.getOriginalEditor\(\), hiddenRanges/u);
-  assert.match(standard, /layoutFrame = window\.requestAnimationFrame\([\s\S]*diff\.layout\(\);[\s\S]*showChangedRegionsOnly\(\)/u);
+  assert.match(
+    standard,
+    /layoutFrame = window\.requestAnimationFrame\([\s\S]*diff\.layout\(\);[\s\S]*showChangedRegionsOnly\(\)/u,
+  );
   assert.match(standard, /automaticLayout: !preserveOnDeactivate/u);
   assert.match(standard, /if \(preserveOnDeactivate\) diff\.getOriginalEditor\(\)\.layout\(\)/u);
   assert.match(style, /\.standard-diff \.diagonal-fill/u);

@@ -44,8 +44,12 @@ export class RoomRegistry {
       const index = JSON.parse(await fs.readFile(this.indexPath, 'utf8'));
       if (index.schema === 1 && index.documents && typeof index.documents === 'object') {
         for (const [hash, documentId] of Object.entries(index.documents)) {
-          if (typeof documentId !== 'string' || !/^[0-9a-f]{64}$/u.test(hash)
-            || crypto.createHash('sha256').update(documentId).digest('hex') !== hash) continue;
+          if (
+            typeof documentId !== 'string' ||
+            !/^[0-9a-f]{64}$/u.test(hash) ||
+            crypto.createHash('sha256').update(documentId).digest('hex') !== hash
+          )
+            continue;
           this.knownDocuments.set(hash, documentId);
           this.indexedDocuments.add(hash);
         }
@@ -85,8 +89,12 @@ export class RoomRegistry {
         const { branch, commit, checkedAt: timestamp = 0 } = metadata.gitBase ?? {};
         if (typeof branch !== 'string' || !branch) continue;
         const checkedAt = typeof timestamp === 'string' ? Number(timestamp) : timestamp;
-        if (typeof commit === 'string' && /^[0-9a-f]{40}$/u.test(commit) && Number.isFinite(checkedAt)
-          && checkedAt >= (this.branchHints.get(branch)?.checkedAt ?? -1)) {
+        if (
+          typeof commit === 'string' &&
+          /^[0-9a-f]{40}$/u.test(commit) &&
+          Number.isFinite(checkedAt) &&
+          checkedAt >= (this.branchHints.get(branch)?.checkedAt ?? -1)
+        ) {
           this.branchHints.set(branch, { commit, checkedAt });
         }
         if (!this.knownDocuments.has(match[1])) {
@@ -96,19 +104,24 @@ export class RoomRegistry {
         }
       }
     }
-    if (this.persisted.size > MAX_PERSISTED_ROOMS
-      || this.persistedTotalBytes > MAX_PERSISTED_DOCUMENT_BYTES) {
+    if (this.persisted.size > MAX_PERSISTED_ROOMS || this.persistedTotalBytes > MAX_PERSISTED_DOCUMENT_BYTES) {
       throw new Error('Persisted document storage already exceeds the configured safety budget');
     }
     for (const [branch, merge] of this.mergedBranches) {
-      const documents = (Array.isArray(merge.documentIds) ? merge.documentIds : [])
-        .filter((id) => typeof id === 'string' && id.startsWith(`${branch}:`)
-          && this.persisted.has(crypto.createHash('sha256').update(id).digest('hex')));
+      const documents = (Array.isArray(merge.documentIds) ? merge.documentIds : []).filter(
+        (id) =>
+          typeof id === 'string' &&
+          id.startsWith(`${branch}:`) &&
+          this.persisted.has(crypto.createHash('sha256').update(id).digest('hex')),
+      );
       if (documents.length) await this.deleteDocuments(documents, `Branch merged into ${merge.target}`);
     }
-    this.evictionTimer = setInterval(() => {
-      this.evictIdleRooms().catch(() => console.error('[server] idle room eviction failed'));
-    }, Math.min(30_000, ROOM_IDLE_MILLISECONDS));
+    this.evictionTimer = setInterval(
+      () => {
+        this.evictIdleRooms().catch(() => console.error('[server] idle room eviction failed'));
+      },
+      Math.min(30_000, ROOM_IDLE_MILLISECONDS),
+    );
     this.evictionTimer.unref();
     if (this.canonicalSource?.enabled) {
       this.canonicalTimer = setInterval(() => {
@@ -138,10 +151,11 @@ export class RoomRegistry {
   }
 
   documentIdsForBranch(branch, targetPaths = []) {
-    const result = new Set([...this.knownDocuments]
-      .filter(([hash, documentId]) => this.persisted.has(hash)
-        && documentId.startsWith(`${branch}:`))
-      .map(([, documentId]) => documentId));
+    const result = new Set(
+      [...this.knownDocuments]
+        .filter(([hash, documentId]) => this.persisted.has(hash) && documentId.startsWith(`${branch}:`))
+        .map(([, documentId]) => documentId),
+    );
     for (const relativePath of targetPaths) {
       const documentId = `${branch}:${relativePath}`;
       const hash = crypto.createHash('sha256').update(documentId).digest('hex');
@@ -165,8 +179,10 @@ export class RoomRegistry {
   async markBranchMerged(branch, target, commit, documentIds = []) {
     const next = new Map(this.mergedBranches);
     next.set(branch, { target, commit, at: new Date().toISOString(), documentIds });
-    await this.atomicWrite(path.join(this.dataDirectory, 'branch-merges.json'),
-      `${JSON.stringify({ schema: 1, branches: Object.fromEntries(next) }, null, 2)}\n`);
+    await this.atomicWrite(
+      path.join(this.dataDirectory, 'branch-merges.json'),
+      `${JSON.stringify({ schema: 1, branches: Object.fromEntries(next) }, null, 2)}\n`,
+    );
     this.mergedBranches = next;
     for (const [documentId, value] of this.rooms) {
       if (!documentId.startsWith(`${branch}:`)) continue;
@@ -176,8 +192,7 @@ export class RoomRegistry {
   }
 
   async persistDocumentIndex() {
-    const documents = Object.fromEntries([...this.knownDocuments]
-      .filter(([hash]) => this.persisted.has(hash)));
+    const documents = Object.fromEntries([...this.knownDocuments].filter(([hash]) => this.persisted.has(hash)));
     await this.atomicWrite(this.indexPath, `${JSON.stringify({ schema: 1, documents }, null, 2)}\n`);
     this.indexedDocuments = new Set(Object.keys(documents));
   }
@@ -215,7 +230,9 @@ export class RoomRegistry {
     const releases = [];
     for (const [index, room] of unique.entries()) {
       let release;
-      const gate = new Promise((resolve) => { release = resolve; });
+      const gate = new Promise((resolve) => {
+        release = resolve;
+      });
       releases.push(release);
       room.messageQueue = predecessors[index].catch(() => {}).then(() => gate);
     }
@@ -263,32 +280,37 @@ export class RoomRegistry {
   async persistRoom(room, update, metadata, history) {
     room.persistenceGeneration ??= this.persistenceGenerations.get(room.hash) ?? 0;
     const generation = room.persistenceGeneration;
-    const operation = this.persistencePromise.catch(() => {}).then(async () => {
-      if (room.destroyed || (this.persistenceGenerations.get(room.hash) ?? 0) !== generation) return;
-      const nextBytes = update.length + byteLength(metadata) + byteLength(history);
-      const previousBytes = this.persisted.get(room.hash) ?? 0;
-      const projected = this.persistedTotalBytes - previousBytes + nextBytes;
-      if ((!this.persisted.has(room.hash) && this.persisted.size >= MAX_PERSISTED_ROOMS)
-        || projected > MAX_PERSISTED_DOCUMENT_BYTES) {
-        throw new ProtocolLimitError('Persisted document storage budget is exhausted', 1013);
-      }
-      await this.atomicWrite(room.updatePath, update);
-      await this.atomicWrite(room.metadataPath, metadata);
-      await this.atomicWrite(room.historyPath, history);
-      this.persisted.set(room.hash, nextBytes);
-      this.persistedTotalBytes = projected;
-      room.persistedBytes = nextBytes;
-      if (typeof room.documentId === 'string') {
-        this.knownDocuments.set(room.hash, room.documentId);
-        this.legacyDocumentsByBranch.get(room.documentId.split(':', 1)[0])?.delete(room.hash);
-        if (!this.indexedDocuments.has(room.hash)) await this.persistDocumentIndex();
-      }
-      if (room.gitBase?.branch && /^[0-9a-f]{40}$/u.test(room.gitBase.commit)) {
-        this.branchHints.set(room.gitBase.branch, {
-          commit: room.gitBase.commit, checkedAt: Number(room.gitBase.checkedAt ?? 0),
-        });
-      }
-    });
+    const operation = this.persistencePromise
+      .catch(() => {})
+      .then(async () => {
+        if (room.destroyed || (this.persistenceGenerations.get(room.hash) ?? 0) !== generation) return;
+        const nextBytes = update.length + byteLength(metadata) + byteLength(history);
+        const previousBytes = this.persisted.get(room.hash) ?? 0;
+        const projected = this.persistedTotalBytes - previousBytes + nextBytes;
+        if (
+          (!this.persisted.has(room.hash) && this.persisted.size >= MAX_PERSISTED_ROOMS) ||
+          projected > MAX_PERSISTED_DOCUMENT_BYTES
+        ) {
+          throw new ProtocolLimitError('Persisted document storage budget is exhausted', 1013);
+        }
+        await this.atomicWrite(room.updatePath, update);
+        await this.atomicWrite(room.metadataPath, metadata);
+        await this.atomicWrite(room.historyPath, history);
+        this.persisted.set(room.hash, nextBytes);
+        this.persistedTotalBytes = projected;
+        room.persistedBytes = nextBytes;
+        if (typeof room.documentId === 'string') {
+          this.knownDocuments.set(room.hash, room.documentId);
+          this.legacyDocumentsByBranch.get(room.documentId.split(':', 1)[0])?.delete(room.hash);
+          if (!this.indexedDocuments.has(room.hash)) await this.persistDocumentIndex();
+        }
+        if (room.gitBase?.branch && /^[0-9a-f]{40}$/u.test(room.gitBase.commit)) {
+          this.branchHints.set(room.gitBase.branch, {
+            commit: room.gitBase.commit,
+            checkedAt: Number(room.gitBase.checkedAt ?? 0),
+          });
+        }
+      });
     this.persistencePromise = operation;
     await operation;
   }
@@ -326,23 +348,25 @@ export class RoomRegistry {
       }
       removals.push(hash);
     }
-    const operation = this.persistencePromise.catch(() => {}).then(async () => {
-      let indexChanged = false;
-      for (const hash of removals) {
-        const previousBytes = this.persisted.get(hash) ?? 0;
-        await Promise.all([
-          fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.update`), { force: true }),
-          fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.json`), { force: true }),
-          fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.history.json`), { force: true }),
-        ]);
-        this.persisted.delete(hash);
-        if (this.knownDocuments.delete(hash)) indexChanged = true;
-        this.indexedDocuments.delete(hash);
-        for (const legacy of this.legacyDocumentsByBranch.values()) legacy.delete(hash);
-        this.persistedTotalBytes = Math.max(0, this.persistedTotalBytes - previousBytes);
-      }
-      if (indexChanged) await this.persistDocumentIndex();
-    });
+    const operation = this.persistencePromise
+      .catch(() => {})
+      .then(async () => {
+        let indexChanged = false;
+        for (const hash of removals) {
+          const previousBytes = this.persisted.get(hash) ?? 0;
+          await Promise.all([
+            fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.update`), { force: true }),
+            fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.json`), { force: true }),
+            fs.rm(path.join(this.dataDirectory, 'documents', `${hash}.history.json`), { force: true }),
+          ]);
+          this.persisted.delete(hash);
+          if (this.knownDocuments.delete(hash)) indexChanged = true;
+          this.indexedDocuments.delete(hash);
+          for (const legacy of this.legacyDocumentsByBranch.values()) legacy.delete(hash);
+          this.persistedTotalBytes = Math.max(0, this.persistedTotalBytes - previousBytes);
+        }
+        if (indexChanged) await this.persistDocumentIndex();
+      });
     this.persistencePromise = operation;
     await operation;
   }

@@ -26,7 +26,8 @@ export class DocumentBinding {
     this.reservations = new Map();
     this.commentThreads = new Map();
     this.suggestions = new Map();
-    this.reservationRevision = 0; this.reviewRevision = 0;
+    this.reservationRevision = 0;
+    this.reviewRevision = 0;
     this.reservationUpdates = false;
     this.discussionUpdates = false;
     this.history = [];
@@ -44,19 +45,28 @@ export class DocumentBinding {
     this.stopConnectionWatchdog = null;
     this.refreshScheduled = false;
     this.baseWrites = new Set();
-    this.localUpdatePending = false; this.pendingUpdateSent = false;
-    this.deliveryFailed = false; this.flushWaiter = null;
+    this.localUpdatePending = false;
+    this.pendingUpdateSent = false;
+    this.deliveryFailed = false;
+    this.flushWaiter = null;
     this.personalRequestId = '';
     this.personalRefreshTimer = null;
     this.personalRefreshStartedAt = null;
     this.personalRefreshPending = false;
     this.variantRequests = new Map();
     this.diskMergeRequests = new Map();
-    this.personalText = ''; this.serverPersonalText = ''; this.personalRevision = ''; this.personalSelectionStale = false; this.personalSelectionSnapshot = this.ticketId ? null : this.hub.loadPersonalSelection(this.relativePath);
+    this.personalText = '';
+    this.serverPersonalText = '';
+    this.personalRevision = '';
+    this.personalSelectionStale = false;
+    this.personalSelectionSnapshot = this.ticketId ? null : this.hub.loadPersonalSelection(this.relativePath);
     this.personalReady = Boolean(this.ticketId);
     this.personalContributors = [];
     this.personalConflicts = [];
-    this.personalSelectionRevision = ''; this.personalSelectionGit = ''; this.personalSelectionShared = ''; this.personalSelectionLocal = '';
+    this.personalSelectionRevision = '';
+    this.personalSelectionGit = '';
+    this.personalSelectionShared = '';
+    this.personalSelectionLocal = '';
     this.personalMaterialisationMode = this.ticketId ? 'mine' : this.hub.loadPersonalMode(this.relativePath);
     this.materialisationWrite = Promise.resolve();
     delivery.restorePendingDocument(this);
@@ -70,9 +80,13 @@ export class DocumentBinding {
     this.connect();
   }
 
-  connect() { return connectDocument(this, REMOTE_ORIGIN); }
+  connect() {
+    return connectDocument(this, REMOTE_ORIGIN);
+  }
 
-  scheduleReconnect() { return scheduleDocumentReconnect(this); }
+  scheduleReconnect() {
+    return scheduleDocumentReconnect(this);
+  }
 
   reconnectForGitHead() {
     return gitState.reconnectForGitHead(this);
@@ -82,7 +96,9 @@ export class DocumentBinding {
     return serverMessages.receiveServerMessage(this, message);
   }
 
-  flushToServer(timeoutMilliseconds = 5000) { return delivery.flushToServer(this, timeoutMilliseconds); }
+  flushToServer(timeoutMilliseconds = 5000) {
+    return delivery.flushToServer(this, timeoutMilliseconds);
+  }
 
   attach(client, absolutePath, initialText) {
     const existing = client.documents.get(absolutePath);
@@ -116,7 +132,9 @@ export class DocumentBinding {
       hasPersistedBase: storedBase != null,
       basePersistText: storedBase ? normaliseLineEndings(storedBase.text) : null,
       basePersistPromise: Promise.resolve(),
-      diskWatcher: null, diskSignature: '', diskPollTimer: null,
+      diskWatcher: null,
+      diskSignature: '',
+      diskPollTimer: null,
       diskDebounce: null,
       diskCheckPromise: Promise.resolve(),
       pendingExternal: null,
@@ -152,10 +170,13 @@ export class DocumentBinding {
     if (!this.ticketId && !this.personalReady) return; // Wait for the initial personal merge base.
     state.initialised = true;
     if (!this.undoManagers.has(client.clientId)) {
-      this.undoManagers.set(client.clientId, new Y.UndoManager(this.text, {
-        trackedOrigins: new Set([state.origin]),
-        captureTimeout: 500,
-      }));
+      this.undoManagers.set(
+        client.clientId,
+        new Y.UndoManager(this.text, {
+          trackedOrigins: new Set([state.origin]),
+          captureTimeout: 500,
+        }),
+      );
     }
     if (this.ticketId) state.initialReconciled = true;
     else this.reconcileInitialDisk(client, absolutePath, state);
@@ -227,10 +248,23 @@ export class DocumentBinding {
     return disk.queueExternalMerge(this, client, absolutePath, state, base, external, notice);
   }
 
-  requestDiskMergeCheck(baseText, externalText, personalText, resolutions = new Map(), initialUnknown = false,
-    resolutionRevision = '') {
-    return diskRequests.requestDiskMergeCheck(this, baseText, externalText, personalText,
-      resolutions, initialUnknown, resolutionRevision);
+  requestDiskMergeCheck(
+    baseText,
+    externalText,
+    personalText,
+    resolutions = new Map(),
+    initialUnknown = false,
+    resolutionRevision = '',
+  ) {
+    return diskRequests.requestDiskMergeCheck(
+      this,
+      baseText,
+      externalText,
+      personalText,
+      resolutions,
+      initialUnknown,
+      resolutionRevision,
+    );
   }
 
   persistBaseSnapshot(state, text) {
@@ -261,9 +295,10 @@ export class DocumentBinding {
       return gitState.resolveCanonicalConflict(this, message);
     }
     const state = client.documents.get(absolutePath);
-    return (state?.pendingExternal
-      && disk.resolveExternalConflict(this, client, absolutePath, message))
-      || gitState.resolveCanonicalConflict(this, message);
+    return (
+      (state?.pendingExternal && disk.resolveExternalConflict(this, client, absolutePath, message)) ||
+      gitState.resolveCanonicalConflict(this, message)
+    );
   }
 
   pauseForWorkspaceChange(previousWorkspace, nextWorkspace) {
@@ -305,18 +340,30 @@ export class DocumentBinding {
     this.undoManagers.get(client.clientId)?.redo();
   }
 
-  requestPersonalDocument() { return personalDocument.requestPersonalDocument(this); }
+  requestPersonalDocument() {
+    return personalDocument.requestPersonalDocument(this);
+  }
 
-  replacePersonalDocument(text) { return personalDocument.replacePersonalDocument(this, text); }
-  requestDocumentVariant(client, absolutePath, authorId, variantEpoch = '') { return personalDocument.requestDocumentVariant(this, client, absolutePath, authorId, variantEpoch); }
-  emitDocumentVariants(client = null) { return personalDocument.emitDocumentVariants(this, client); }
-  localFileText() { return personalDocument.localFileText(this); }
+  replacePersonalDocument(text) {
+    return personalDocument.replacePersonalDocument(this, text);
+  }
+  requestDocumentVariant(client, absolutePath, authorId, variantEpoch = '') {
+    return personalDocument.requestDocumentVariant(this, client, absolutePath, authorId, variantEpoch);
+  }
+  emitDocumentVariants(client = null) {
+    return personalDocument.emitDocumentVariants(this, client);
+  }
+  localFileText() {
+    return personalDocument.localFileText(this);
+  }
 
   setPersonalMaterialisation(mode, absolutePath) {
     return personalDocument.setPersonalMaterialisation(this, mode, absolutePath);
   }
 
-  setPersonalSelection(absolutePath, changeId, include, revision) { return personalDocument.setPersonalSelection(this, absolutePath, changeId, include, revision); }
+  setPersonalSelection(absolutePath, changeId, include, revision) {
+    return personalDocument.setPersonalSelection(this, absolutePath, changeId, include, revision);
+  }
 
   cursor(client, absolutePath, message) {
     return documentCursor.cursor(this, client, absolutePath, message);
@@ -372,13 +419,19 @@ export class DocumentBinding {
     return state;
   }
 
-  scheduleRefresh() { return view.scheduleRefresh(this); }
+  scheduleRefresh() {
+    return view.scheduleRefresh(this);
+  }
   emitDocumentStatus(status) {
     return view.emitDocumentStatus(this, status);
   }
 
-  refreshAllViews() { return view.refreshAllViews(this); }
-  syncClientView(client, absolutePath) { return view.syncClientView(this, client, absolutePath); }
+  refreshAllViews() {
+    return view.refreshAllViews(this);
+  }
+  syncClientView(client, absolutePath) {
+    return view.syncClientView(this, client, absolutePath);
+  }
 
   resolveReservation(reservation) {
     return view.resolveReservation(this, reservation);
@@ -412,5 +465,7 @@ export class DocumentBinding {
     return view.emitReservationTargets(this, onlyClient);
   }
 
-  close() { return delivery.closeBinding(this); }
+  close() {
+    return delivery.closeBinding(this);
+  }
 }

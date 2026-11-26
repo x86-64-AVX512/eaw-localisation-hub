@@ -3,16 +3,22 @@ const MAX_AVATAR_BYTES = 16 * 1024;
 export function normaliseAvatarBase64(value, { optional = false } = {}) {
   const encoded = String(value ?? '');
   if (!encoded && optional) return '';
-  if (!encoded || encoded.length > Math.ceil(MAX_AVATAR_BYTES / 3) * 4 + 4
-      || !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)) {
+  if (
+    !encoded ||
+    encoded.length > Math.ceil(MAX_AVATAR_BYTES / 3) * 4 + 4 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)
+  ) {
     throw new TypeError('Avatar must be a bounded base64 WebP image');
   }
   const bytes = Buffer.from(encoded, 'base64');
-  if (bytes.length < 30 || bytes.length > MAX_AVATAR_BYTES
-      || bytes.toString('ascii', 0, 4) !== 'RIFF'
-      || bytes.toString('ascii', 8, 12) !== 'WEBP'
-      || bytes.readUInt32LE(4) + 8 !== bytes.length
-      || bytes.toString('base64') !== encoded) {
+  if (
+    bytes.length < 30 ||
+    bytes.length > MAX_AVATAR_BYTES ||
+    bytes.toString('ascii', 0, 4) !== 'RIFF' ||
+    bytes.toString('ascii', 8, 12) !== 'WEBP' ||
+    bytes.readUInt32LE(4) + 8 !== bytes.length ||
+    bytes.toString('base64') !== encoded
+  ) {
     throw new TypeError('Avatar must be a valid canonical WebP image no larger than 16 KiB');
   }
   const kind = bytes.toString('ascii', 12, 16);

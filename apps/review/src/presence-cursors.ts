@@ -12,7 +12,10 @@ export interface CursorPresence {
 type CaretWidget = Monaco.editor.IContentWidget & { position: Monaco.IPosition | null };
 type CaretEntry = { node: HTMLSpanElement; widget: CaretWidget };
 
-export function createPresenceCursorLayer({ monaco, editor }: {
+export function createPresenceCursorLayer({
+  monaco,
+  editor,
+}: {
   monaco: typeof Monaco;
   editor: Monaco.editor.IStandaloneCodeEditor;
 }) {
@@ -33,10 +36,11 @@ export function createPresenceCursorLayer({ monaco, editor }: {
       position: null,
       getId: () => `eaw.remote-caret.${clientId}`,
       getDomNode: () => node,
-      getPosition: () => widget.position && ({
-        position: widget.position,
-        preference: [monaco.editor.ContentWidgetPositionPreference.EXACT],
-      }),
+      getPosition: () =>
+        widget.position && {
+          position: widget.position,
+          preference: [monaco.editor.ContentWidgetPositionPreference.EXACT],
+        },
       suppressMouseDown: true,
     };
     const entry = { node, widget };
@@ -50,7 +54,11 @@ export function createPresenceCursorLayer({ monaco, editor }: {
       const active = new Set<string>();
       for (const presence of presences) {
         let position;
-        try { position = resolvePosition(presence.positionByte); } catch { position = null; }
+        try {
+          position = resolvePosition(presence.positionByte);
+        } catch {
+          position = null;
+        }
         if (!position) {
           remove(presence.clientId);
           continue;
@@ -60,7 +68,7 @@ export function createPresenceCursorLayer({ monaco, editor }: {
         const color = safeColor(presence.color);
         entry.node.style.setProperty('--presence-color', color);
         entry.node.title = presence.user;
-        entry.node.setAttribute('aria-label', uiText("Курсор: {0}", presence.user));
+        entry.node.setAttribute('aria-label', uiText('Курсор: {0}', presence.user));
         entry.widget.position = position;
         editor.layoutContentWidget(entry.widget);
       }

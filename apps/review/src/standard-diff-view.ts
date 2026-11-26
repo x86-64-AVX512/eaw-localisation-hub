@@ -1,7 +1,10 @@
 import type * as Monaco from 'monaco-editor';
 import { reviewFontFamily } from './editor-font.ts';
 
-interface LineRange { start: number; end: number }
+interface LineRange {
+  start: number;
+  end: number;
+}
 type HiddenAreasEditor = Monaco.editor.IStandaloneCodeEditor & {
   setHiddenAreas(ranges: Monaco.Range[]): void;
 };
@@ -19,14 +22,16 @@ function changedContextRanges(
   contextLineCount: number,
 ): LineRange[] {
   if (!changes?.length || lineCount < 1) return [];
-  const visible = changes.map((change) => {
-    const changedStart = Math.max(1, Number(change[startKey]) || 1);
-    const changedEnd = Math.max(changedStart, Number(change[endKey]) || changedStart);
-    return {
-      start: Math.max(1, changedStart - contextLineCount),
-      end: Math.min(lineCount, changedEnd + contextLineCount),
-    };
-  }).sort((left, right) => left.start - right.start);
+  const visible = changes
+    .map((change) => {
+      const changedStart = Math.max(1, Number(change[startKey]) || 1);
+      const changedEnd = Math.max(changedStart, Number(change[endKey]) || changedStart);
+      return {
+        start: Math.max(1, changedStart - contextLineCount),
+        end: Math.min(lineCount, changedEnd + contextLineCount),
+      };
+    })
+    .sort((left, right) => left.start - right.start);
   const merged: LineRange[] = [];
   for (const range of visible) {
     const previous = merged.at(-1);
@@ -57,18 +62,31 @@ export interface StandardDiffViewOptions {
 }
 
 export function createStandardDiffView({
-  monaco, container, language = 'eaw-yaml', contextLineCount = 2, editorOptions = {},
+  monaco,
+  container,
+  language = 'eaw-yaml',
+  contextLineCount = 2,
+  editorOptions = {},
   preserveOnDeactivate = false,
 }: StandardDiffViewOptions) {
   container.classList.add('standard-diff');
   const originalModel = monaco.editor.createModel('', language);
   const modifiedModel = monaco.editor.createModel('', language);
   const diff = monaco.editor.createDiffEditor(container, {
-    readOnly: true, automaticLayout: !preserveOnDeactivate,
-    minimap: { enabled: false }, fontFamily: reviewFontFamily(),
-    renderSideBySide: true, originalEditable: false, hideUnchangedRegions: { enabled: false },
-    wordWrap: 'on', diffWordWrap: 'on', wordWrapOverride1: 'on', wordWrapOverride2: 'on',
-    wrappingStrategy: 'advanced', scrollBeyondLastLine: false, ...editorOptions,
+    readOnly: true,
+    automaticLayout: !preserveOnDeactivate,
+    minimap: { enabled: false },
+    fontFamily: reviewFontFamily(),
+    renderSideBySide: true,
+    originalEditable: false,
+    hideUnchangedRegions: { enabled: false },
+    wordWrap: 'on',
+    diffWordWrap: 'on',
+    wordWrapOverride1: 'on',
+    wordWrapOverride2: 'on',
+    wrappingStrategy: 'advanced',
+    scrollBeyondLastLine: false,
+    ...editorOptions,
     unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: true },
   });
   diff.setModel({ original: originalModel, modified: modifiedModel });
@@ -78,8 +96,12 @@ export function createStandardDiffView({
 
   function enforceOptions() {
     const options = {
-      wordWrap: 'on', diffWordWrap: 'on', wordWrapOverride1: 'on', wordWrapOverride2: 'on',
-      wrappingStrategy: 'advanced', wrappingIndent: 'same',
+      wordWrap: 'on',
+      diffWordWrap: 'on',
+      wordWrapOverride1: 'on',
+      wordWrapOverride2: 'on',
+      wrappingStrategy: 'advanced',
+      wrappingIndent: 'same',
     } as const;
     diff.updateOptions(options);
     diff.getOriginalEditor().updateOptions(options);
@@ -97,14 +119,23 @@ export function createStandardDiffView({
     if (!active) return;
     const changes = diff.getLineChanges();
     if (!changes) return;
-    if (!changes.length) { clearHiddenAreas(); return; }
+    if (!changes.length) {
+      clearHiddenAreas();
+      return;
+    }
     const originalVisible = changedContextRanges(
-      changes, 'originalStartLineNumber', 'originalEndLineNumber',
-      originalModel.getLineCount(), contextLineCount,
+      changes,
+      'originalStartLineNumber',
+      'originalEndLineNumber',
+      originalModel.getLineCount(),
+      contextLineCount,
     );
     const modifiedVisible = changedContextRanges(
-      changes, 'modifiedStartLineNumber', 'modifiedEndLineNumber',
-      modifiedModel.getLineCount(), contextLineCount,
+      changes,
+      'modifiedStartLineNumber',
+      'modifiedEndLineNumber',
+      modifiedModel.getLineCount(),
+      contextLineCount,
     );
     const signature = JSON.stringify([originalVisible, modifiedVisible]);
     if (signature === hiddenSignature) return;
@@ -128,17 +159,34 @@ export function createStandardDiffView({
       showChangedRegionsOnly();
     });
   }
-  function setOriginal(value: string): void { hiddenSignature = ''; clearHiddenAreas(); originalModel.setValue(value); layout(); }
-  function setModified(value: string): void { hiddenSignature = ''; clearHiddenAreas(); modifiedModel.setValue(value); layout(); }
+  function setOriginal(value: string): void {
+    hiddenSignature = '';
+    clearHiddenAreas();
+    originalModel.setValue(value);
+    layout();
+  }
+  function setModified(value: string): void {
+    hiddenSignature = '';
+    clearHiddenAreas();
+    modifiedModel.setValue(value);
+    layout();
+  }
   function setTexts(original: string, modified: string): void {
-    hiddenSignature = ''; clearHiddenAreas();
+    hiddenSignature = '';
+    clearHiddenAreas();
     originalModel.setValue(original);
     modifiedModel.setValue(modified);
     layout();
   }
   enforceOptions();
   return {
-    diff, originalModel, modifiedModel, layout, setOriginal, setModified, setTexts,
+    diff,
+    originalModel,
+    modifiedModel,
+    layout,
+    setOriginal,
+    setModified,
+    setTexts,
     setActive(value: boolean) {
       const next = value === true;
       if (active === next) return;
@@ -155,11 +203,16 @@ export function createStandardDiffView({
       }
       layout();
     },
-    clear() { setTexts('', ''); },
+    clear() {
+      setTexts('', '');
+    },
     dispose() {
       active = false;
       window.cancelAnimationFrame(layoutFrame);
-      diffUpdated.dispose(); diff.dispose(); originalModel.dispose(); modifiedModel.dispose();
+      diffUpdated.dispose();
+      diff.dispose();
+      originalModel.dispose();
+      modifiedModel.dispose();
     },
   };
 }

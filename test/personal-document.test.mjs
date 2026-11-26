@@ -2,9 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { WebSocket } from 'ws';
 import {
-  requestPersonalDocument, resetPersonalRequest, handlePersonalDocument,
-  schedulePersonalDocumentRefresh, emitDocumentVariants,
-  localFileText, replacePersonalDocument, setPersonalSelection, requestDocumentVariant,
+  requestPersonalDocument,
+  resetPersonalRequest,
+  handlePersonalDocument,
+  schedulePersonalDocumentRefresh,
+  emitDocumentVariants,
+  localFileText,
+  replacePersonalDocument,
+  setPersonalSelection,
+  requestDocumentVariant,
 } from '../apps/agent/src/personal-document.mjs';
 import { retainedAuthorPreviews, variantTexts } from '../apps/review/src/document-variants.ts';
 import { parseAgentMessage } from '../apps/review/src/agent-message.ts';
@@ -12,11 +18,22 @@ import { parseAgentMessage } from '../apps/review/src/agent-message.ts';
 function bindingFixture() {
   const sent = [];
   return {
-    sent, synced: true, ticketId: '', personalReady: true, personalText: 'previous personal',
-    personalRequestId: '', variantRequests: new Map(), clients: new Set(),
+    sent,
+    synced: true,
+    ticketId: '',
+    personalReady: true,
+    personalText: 'previous personal',
+    personalRequestId: '',
+    variantRequests: new Map(),
+    clients: new Set(),
     text: { toString: () => 'somebody else’s shared text' },
     hub: { options: { user: 'Alice', color: '#fff' }, readGitHeadText: () => 'Git' },
-    socket: { readyState: WebSocket.OPEN, send(value) { sent.push(JSON.parse(value)); } },
+    socket: {
+      readyState: WebSocket.OPEN,
+      send(value) {
+        sent.push(JSON.parse(value));
+      },
+    },
     initialiseAttachedClients() {},
   };
 }
@@ -56,7 +73,10 @@ test('a projection timeout retries with a new ID and stops when the binding clos
 test('an invalidated refresh accepts an intermediate projection while requesting the latest one', () => {
   const binding = bindingFixture();
   let gitReads = 0;
-  binding.hub.readGitHeadText = () => { gitReads += 1; return 'Git'; };
+  binding.hub.readGitHeadText = () => {
+    gitReads += 1;
+    return 'Git';
+  };
   binding.personalSelectionRevision = 'old-selection';
   requestPersonalDocument(binding);
   const first = binding.personalRequestId;
@@ -123,13 +143,20 @@ test('unchanged Git and shared variants are sent once and later personal edits r
   binding.hub.gitCommit = 'commit-one';
   const git = 'l_russian:\n a:0 "Гит"\n';
   let gitReads = 0;
-  binding.hub.readGitHeadText = () => { gitReads += 1; return git; };
+  binding.hub.readGitHeadText = () => {
+    gitReads += 1;
+    return git;
+  };
   binding.text = { toString: () => git };
   binding.personalText = git;
   const messages = [];
   const path = 'C:\\repo\\localisation\\russian\\file.yml';
   const state = { binding, initialised: true };
-  binding.clients.add({ kind: 'review', documents: new Map([[path, state]]), send: (message) => messages.push(message) });
+  binding.clients.add({
+    kind: 'review',
+    documents: new Map([[path, state]]),
+    send: (message) => messages.push(message),
+  });
   emitDocumentVariants(binding);
   const first = messages.at(-1);
   assert.ok(first.sharedBase64);
@@ -162,14 +189,16 @@ test('continuous edits do not indefinitely prevent the initial personal projecti
     const requestId = binding.personalRequestId;
     requestPersonalDocument(binding);
     handlePersonalDocument(binding, {
-      requestId, textBase64: Buffer.from(`projection ${index}`).toString('base64'),
+      requestId,
+      textBase64: Buffer.from(`projection ${index}`).toString('base64'),
     });
   }
   assert.equal(binding.personalReady, true);
   assert.equal(binding.personalText, 'projection 19', 'intermediate responses advance the usable projection');
   assert.equal(binding.sent.length, 21);
   handlePersonalDocument(binding, {
-    requestId: binding.personalRequestId, textBase64: Buffer.from('latest').toString('base64'),
+    requestId: binding.personalRequestId,
+    textBase64: Buffer.from('latest').toString('base64'),
   });
   assert.equal(binding.personalText, 'latest', 'a quiet refresh catches up to the latest projection');
   resetPersonalRequest(binding);
@@ -183,9 +212,15 @@ test('compact variants reuse explicit Git text and still reconstruct personal ed
   binding.hub.readGitHeadText = () => git;
   binding.text = { toString: () => git };
   binding.personalText = git;
-  const messages = [], state = { binding, initialised: true, reviewSynced: true };
-  binding.clients.add({ kind: 'review', reviewCrdt: true, compactVariants: true,
-    documents: new Map([['C:/repo/file.yml', state]]), send: (message) => messages.push(message) });
+  const messages = [],
+    state = { binding, initialised: true, reviewSynced: true };
+  binding.clients.add({
+    kind: 'review',
+    reviewCrdt: true,
+    compactVariants: true,
+    documents: new Map([['C:/repo/file.yml', state]]),
+    send: (message) => messages.push(message),
+  });
   emitDocumentVariants(binding);
   const first = messages.at(-1);
   assert.equal(first.sharedBase64, undefined);
@@ -193,14 +228,17 @@ test('compact variants reuse explicit Git text and still reconstruct personal ed
   assert.equal(first.mineFromGit, true);
   assert.ok(parseAgentMessage(first));
   let result = variantTexts(null, first, git);
-  assert.equal(result.git, git); assert.equal(result.mine, git); assert.equal(result.shared, git);
+  assert.equal(result.git, git);
+  assert.equal(result.mine, git);
+  assert.equal(result.shared, git);
   binding.personalText = git.replace('Второй🦄', 'Изменено🦄');
   emitDocumentVariants(binding);
   const second = messages.at(-1);
   assert.equal(second.mineFromGit, undefined);
   assert.ok(second.minePatch);
   result = variantTexts(result, second, git);
-  assert.equal(result.mine, binding.personalText); assert.equal(result.minePatchMissed, false);
+  assert.equal(result.mine, binding.personalText);
+  assert.equal(result.minePatchMissed, false);
   binding.personalText = git; // Exclude a selected change again.
   emitDocumentVariants(binding);
   assert.equal(messages.at(-1).mineFromGit, true);
@@ -208,10 +246,12 @@ test('compact variants reuse explicit Git text and still reconstruct personal ed
   result = variantTexts(result, messages.at(-1), git);
   assert.equal(result.mine, git);
   const oldMine = git;
-  git = git.replace('Первый', 'Git update'); binding.hub.gitCommit = 'two';
+  git = git.replace('Первый', 'Git update');
+  binding.hub.gitCommit = 'two';
   emitDocumentVariants(binding);
   result = variantTexts(result, messages.at(-1), git);
-  assert.equal(result.git, git); assert.equal(result.mine, oldMine, 'Git changes must not overwrite an unchanged personal text');
+  assert.equal(result.git, git);
+  assert.equal(result.mine, oldMine, 'Git changes must not overwrite an unchanged personal text');
   binding.personalText = git;
   emitDocumentVariants(binding);
   result = variantTexts(result, messages.at(-1), git + 'optimistic local typing');
@@ -224,16 +264,26 @@ test('compact variants preserve empty Git and require an already-synced CRDT pee
   binding.relativePath = 'localisation/russian/empty.yml';
   binding.hub.readGitHeadText = () => '';
   binding.personalText = '';
-  const messages = [], state = { binding, initialised: true, reviewSynced: true };
-  const client = { kind: 'review', reviewCrdt: true, compactVariants: true,
-    documents: new Map([['C:/repo/empty.yml', state]]), send: (message) => messages.push(message) };
+  const messages = [],
+    state = { binding, initialised: true, reviewSynced: true };
+  const client = {
+    kind: 'review',
+    reviewCrdt: true,
+    compactVariants: true,
+    documents: new Map([['C:/repo/empty.yml', state]]),
+    send: (message) => messages.push(message),
+  };
   binding.clients.add(client);
   emitDocumentVariants(binding);
   assert.equal(messages.at(-1).gitBase64, '');
   assert.equal(variantTexts(null, messages.at(-1), '').mine, '');
   for (const changes of [{ reviewSynced: false }, { reviewCrdt: false }, { compactVariants: false }]) {
     Object.assign(client, { reviewCrdt: true, compactVariants: true }, changes);
-    Object.assign(state, { reviewSynced: true, variantSharedSent: false, variantGitText: undefined, variantMineText: undefined }, changes);
+    Object.assign(
+      state,
+      { reviewSynced: true, variantSharedSent: false, variantGitText: undefined, variantMineText: undefined },
+      changes,
+    );
     emitDocumentVariants(binding);
     assert.equal(messages.at(-1).sharedBase64 !== undefined, true);
     assert.equal(messages.at(-1).mineBase64, '');
@@ -245,8 +295,14 @@ test('Review rejects ambiguous or mistyped compact variant envelopes', () => {
   assert.equal(variantTexts(null, { mineFromGit: true }).minePatchMissed, true);
   assert.equal(parseAgentMessage({ type: 'documentVariants', mineFromGit: 'yes' }), null);
   assert.equal(parseAgentMessage({ type: 'documentVariants', mineFromGit: true, mineBase64: '' }), null);
-  assert.equal(parseAgentMessage({ type: 'documentVariants', mineFromGit: true,
-    minePatch: { positionByte: 0, deleteBytes: 0, insertBase64: '' } }), null);
+  assert.equal(
+    parseAgentMessage({
+      type: 'documentVariants',
+      mineFromGit: true,
+      minePatch: { positionByte: 0, deleteBytes: 0, insertBase64: '' },
+    }),
+    null,
+  );
 });
 
 test('a personal projection patch advances the last server revision without a full document', () => {
@@ -257,10 +313,12 @@ test('a personal projection patch advances the last server revision without a fu
   assert.equal(binding.sent[0].baseRevision, 'revision-one');
   handlePersonalDocument(binding, {
     requestId: binding.personalRequestId,
-    baseRevision: 'revision-one', revision: 'revision-two',
+    baseRevision: 'revision-one',
+    revision: 'revision-two',
     patch: {
       positionByte: Buffer.byteLength('l_russian:\n key:0 "'),
-      deleteBytes: Buffer.byteLength('old'), insertBase64: Buffer.from('new').toString('base64'),
+      deleteBytes: Buffer.byteLength('old'),
+      insertBase64: Buffer.from('new').toString('base64'),
     },
   });
   assert.equal(binding.personalText, 'l_russian:\n key:0 "new"\n');
@@ -272,16 +330,24 @@ test('CRLF server byte patches keep their raw base while materialisation exposes
   const binding = bindingFixture();
   const wire = 'l_russian:\r\n key:0 "old"\r\n';
   requestPersonalDocument(binding);
-  handlePersonalDocument(binding, { requestId: binding.personalRequestId,
-    textBase64: Buffer.from(wire).toString('base64'), revision: 'crlf-one' });
+  handlePersonalDocument(binding, {
+    requestId: binding.personalRequestId,
+    textBase64: Buffer.from(wire).toString('base64'),
+    revision: 'crlf-one',
+  });
   assert.equal(localFileText(binding), wire.replaceAll('\r\n', '\n'));
   assert.equal(binding.serverPersonalText, wire, 'normalisation must not shift wire byte positions');
   requestPersonalDocument(binding);
-  handlePersonalDocument(binding, { requestId: binding.personalRequestId,
-    baseRevision: 'crlf-one', revision: 'crlf-two', patch: {
-      positionByte: Buffer.byteLength('l_russian:\r\n key:0 "'), deleteBytes: 3,
+  handlePersonalDocument(binding, {
+    requestId: binding.personalRequestId,
+    baseRevision: 'crlf-one',
+    revision: 'crlf-two',
+    patch: {
+      positionByte: Buffer.byteLength('l_russian:\r\n key:0 "'),
+      deleteBytes: 3,
       insertBase64: Buffer.from('новый').toString('base64'),
-    } });
+    },
+  });
   assert.equal(binding.serverPersonalText, wire.replace('old', 'новый'));
   assert.equal(localFileText(binding), wire.replace('old', 'новый').replaceAll('\r\n', '\n'));
   binding.personalMaterialisationMode = 'git';
@@ -313,22 +379,31 @@ test('one shared localisation key can be included without changing its neighbour
   const git = 'l_russian:\n a:0 "Git A"\n b:0 "Git B"\n';
   const shared = 'l_russian:\n a:0 "Shared A"\n b:0 "Shared B"\n';
   const binding = bindingFixture();
-  const scheduled = [], synced = [], savedModes = [];
+  const scheduled = [],
+    synced = [],
+    savedModes = [];
   binding.gitWritable = true;
   binding.personalMaterialisationMode = 'mine';
   binding.personalText = git;
   binding.text = { toString: () => shared };
   binding.hub.readGitHeadText = () => git;
-  binding.hub.savePersonalMode = (_path, mode) => { savedModes.push(mode); return Promise.resolve(); };
+  binding.hub.savePersonalMode = (_path, mode) => {
+    savedModes.push(mode);
+    return Promise.resolve();
+  };
   binding.relativePath = 'localisation/russian/file.yml';
   binding.personalSelectionRevision = 'selection-1';
   binding.personalSelectionGit = git;
   binding.personalSelectionShared = shared;
   binding.personalSelectionLocal = git;
   const client = {
-    kind: 'review', closed: false, send() {},
+    kind: 'review',
+    closed: false,
+    send() {},
     documents: new Map(),
-    scheduleMaterialisation(path) { scheduled.push(path); },
+    scheduleMaterialisation(path) {
+      scheduled.push(path);
+    },
   };
   const absolutePath = 'C:\\repo\\localisation\\russian\\file.yml';
   client.documents.set(absolutePath, { binding, initialised: true });
@@ -349,7 +424,8 @@ test('one shared localisation key can be included without changing its neighbour
 });
 
 test('a checkbox can restore a local-only deletion after the shared version returns to Git', () => {
-  const git = 'l_russian:\n barrad_silver.43.t:0 "Panacea"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
+  const git =
+    'l_russian:\n barrad_silver.43.t:0 "Panacea"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
   const local = git.replace(' barrad_silver.43.t:0 "Panacea"\n', '\n');
   const binding = bindingFixture();
   binding.gitWritable = true;
@@ -363,8 +439,10 @@ test('a checkbox can restore a local-only deletion after the shared version retu
   binding.personalSelectionGit = git;
   binding.personalSelectionShared = git;
   binding.personalSelectionLocal = local;
-  assert.equal(setPersonalSelection(binding, 'C:\\country_BAR_l_russian.yml',
-    'key:barrad_silver.43.t', true, 'selection'), true);
+  assert.equal(
+    setPersonalSelection(binding, 'C:\\country_BAR_l_russian.yml', 'key:barrad_silver.43.t', true, 'selection'),
+    true,
+  );
   assert.equal(binding.personalText.includes('barrad_silver.43.t:0 "Panacea"'), true);
   assert.equal(binding.sent[0].type, 'personal-projection-set');
   assert.equal(binding.sent[0].text, binding.personalText);
@@ -372,7 +450,8 @@ test('a checkbox can restore a local-only deletion after the shared version retu
 });
 
 test('excluding a BAR deletion does not send its leftover blank line to the server', () => {
-  const git = 'l_russian:\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n barrad_silver.43.a:0 "Next"\n';
+  const git =
+    'l_russian:\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n barrad_silver.43.a:0 "Next"\n';
   const shared = git.replace(' barrad_silver.43.d:0 "Description"\n', '\n');
   const local = git.replace(' barrad_silver.43.d:0 "Description"\n', '\n barrad_silver.43.d:0 "Description"\n');
   const binding = bindingFixture();
@@ -387,8 +466,10 @@ test('excluding a BAR deletion does not send its leftover blank line to the serv
   binding.personalSelectionGit = git;
   binding.personalSelectionShared = shared;
   binding.personalSelectionLocal = local;
-  assert.equal(setPersonalSelection(binding, 'C:\\country_BAR_l_russian.yml',
-    'key:barrad_silver.43.d', false, 'selection'), true);
+  assert.equal(
+    setPersonalSelection(binding, 'C:\\country_BAR_l_russian.yml', 'key:barrad_silver.43.d', false, 'selection'),
+    true,
+  );
   assert.equal(binding.sent[0].text, git);
   resetPersonalRequest(binding);
 });
@@ -415,7 +496,8 @@ test('duplicate occurrence selection is sent to the server and survives projecti
   assert.equal(binding.personalSelectionSnapshot ?? null, null);
   handlePersonalDocument(binding, {
     requestId: binding.personalRequestId,
-    textBase64: Buffer.from(selected).toString('base64'), revision: 'server-revision',
+    textBase64: Buffer.from(selected).toString('base64'),
+    revision: 'server-revision',
   });
   assert.equal(localFileText(binding), selected);
   assert.equal(binding.serverPersonalText, selected);
@@ -429,11 +511,14 @@ test('committing a selected duplicate file retires its local overlay', () => {
   binding.relativePath = 'localisation/russian/file.yml';
   binding.personalSelectionSnapshot = { gitHash: 'previous-git', text: git.replaceAll('\n', '\r\n') };
   binding.hub.readGitHeadText = () => git;
-  binding.hub.clearPersonalSelection = () => { cleared = true; };
+  binding.hub.clearPersonalSelection = () => {
+    cleared = true;
+  };
   requestPersonalDocument(binding);
   handlePersonalDocument(binding, {
     requestId: binding.personalRequestId,
-    textBase64: Buffer.from(git).toString('base64'), revision: 'committed',
+    textBase64: Buffer.from(git).toString('base64'),
+    revision: 'committed',
   });
   assert.equal(cleared, true);
   assert.equal(binding.personalSelectionSnapshot, null);

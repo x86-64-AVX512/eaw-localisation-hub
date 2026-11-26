@@ -1,9 +1,4 @@
-import {
-  AuthError,
-  displayNameKey,
-  publicSession,
-  publicUser,
-} from './auth-model.mjs';
+import { AuthError, displayNameKey, publicSession, publicUser } from './auth-model.mjs';
 import { generateRecoveryCode } from './recovery-code.mjs';
 
 function userForActor(store, actor) {
@@ -27,8 +22,7 @@ export async function issueRecoveryCode(store, actor) {
 
 export async function confirmRecoveryCode(store, actor, code) {
   const user = userForActor(store, actor);
-  if (user.recoveryStatus !== 'pending_confirmation'
-    || !store.recoveryCodes.matches(code, user.recoveryCodeHash)) {
+  if (user.recoveryStatus !== 'pending_confirmation' || !store.recoveryCodes.matches(code, user.recoveryCodeHash)) {
     throw new AuthError('Recovery code confirmation is invalid', 409, 'invalid_recovery_confirmation');
   }
   user.recoveryStatus = 'active';
@@ -40,9 +34,7 @@ export async function confirmRecoveryCode(store, actor, code) {
 export async function discardPendingRecoveryCode(store, actor) {
   const user = userForActor(store, actor);
   if (user.recoveryStatus === 'pending_confirmation') {
-    user.recoveryStatus = user.recoveryIssueKind === 'replacement'
-      ? 'issuance_authorized'
-      : 'setup_required';
+    user.recoveryStatus = user.recoveryIssueKind === 'replacement' ? 'issuance_authorized' : 'setup_required';
     user.recoveryCodeHash = null;
     await store.persist();
   }
@@ -52,8 +44,12 @@ export async function discardPendingRecoveryCode(store, actor) {
 export async function recoverPassword(store, displayName, code, newPassword, source = '') {
   const key = displayNameKey(displayName);
   const user = store.state.users.find((item) => displayNameKey(item.displayName) === key);
-  if (!user || user.enabled === false || user.recoveryStatus !== 'active'
-    || !store.recoveryCodes.matches(code, user.recoveryCodeHash)) {
+  if (
+    !user ||
+    user.enabled === false ||
+    user.recoveryStatus !== 'active' ||
+    !store.recoveryCodes.matches(code, user.recoveryCodeHash)
+  ) {
     throw new AuthError('Display name or recovery code is invalid', 401, 'invalid_recovery_code');
   }
   const expectedHash = user.recoveryCodeHash;

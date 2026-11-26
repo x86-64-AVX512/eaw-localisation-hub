@@ -3,23 +3,26 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { requireDocumentEdit } from '../../../packages/shared/src/document-permissions.mts';
 import {
-  AMBIGUOUS_QUOTE_MESSAGE, scanLocalisationEntries, parseKeyReplacementBatch, replaceLocalisationValues,
+  AMBIGUOUS_QUOTE_MESSAGE,
+  scanLocalisationEntries,
+  parseKeyReplacementBatch,
+  replaceLocalisationValues,
 } from '../../../packages/shared/src/localisation-replace.mts';
 import {
-  normaliseLineEndings, readTrackedTextFile, withoutUtf8Bom, withUtf8Bom, writeTrackedTextFile,
+  normaliseLineEndings,
+  readTrackedTextFile,
+  withoutUtf8Bom,
+  withUtf8Bom,
+  writeTrackedTextFile,
 } from '../../../packages/shared/src/text.mts';
 
 const MAX_BATCH_ENTRIES = 500;
 
 function replacementRoots(root, language) {
-  if (language === 'english') return [
-    path.join(root, 'localisation', 'english'),
-    path.join(root, 'localisation', 'replace', 'english'),
-  ];
-  if (language === 'russian') return [
-    path.join(root, 'localisation', 'russian'),
-    path.join(root, 'localisation', 'replace', 'russian'),
-  ];
+  if (language === 'english')
+    return [path.join(root, 'localisation', 'english'), path.join(root, 'localisation', 'replace', 'english')];
+  if (language === 'russian')
+    return [path.join(root, 'localisation', 'russian'), path.join(root, 'localisation', 'replace', 'russian')];
   throw new Error('Выберите русские или английские файлы локализации.');
 }
 
@@ -47,7 +50,9 @@ function digest(text) {
 }
 
 export class KeyReplacementWorkflow {
-  constructor(hub) { this.hub = hub; }
+  constructor(hub) {
+    this.hub = hub;
+  }
 
   async preview(input, language = 'russian', mode = 'classic') {
     const parsed = parseKeyReplacementBatch(input, { language, mode });
@@ -67,44 +72,84 @@ export class KeyReplacementWorkflow {
       const relativePath = path.relative(this.hub.options.repo, absolutePath).replaceAll('\\', '/');
       const scanned = scanLocalisationEntries(text);
       for (const entry of scanned.ambiguousEntries) {
-        if (wanted.has(entry.key)) sourceErrors.push({ file: relativePath, key: entry.key,
-          line: entry.line, message: AMBIGUOUS_QUOTE_MESSAGE });
+        if (wanted.has(entry.key))
+          sourceErrors.push({ file: relativePath, key: entry.key, line: entry.line, message: AMBIGUOUS_QUOTE_MESSAGE });
       }
       const matches = scanned.entries.filter((entry) => wanted.has(entry.key));
       if (!matches.length) continue;
-      for (const match of matches) found.get(match.key).push({
-        file: relativePath, line: match.line, oldText: match.text,
-      });
+      for (const match of matches)
+        found.get(match.key).push({
+          file: relativePath,
+          line: match.line,
+          oldText: match.text,
+        });
       fileValues.push({
-        path: relativePath, hash: digest(text), text, matches,
+        path: relativePath,
+        hash: digest(text),
+        text,
+        matches,
       });
     }
-    if (sourceErrors.length) return { ...parsed, errors: sourceErrors,
-      missingKeys: [], duplicateMatches: [], changes: [], files: [], language, mode };
+    if (sourceErrors.length)
+      return {
+        ...parsed,
+        errors: sourceErrors,
+        missingKeys: [],
+        duplicateMatches: [],
+        changes: [],
+        files: [],
+        language,
+        mode,
+      };
     const missingKeys = [...found].filter(([, matches]) => matches.length === 0).map(([key]) => key);
-    const duplicateMatches = [...found].filter(([, matches]) => matches.length > 1)
+    const duplicateMatches = [...found]
+      .filter(([, matches]) => matches.length > 1)
       .map(([key, matches]) => ({ key, matches }));
-    const changes = [...found].flatMap(([key, matches]) => matches.length === 1 ? [{
-      key, file: matches[0].file, oldText: matches[0].oldText, newText: wanted.get(key),
-    }] : []);
+    const changes = [...found].flatMap(([key, matches]) =>
+      matches.length === 1
+        ? [
+            {
+              key,
+              file: matches[0].file,
+              oldText: matches[0].oldText,
+              newText: wanted.get(key),
+            },
+          ]
+        : [],
+    );
     const safeWanted = new Map(changes.map(({ key, newText }) => [key, newText]));
-    const files = fileValues.filter((file) => file.matches.some(({ key }) => safeWanted.has(key))
-      && file.text !== replaceLocalisationValues(file.text, safeWanted).text)
+    const files = fileValues
+      .filter(
+        (file) =>
+          file.matches.some(({ key }) => safeWanted.has(key)) &&
+          file.text !== replaceLocalisationValues(file.text, safeWanted).text,
+      )
       .map(({ path: filePath, hash }) => ({ path: filePath, hash }));
     return {
-      ...parsed, missingKeys, duplicateMatches, changes, files, language, mode,
+      ...parsed,
+      missingKeys,
+      duplicateMatches,
+      changes,
+      files,
+      language,
+      mode,
     };
   }
 
   async apply(input, expectedFiles, language = 'russian', mode = 'classic') {
     requireDocumentEdit(this.hub.identity, `localisation/${language}/batch.yml`);
     const preview = await this.preview(input, language, mode);
-    if (preview.errors.length || preview.duplicateKeys.length || preview.missingKeys.length
-      || preview.duplicateMatches.length) throw new Error('Предпросмотр содержит ошибки; применение остановлено.');
-    const expected = new Map((Array.isArray(expectedFiles) ? expectedFiles : [])
-      .map((file) => [String(file.path), String(file.hash)]));
-    if (expected.size !== preview.files.length
-      || preview.files.some((file) => expected.get(file.path) !== file.hash)) {
+    if (
+      preview.errors.length ||
+      preview.duplicateKeys.length ||
+      preview.missingKeys.length ||
+      preview.duplicateMatches.length
+    )
+      throw new Error('Предпросмотр содержит ошибки; применение остановлено.');
+    const expected = new Map(
+      (Array.isArray(expectedFiles) ? expectedFiles : []).map((file) => [String(file.path), String(file.hash)]),
+    );
+    if (expected.size !== preview.files.length || preview.files.some((file) => expected.get(file.path) !== file.hash)) {
       throw new Error('Файлы изменились после предпросмотра. Обновите предпросмотр и повторите операцию.');
     }
     const wanted = new Map(preview.entries.map((entry) => [entry.key, entry.text]));

@@ -9,9 +9,16 @@ export async function sendStartupChangedFiles(source, documentId, socket, room, 
   try {
     const files = await source.changedFilesSince(documentId, localHead, { remoteHead: snapshot.commit });
     await room.enqueueMessage(() => {
-      if (socket.readyState !== WebSocket.OPEN || !room.clients.has(socket)
-        || socket.localHead !== localHead || room.gitConflict || room.gitBase?.stale
-        || room.gitBase?.commit !== snapshot.commit || room.gitBase?.blob !== snapshot.blob) return;
+      if (
+        socket.readyState !== WebSocket.OPEN ||
+        !room.clients.has(socket) ||
+        socket.localHead !== localHead ||
+        room.gitConflict ||
+        room.gitBase?.stale ||
+        room.gitBase?.commit !== snapshot.commit ||
+        room.gitBase?.blob !== snapshot.blob
+      )
+        return;
       if (!files.some((file) => !(socket.changedFiles ?? []).includes(file))) return;
       socket.changedFiles = [...new Set([...(socket.changedFiles ?? []), ...files])].slice(0, 500);
       sendWithBackpressure(socket, JSON.stringify(room.gitStatusFor(socket)));

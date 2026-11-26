@@ -26,8 +26,12 @@ async function freePort() {
 }
 async function waitForOutput(process, marker) {
   let output = '';
-  process.stdout.on('data', (chunk) => { output += chunk; });
-  process.stderr.on('data', (chunk) => { output += chunk; });
+  process.stdout.on('data', (chunk) => {
+    output += chunk;
+  });
+  process.stderr.on('data', (chunk) => {
+    output += chunk;
+  });
   for (let attempt = 0; attempt < 200; attempt += 1) {
     if (output.includes(marker)) return;
     if (process.exitCode != null) throw new Error(`Server exited early: ${output}`);
@@ -84,10 +88,12 @@ function encodedRelative(position) {
 function reservationText(document, reservation) {
   const text = document.getText('content');
   const start = Y.createAbsolutePositionFromRelativePosition(
-    Y.decodeRelativePosition(Buffer.from(reservation.startRelative, 'base64')), document,
+    Y.decodeRelativePosition(Buffer.from(reservation.startRelative, 'base64')),
+    document,
   );
   const end = Y.createAbsolutePositionFromRelativePosition(
-    Y.decodeRelativePosition(Buffer.from(reservation.endRelative, 'base64')), document,
+    Y.decodeRelativePosition(Buffer.from(reservation.endRelative, 'base64')),
+    document,
   );
   assert.equal(start?.type, text);
   assert.equal(end?.type, text);
@@ -112,19 +118,31 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     const blob = git(source, 'rev-parse', 'HEAD:localisation/replace/russian/test.yml');
     git(root, 'clone', '--bare', source, origin);
     const port = await freePort();
-    server = spawn(process.execPath, [
-      'apps/server/src/main.mjs', '--host', '127.0.0.1', '--port', String(port),
-      '--data', path.join(root, 'data'), '--auth', 'disabled',
-    ], {
-      cwd: projectRoot,
-      env: {
-        ...process.env,
-        EAW_HUB_GITHUB_REPOSITORY: '',
-        EAW_HUB_CANONICAL_REPOSITORY: pathToFileURL(origin).href,
-        EAW_HUB_GIT_REFRESH_MILLISECONDS: '250',
+    server = spawn(
+      process.execPath,
+      [
+        'apps/server/src/main.mjs',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        String(port),
+        '--data',
+        path.join(root, 'data'),
+        '--auth',
+        'disabled',
+      ],
+      {
+        cwd: projectRoot,
+        env: {
+          ...process.env,
+          EAW_HUB_GITHUB_REPOSITORY: '',
+          EAW_HUB_CANONICAL_REPOSITORY: pathToFileURL(origin).href,
+          EAW_HUB_GIT_REFRESH_MILLISECONDS: '250',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       },
-      stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
-    });
+    );
     await waitForOutput(server, 'listening on');
     const stale = await connect(port, '0'.repeat(40), '1'.repeat(40));
     assert.equal(stale.synced.git.status, 'file-outdated');
@@ -132,7 +150,11 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     const update = new Y.Doc();
     update.getText('content').insert(0, 'stale overwrite');
     stale.socket.send(Y.encodeStateAsUpdate(update));
-    const staleError = await waitForRecordedMessage(stale.messages, ({ type }) => type === 'error', 'stale update rejection');
+    const staleError = await waitForRecordedMessage(
+      stale.messages,
+      ({ type }) => type === 'error',
+      'stale update rejection',
+    );
     assert.match(staleError.message, /Git version of this file/u);
     stale.socket.close();
     const branchOnly = await connect(port, '0'.repeat(40), blob);
@@ -149,16 +171,22 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     const canonicalStart = liveText.toString().indexOf('canonical');
     const reservationCreated = waitForRecordedMessage(
       current.messages,
-      ({ type, reservations }) => type === 'reservations'
-        && reservations?.some(({ id }) => id === 'canonical-reservation'),
+      ({ type, reservations }) =>
+        type === 'reservations' && reservations?.some(({ id }) => id === 'canonical-reservation'),
       'canonical reservation creation',
     );
-    current.socket.send(JSON.stringify({
-      type: 'reservation-create', id: 'canonical-reservation', assignee: 'Alice', createdBy: 'Alice',
-      color: '#ff6677', initialKeys: ['canonical'],
-      startRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(liveText, canonicalStart, -1)),
-      endRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(liveText, liveText.length, 0)),
-    }));
+    current.socket.send(
+      JSON.stringify({
+        type: 'reservation-create',
+        id: 'canonical-reservation',
+        assignee: 'Alice',
+        createdBy: 'Alice',
+        color: '#ff6677',
+        initialKeys: ['canonical'],
+        startRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(liveText, canonicalStart, -1)),
+        endRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(liveText, liveText.length, 0)),
+      }),
+    );
     await reservationCreated;
     const currentClosed = once(current.socket, 'close');
     current.socket.close();
@@ -172,29 +200,40 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
     await new Promise((resolve) => setTimeout(resolve, 300));
     const conflicted = await connect(port, remoteCommit, remoteBlob);
     assert.equal(conflicted.synced.git.status, 'conflict');
-    assert.deepEqual(conflicted.synced.git.conflicts.map(({ key }) => key), ['canonical']);
+    assert.deepEqual(
+      conflicted.synced.git.conflicts.map(({ key }) => key),
+      ['canonical'],
+    );
     const refreshedReservations = waitForRecordedMessage(
       conflicted.messages,
-      ({ type, reservations }) => type === 'reservations'
-        && reservations?.some(({ id }) => id === 'canonical-reservation'),
+      ({ type, reservations }) =>
+        type === 'reservations' && reservations?.some(({ id }) => id === 'canonical-reservation'),
       'reservation re-anchor after Git refresh',
     );
-    conflicted.socket.send(JSON.stringify({
-      type: 'git-conflict-resolve', key: 'canonical', choice: 'external',
-      conflictId: conflicted.synced.git.conflicts[0].conflictId,
-    }));
+    conflicted.socket.send(
+      JSON.stringify({
+        type: 'git-conflict-resolve',
+        key: 'canonical',
+        choice: 'external',
+        conflictId: conflicted.synced.git.conflicts[0].conflictId,
+      }),
+    );
     await waitForRecordedMessage(
       conflicted.messages,
       ({ type, status }) => type === 'git-status' && status === 'current',
       'resolved current status',
     );
-    for (let attempt = 0; attempt < 500
-      && !conflicted.ydoc.getText('content').toString().includes('"Remote"'); attempt += 1) {
+    for (
+      let attempt = 0;
+      attempt < 500 && !conflicted.ydoc.getText('content').toString().includes('"Remote"');
+      attempt += 1
+    ) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.match(conflicted.ydoc.getText('content').toString(), /"Remote"/u);
-    const refreshedReservation = (await refreshedReservations).reservations
-      .find(({ id }) => id === 'canonical-reservation');
+    const refreshedReservation = (await refreshedReservations).reservations.find(
+      ({ id }) => id === 'canonical-reservation',
+    );
     assert.match(reservationText(conflicted.ydoc, refreshedReservation), /canonical: "Remote"/u);
     conflicted.socket.close();
   } finally {

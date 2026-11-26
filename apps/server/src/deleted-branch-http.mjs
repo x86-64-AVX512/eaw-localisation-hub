@@ -1,8 +1,6 @@
 import { AuthError } from './auth.mjs';
 
-export async function handleDeletedBranchHttp({
-  request, response, url, archive, authenticatedUser, sendJson,
-}) {
+export async function handleDeletedBranchHttp({ request, response, url, archive, authenticatedUser, sendJson }) {
   if (request.method !== 'GET') return false;
   if (url.pathname === '/api/deleted-branches') {
     await authenticatedUser(request);

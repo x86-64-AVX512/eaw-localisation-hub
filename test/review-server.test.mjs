@@ -36,16 +36,24 @@ async function waitUntil(predicate, label, timeoutMilliseconds = 10_000) {
 test('materialisation waits for an older write before saving a newer personal projection', async () => {
   const binding = { materialisationWrite: Promise.resolve() };
   const order = [];
-  let releaseFirst; let signalFirst;
-  const firstStarted = new Promise((resolve) => { signalFirst = resolve; });
-  const firstDone = new Promise((resolve) => { releaseFirst = resolve; });
+  let releaseFirst;
+  let signalFirst;
+  const firstStarted = new Promise((resolve) => {
+    signalFirst = resolve;
+  });
+  const firstDone = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
   const first = queueMaterialisation(binding, async () => {
-    order.push('old-start'); signalFirst();
+    order.push('old-start');
+    signalFirst();
     await firstDone;
     order.push('old-finish');
   });
   await firstStarted;
-  const second = queueMaterialisation(binding, () => { order.push('new-finish'); });
+  const second = queueMaterialisation(binding, () => {
+    order.push('new-finish');
+  });
   assert.deepEqual(order, ['old-start']);
   releaseFirst();
   await Promise.all([first, second]);
@@ -68,7 +76,7 @@ async function readJsonFile(target) {
   return JSON.parse(await fs.readFile(target, 'utf8'));
 }
 
-test('review endpoint keeps its loopback port and capability across Agent restarts', async t => {
+test('review endpoint keeps its loopback port and capability across Agent restarts', async (t) => {
   const { options, endpointPath } = await reviewEndpointFixture(t);
   const first = await startReviewServer({}, options);
   let original;
@@ -94,7 +102,7 @@ test('review endpoint keeps its loopback port and capability across Agent restar
   }
 });
 
-test('review endpoint replaces a malformed persisted capability', async t => {
+test('review endpoint replaces a malformed persisted capability', async (t) => {
   const { options, endpointPath } = await reviewEndpointFixture(t);
   await fs.writeFile(endpointPath, JSON.stringify({ schema: 1, port: '49152', token: 'invalid' }));
   const review = await startReviewServer({}, options);
@@ -108,7 +116,7 @@ test('review endpoint replaces a malformed persisted capability', async t => {
   }
 });
 
-test('review endpoint relocates when another application owns the saved port', async t => {
+test('review endpoint relocates when another application owns the saved port', async (t) => {
   const { options, endpointPath } = await reviewEndpointFixture(t);
   const oldToken = 'A'.repeat(43);
   const probes = [];
@@ -134,9 +142,10 @@ test('review endpoint relocates when another application owns the saved port', a
       assert.equal(discovery.token, endpoint.token);
       assert.match(warning.mock.calls[0].arguments[0], /browser storage.*old address/u);
 
-      const checkAccess = token => fetch(discovery.origin + '/api/review-access', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const checkAccess = (token) =>
+        fetch(discovery.origin + '/api/review-access', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
       assert.equal((await checkAccess(oldToken)).status, 403);
       assert.deepEqual(await (await checkAccess(endpoint.token)).json(), { allowed: true });
     } finally {
@@ -150,11 +159,11 @@ test('review endpoint relocates when another application owns the saved port', a
       await restarted.close();
     }
   } finally {
-    await new Promise(resolve => occupant.close(resolve));
+    await new Promise((resolve) => occupant.close(resolve));
   }
 });
 
-test('review endpoint retries a reserved port using the OS-assigned port', async t => {
+test('review endpoint retries a reserved port using the OS-assigned port', async (t) => {
   const { options, endpointPath } = await reviewEndpointFixture(t);
   const saved = { schema: 1, port: 59637, token: 'A'.repeat(43) };
   await fs.writeFile(endpointPath, JSON.stringify(saved));
@@ -177,7 +186,7 @@ test('review endpoint retries a reserved port using the OS-assigned port', async
     assert.equal(server.listenerCount('error'), 0);
     assert.deepEqual(server.listeners('listening'), originalListeningHandlers);
   } finally {
-    if (server.listening) await new Promise(resolve => server.close(resolve));
+    if (server.listening) await new Promise((resolve) => server.close(resolve));
   }
 });
 
@@ -214,8 +223,12 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       }
     },
     detachClient() {},
-    currentGitCommit() { return 'a'.repeat(40); },
-    async currentGitCommitAsync() { return 'a'.repeat(40); },
+    currentGitCommit() {
+      return 'a'.repeat(40);
+    },
+    async currentGitCommitAsync() {
+      return 'a'.repeat(40);
+    },
     async ticketRequest(route, options = {}) {
       received.push({ type: 'ticketRequest', route, options });
       if (options.method === 'POST') return { ticket: { id: 'ticket-created' } };
@@ -227,8 +240,12 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       if (route === '/api/spelling/words') return { words: ['эквестрия'] };
       if (route === '/api/deleted-branches') return { branches: [{ branch: 'old', files: [] }] };
       if (route.startsWith('/api/deleted-branches/document?')) {
-        return { branch: 'old', relativePath: 'localisation/russian/review_l_russian.yml',
-          textBase64: Buffer.from('archived', 'utf8').toString('base64'), comments: [] };
+        return {
+          branch: 'old',
+          relativePath: 'localisation/russian/review_l_russian.yml',
+          textBase64: Buffer.from('archived', 'utf8').toString('base64'),
+          comments: [],
+        };
       }
       throw new Error('Unexpected auth route');
     },
@@ -236,7 +253,11 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
   hub.diffCache = new DiffCache(path.join(state, 'diff-cache'));
   await hub.diffCache.set('test', 'cached-diff', { left: 'a', right: 'b' });
   const review = await startReviewServer(hub, {
-    repo: repository, state, workspace: 'test', user: 'Reviewer', color: '#abcdef',
+    repo: repository,
+    state,
+    workspace: 'test',
+    user: 'Reviewer',
+    color: '#abcdef',
   });
   try {
     const discovery = JSON.parse(await fs.readFile(review.discoveryPath, 'utf8'));
@@ -264,10 +285,10 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       headers: { Authorization: `Bearer ${discovery.token}` },
     });
     assert.equal(listed.status, 200);
-    assert.deepEqual((await listed.json()).files.map(({ relativePath }) => relativePath), [
-      'localisation/replace/english/review_l_english.yml',
-      'localisation/russian/review_l_russian.yml',
-    ]);
+    assert.deepEqual(
+      (await listed.json()).files.map(({ relativePath }) => relativePath),
+      ['localisation/replace/english/review_l_english.yml', 'localisation/russian/review_l_russian.yml'],
+    );
     assert.equal((await fetch(`${discovery.origin}/api/deleted-branches`)).status, 401);
     const archivedBranches = await fetch(`${discovery.origin}/api/deleted-branches`, {
       headers: { Authorization: `Bearer ${discovery.token}` },
@@ -290,8 +311,7 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     assert.equal(keyIndex.complete, true);
     assert.deepEqual(keyIndex.languages.russian.keys, ['REVIEW_KEY']);
     const unchangedKeyIndex = await fetch(`${discovery.origin}/api/localisation-key-index`, {
-      headers: { Authorization: `Bearer ${discovery.token}`,
-        'If-None-Match': keyIndexResponse.headers.get('etag') },
+      headers: { Authorization: `Bearer ${discovery.token}`, 'If-None-Match': keyIndexResponse.headers.get('etag') },
     });
     assert.equal(unchangedKeyIndex.status, 304);
 
@@ -300,8 +320,10 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     const byteResponse = await fetch(byteUrl, { headers: { Authorization: `Bearer ${discovery.token}` } });
     assert.equal(byteResponse.status, 200);
     assert.equal((await byteResponse.json()).diagnostics[0].code, 'disk-missing-utf8-bom');
-    const invalidByteResponse = await fetch(`${discovery.origin}/api/localisation-file-diagnostics?path=..%2Foutside.yml`,
-      { headers: { Authorization: `Bearer ${discovery.token}` } });
+    const invalidByteResponse = await fetch(
+      `${discovery.origin}/api/localisation-file-diagnostics?path=..%2Foutside.yml`,
+      { headers: { Authorization: `Bearer ${discovery.token}` } },
+    );
     assert.equal(invalidByteResponse.status, 400);
 
     const gitHeadUrl = `${discovery.origin}/api/git-history/head?path=${encodeURIComponent(tracked)}`;
@@ -329,11 +351,14 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
       headers: { Authorization: `Bearer ${discovery.token}` },
     });
     assert.equal(spellingAgain.status, 200);
-    assert.equal(received.filter(({ type, route }) => (
-      type === 'authRequest' && route === '/api/spelling/dictionary'
-    )).length, 1, 'Agent must cache the immutable base dictionary for all Review windows');
+    assert.equal(
+      received.filter(({ type, route }) => type === 'authRequest' && route === '/api/spelling/dictionary').length,
+      1,
+      'Agent must cache the immutable base dictionary for all Review windows',
+    );
     const remoteCheckForbidden = await fetch(`${discovery.origin}/api/spelling/check`, {
-      method: 'POST', headers: { Authorization: `Bearer ${discovery.token}` },
+      method: 'POST',
+      headers: { Authorization: `Bearer ${discovery.token}` },
     });
     assert.equal(remoteCheckForbidden.status, 405, 'document text must never be proxied for spellchecking');
 
@@ -341,18 +366,26 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     assert.equal(languageUnauthorized.status, 401);
     const languageHeaders = { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json' };
     const languageSaved = await fetch(`${discovery.origin}/api/ui-language`, {
-      method: 'POST', headers: languageHeaders, body: JSON.stringify({ preference: 'en' }),
+      method: 'POST',
+      headers: languageHeaders,
+      body: JSON.stringify({ preference: 'en' }),
     });
     assert.equal(languageSaved.status, 200);
     assert.equal((await languageSaved.json()).language, 'en');
     const languageLoaded = await fetch(`${discovery.origin}/api/ui-language`, { headers: languageHeaders });
     assert.equal((await languageLoaded.json()).preference, 'en');
     for (const body of ['{broken', JSON.stringify({ preference: 'other' }), 'x'.repeat(1025)]) {
-      const invalid = await fetch(`${discovery.origin}/api/ui-language`, { method: 'POST', headers: languageHeaders, body });
+      const invalid = await fetch(`${discovery.origin}/api/ui-language`, {
+        method: 'POST',
+        headers: languageHeaders,
+        body,
+      });
       assert.equal(invalid.status, 400);
     }
     const languageForeignOrigin = await fetch(`${discovery.origin}/api/ui-language`, {
-      method: 'POST', headers: { ...languageHeaders, Origin: 'https://attacker.invalid' }, body: JSON.stringify({ preference: 'ru' }),
+      method: 'POST',
+      headers: { ...languageHeaders, Origin: 'https://attacker.invalid' },
+      body: JSON.stringify({ preference: 'ru' }),
     });
     assert.equal(languageForeignOrigin.status, 403);
 
@@ -364,14 +397,18 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     assert.equal(cacheStats.status, 200);
     assert.equal((await cacheStats.json()).entries, 1);
     const cacheCleared = await fetch(`${discovery.origin}/api/diff-cache`, {
-      method: 'DELETE', headers: { Authorization: `Bearer ${discovery.token}` },
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${discovery.token}` },
     });
     assert.equal(cacheCleared.status, 200);
     assert.equal((await cacheCleared.json()).cleared.entries, 1);
 
-    const replaceOriginal = await fetch(`${discovery.origin}/api/bootstrap?readonly=english&path=${encodeURIComponent(replaceEnglish)}`, {
-      headers: { Authorization: `Bearer ${discovery.token}` },
-    });
+    const replaceOriginal = await fetch(
+      `${discovery.origin}/api/bootstrap?readonly=english&path=${encodeURIComponent(replaceEnglish)}`,
+      {
+        headers: { Authorization: `Bearer ${discovery.token}` },
+      },
+    );
     assert.equal(replaceOriginal.status, 200);
     const replacePayload = await replaceOriginal.json();
     assert.equal(replacePayload.relativePath, 'localisation/replace/english/review_l_english.yml');
@@ -389,20 +426,23 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     });
     assert.equal(createdTicket.status, 200);
     assert.equal((await createdTicket.json()).ticket.id, 'ticket-created');
-    const forwarded = received.find(({ type, options: requestOptions }) => (
-      type === 'ticketRequest' && requestOptions?.method === 'POST'
-    ));
+    const forwarded = received.find(
+      ({ type, options: requestOptions }) => type === 'ticketRequest' && requestOptions?.method === 'POST',
+    );
     const forwardedBody = JSON.parse(forwarded.options.body);
     assert.equal(forwardedBody.baseBranch, 'test');
     assert.equal(forwardedBody.baseCommit, 'a'.repeat(40));
 
-    const escaped = await fetch(`${discovery.origin}/api/bootstrap?path=${encodeURIComponent(path.join(temporary, 'outside.yml'))}`, {
-      headers: { Authorization: `Bearer ${discovery.token}` },
-    });
+    const escaped = await fetch(
+      `${discovery.origin}/api/bootstrap?path=${encodeURIComponent(path.join(temporary, 'outside.yml'))}`,
+      {
+        headers: { Authorization: `Bearer ${discovery.token}` },
+      },
+    );
     assert.equal(escaped.status, 400);
 
-    const socketUrl = discovery.origin.replace('http:', 'ws:')
-      + `/review-socket?token=${encodeURIComponent(discovery.token)}`;
+    const socketUrl =
+      discovery.origin.replace('http:', 'ws:') + `/review-socket?token=${encodeURIComponent(discovery.token)}`;
     const rejected = new WebSocket(socketUrl, { origin: 'https://attacker.invalid' });
     await assert.rejects(waitForOpen(rejected));
 
@@ -410,20 +450,26 @@ test('review server is loopback-bound, bearer-protected, origin-checked, and pat
     const helloPromise = waitForMessage(socket);
     await waitForOpen(socket);
     assert.equal((await helloPromise).type, 'agentHello');
-    socket.send(JSON.stringify({
-      type: 'open', path: tracked,
-      textBase64: Buffer.from('l_russian:\n REVIEW_KEY:0 "Review"\n', 'utf8').toString('base64'),
-    }));
+    socket.send(
+      JSON.stringify({
+        type: 'open',
+        path: tracked,
+        textBase64: Buffer.from('l_russian:\n REVIEW_KEY:0 "Review"\n', 'utf8').toString('base64'),
+      }),
+    );
     await waitUntil(() => received.some(({ type }) => type === 'open'), 'Review open message');
     assert.equal(received.at(-1)?.type, 'open');
     const changed = 'l_russian:\n REVIEW_KEY:0 "Из Review"\n';
-    socket.send(JSON.stringify({
-      type: 'snapshot', path: tracked,
-      textBase64: Buffer.from(changed, 'utf8').toString('base64'),
-    }));
+    socket.send(
+      JSON.stringify({
+        type: 'snapshot',
+        path: tracked,
+        textBase64: Buffer.from(changed, 'utf8').toString('base64'),
+      }),
+    );
     await waitUntil(async () => {
       try {
-        return await fs.readFile(tracked, 'utf8') === `\uFEFF${changed}`;
+        return (await fs.readFile(tracked, 'utf8')) === `\uFEFF${changed}`;
       } catch {
         return false;
       }

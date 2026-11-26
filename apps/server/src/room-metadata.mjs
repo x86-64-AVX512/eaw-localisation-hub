@@ -10,14 +10,20 @@ const MAX_DISCUSSION_MESSAGES = 100;
 // Like the other minimal* readers, drop malformed entries instead of refusing the
 // whole metadata file: a throw here would stop the server at startup.
 function deletionHistory(item) {
-  const ids = [...new Set([
-    ...(Array.isArray(item.deletedMessageIds) ? item.deletedMessageIds : []),
-    ...(Array.isArray(item.deletedMessageIdsRecovery) ? item.deletedMessageIdsRecovery : []),
-  ].filter(id => typeof id === 'string' && id && Buffer.byteLength(id, 'utf8') <= 128))];
+  const ids = [
+    ...new Set(
+      [
+        ...(Array.isArray(item.deletedMessageIds) ? item.deletedMessageIds : []),
+        ...(Array.isArray(item.deletedMessageIdsRecovery) ? item.deletedMessageIdsRecovery : []),
+      ].filter((id) => typeof id === 'string' && id && Buffer.byteLength(id, 'utf8') <= 128),
+    ),
+  ];
   return {
     ...(ids.length ? { deletedMessageIds: ids.slice(0, MAX_DELETED_MESSAGE_IDS) } : {}),
     ...(ids.length > MAX_DELETED_MESSAGE_IDS ? { deletedMessageIdsRecovery: ids.slice(MAX_DELETED_MESSAGE_IDS) } : {}),
-    ...(ids.length > MAX_DELETED_MESSAGE_IDS || item.deletionHistoryBlocked === true ? {deletionHistoryBlocked:true} : {}),
+    ...(ids.length > MAX_DELETED_MESSAGE_IDS || item.deletionHistoryBlocked === true
+      ? { deletionHistoryBlocked: true }
+      : {}),
   };
 }
 
@@ -29,11 +35,15 @@ export function publicDiscussionItems(items) {
 function mergeOverflowMetadata(thread) {
   const result = {};
   if (Array.isArray(thread.mergeOverflowIds) || Array.isArray(thread.mergeOverflowIdsRecovery)) {
-    const ids = [...new Set([
-      ...(Array.isArray(thread.mergeOverflowIds) ? thread.mergeOverflowIds : []),
-      ...(Array.isArray(thread.mergeOverflowIdsRecovery) ? thread.mergeOverflowIdsRecovery : []),
-    ].filter(id => typeof id === 'string' && id && Buffer.byteLength(id,'utf8') <= 128))];
-    if (ids.length) result.mergeOverflowIds = ids.slice(0,MAX_DELETED_MESSAGE_IDS);
+    const ids = [
+      ...new Set(
+        [
+          ...(Array.isArray(thread.mergeOverflowIds) ? thread.mergeOverflowIds : []),
+          ...(Array.isArray(thread.mergeOverflowIdsRecovery) ? thread.mergeOverflowIdsRecovery : []),
+        ].filter((id) => typeof id === 'string' && id && Buffer.byteLength(id, 'utf8') <= 128),
+      ),
+    ];
+    if (ids.length) result.mergeOverflowIds = ids.slice(0, MAX_DELETED_MESSAGE_IDS);
     if (ids.length > MAX_DELETED_MESSAGE_IDS) {
       result.mergeOverflowIdsRecovery = ids.slice(MAX_DELETED_MESSAGE_IDS);
       result.mergeOverflowBlocked = true;
@@ -61,7 +71,8 @@ export function minimalReservation(reservation) {
     // Older versions could store derived keys of any length; Agent rejects a whole
     // snapshot that contains one over its limit, so drop them on load.
     initialKeys: Array.isArray(reservation.initialKeys)
-      ? reservation.initialKeys.map(String).filter((key) => Buffer.byteLength(key, 'utf8') <= 256) : [],
+      ? reservation.initialKeys.map(String).filter((key) => Buffer.byteLength(key, 'utf8') <= 256)
+      : [],
   };
   if (reservation.orphaned === true) result.orphaned = true;
   return result;
@@ -79,8 +90,16 @@ export function minimalDiscussionMessage(message) {
     ...(message.deleted === true ? { deleted: true } : {}),
     ...(message.mergeConflict === true ? { mergeConflict: true } : {}),
     ...(message.lastMutationId ? { lastMutationId: String(message.lastMutationId).slice(0, 128) } : {}),
-    ...(message.branchMergeBase && ['origin', 'source', 'target'].every(key => /^[0-9a-f]{64}$/u.test(message.branchMergeBase[key]))
-      ? { branchMergeBase: { origin: message.branchMergeBase.origin, source: message.branchMergeBase.source, target: message.branchMergeBase.target } } : {}),
+    ...(message.branchMergeBase &&
+    ['origin', 'source', 'target'].every((key) => /^[0-9a-f]{64}$/u.test(message.branchMergeBase[key]))
+      ? {
+          branchMergeBase: {
+            origin: message.branchMergeBase.origin,
+            source: message.branchMergeBase.source,
+            target: message.branchMergeBase.target,
+          },
+        }
+      : {}),
     createdAt: String(message.createdAt ?? ''),
   };
 }
@@ -249,9 +268,11 @@ export async function anonymisePersistedReservationUser(dataDirectory, userId, a
       return item;
     };
     const commentThreads = (Array.isArray(metadata.commentThreads) ? metadata.commentThreads : [])
-      .map(minimalCommentThread).map(anonymiseDiscussion);
+      .map(minimalCommentThread)
+      .map(anonymiseDiscussion);
     const suggestions = (Array.isArray(metadata.suggestions) ? metadata.suggestions : [])
-      .map(minimalSuggestion).map(anonymiseDiscussion);
+      .map(minimalSuggestion)
+      .map(anonymiseDiscussion);
     return changed ? serialiseMetadata(reservations, commentThreads, suggestions, metadata.gitBase ?? null) : null;
   });
 }

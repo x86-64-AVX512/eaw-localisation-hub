@@ -14,9 +14,15 @@ const ticketPanel = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'sr
 const agentConnection = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'agent-connection.ts'), 'utf8');
 const documentClose = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'document-close.ts'), 'utf8');
 const documentBinding = fs.readFileSync(path.join(projectRoot, 'apps', 'agent', 'src', 'document-binding.mjs'), 'utf8');
-const documentLifecycle = fs.readFileSync(path.join(projectRoot, 'apps', 'agent', 'src', 'document-lifecycle.mts'), 'utf8');
+const documentLifecycle = fs.readFileSync(
+  path.join(projectRoot, 'apps', 'agent', 'src', 'document-lifecycle.mts'),
+  'utf8',
+);
 const gitHistory = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'git-history-panel.ts'), 'utf8');
-const gitHistoryDiffViews = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'git-history-diff-views.ts'), 'utf8');
+const gitHistoryDiffViews = fs.readFileSync(
+  path.join(projectRoot, 'apps', 'review', 'src', 'git-history-diff-views.ts'),
+  'utf8',
+);
 const historyPanel = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'history-panel.ts'), 'utf8');
 const standardDiff = fs.readFileSync(path.join(projectRoot, 'apps', 'review', 'src', 'standard-diff-view.ts'), 'utf8');
 
@@ -33,8 +39,14 @@ test('mandatory training waits for server progress and Review records successful
   assert.match(agentHub, /trainingProgressConfirmed: this\.identity\?\.trainingProgressConfirmed === true/u);
   assert.match(agentIdentity, /trainingProgressConfirmed: message\.trainingProgressConfirmed === true/u);
   assert.match(helpPanel, /state\.trainingProgressConfirmed === true/u);
-  assert.match(reviewServer, /!this\.closed && \(materialisationInvalidated \|\| \(latest !== null && latest !== materialised\)\)/u);
-  assert.match(reviewServer, /materialisationSucceeded && !materialisationInvalidated[\s\S]*confirmDiskMaterialisation/u);
+  assert.match(
+    reviewServer,
+    /!this\.closed && \(materialisationInvalidated \|\| \(latest !== null && latest !== materialised\)\)/u,
+  );
+  assert.match(
+    reviewServer,
+    /materialisationSucceeded && !materialisationInvalidated[\s\S]*confirmDiskMaterialisation/u,
+  );
 });
 
 test('Review waits for its personal projection before accepting the first edit', () => {
@@ -58,7 +70,10 @@ test('Review starts document connection without waiting for the auxiliary ticket
 
 test('ticket navigation closes the active presence before reloading Review', () => {
   assert.match(ticketPanel, /await options\.beforeNavigate\?\.\(\)[\s\S]*location\.reload\(\)/u);
-  assert.match(documentClose, /send\(\{type:'deactivate'[\s\S]*send\(\{type:'close'[\s\S]*await connection\(\)\?\.flush/u);
+  assert.match(
+    documentClose,
+    /send\(\{\s*type:\s*'deactivate'[\s\S]*send\(\{\s*type:\s*'close'[\s\S]*await connection\(\)\?\.flush/u,
+  );
   assert.match(ticketPanel, /embeddedSessionId\(\)[\s\S]*postWorkspace\('navigate'/u);
   const unload = reviewApp.slice(reviewApp.indexOf("window.addEventListener('beforeunload'"));
   assert.ok(unload.indexOf('closeActiveDocument') < unload.indexOf('agentConnection?.dispose()'));
@@ -68,17 +83,23 @@ test('ticket navigation closes the active presence before reloading Review', () 
 test('a deleted ticket releases its tab and redirects only if it is the active document', () => {
   assert.match(documentBinding, /connectDocument\(this, REMOTE_ORIGIN\)/u);
   const connection = fs.readFileSync(new URL('../apps/agent/src/document-connection.mjs', import.meta.url), 'utf8');
-  assert.match(connection, /handleUnavailableTicketClose\(binding,code,detail\)/u);
+  assert.match(connection, /handleUnavailableTicketClose\(binding,\s*code,\s*detail\)/u);
   assert.match(documentLifecycle, /code !== 1001 \|\| !binding\.ticketId[\s\S]*type: 'ticketUnavailable'/u);
   assert.match(documentLifecycle, /binding\.paused = true/u);
   assert.match(reviewApp, /message\.type === 'ticketUnavailable'[\s\S]*ticketPanel\.leaveUnavailable/u);
-  assert.match(ticketPanel, /leaveUnavailable[\s\S]*void navigate\(null,true\)/u);
-  const workspace = fs.readFileSync(new URL('../apps/review/src/workspace-window.ts',import.meta.url),'utf8');
-  assert.match(workspace, /const wasActive = s === active;[\s\S]*replaceCurrent\) requestClose\(s.tab\);[\s\S]*if \(wasActive\) tabs.open/u);
+  assert.match(ticketPanel, /leaveUnavailable[\s\S]*void navigate\(null,\s*true\)/u);
+  const workspace = fs.readFileSync(new URL('../apps/review/src/workspace-window.ts', import.meta.url), 'utf8');
+  assert.match(
+    workspace,
+    /const wasActive = s === active;[\s\S]*replaceCurrent\) requestClose\(s.tab\);[\s\S]*if \(wasActive\) tabs.open/u,
+  );
 });
 
 test('closing Git diff retains its warm models but rejects late responses', () => {
-  assert.match(gitHistory, /function suspend\(\)[\s\S]*comparisonId \+= 1[\s\S]*loadId \+= 1[\s\S]*diffViews\.suspend\(\)/u);
+  assert.match(
+    gitHistory,
+    /function suspend\(\)[\s\S]*comparisonId \+= 1[\s\S]*loadId \+= 1[\s\S]*diffViews\.suspend\(\)/u,
+  );
   assert.match(gitHistory, /dialog\.addEventListener\('cancel', suspend\)/u);
   assert.match(gitHistory, /requestId !== comparisonId \|\| !dialog\.open/u);
   assert.match(gitHistoryDiffViews, /preserveOnDeactivate: true/u);
@@ -89,7 +110,10 @@ test('closing Git diff retains its warm models but rejects late responses', () =
 });
 
 test('closing ticket catalog disposes Monaco and rejects late diff responses', () => {
-  assert.match(ticketPanel, /function suspendCatalogDiff\(\)[\s\S]*summaryRequest \+= 1[\s\S]*diffRequest \+= 1[\s\S]*disposeDiff\(\)/u);
+  assert.match(
+    ticketPanel,
+    /function suspendCatalogDiff\(\)[\s\S]*summaryRequest \+= 1[\s\S]*diffRequest \+= 1[\s\S]*disposeDiff\(\)/u,
+  );
   assert.match(ticketPanel, /ticket-catalog-close'\)\.addEventListener\('click', closeCatalog\)/u);
   assert.match(ticketPanel, /catalog\.addEventListener\('close', suspendCatalogDiff\)/u);
   assert.match(ticketPanel, /!catalog\.open \|\| ticket\.id !== selectedId \|\| requestId !== summaryRequest/u);
@@ -107,5 +131,8 @@ test('closing document history detaches Monaco and rejects late versions', () =>
   assert.match(historyPanel, /function closeHistory\(\)[\s\S]*suspendHistory\(\)[\s\S]*dialog\.close\(\)/u);
   assert.match(historyPanel, /history-close'\)\.addEventListener\('click', closeHistory\)/u);
   assert.match(historyPanel, /dialog\.addEventListener\('close', suspendHistory\)/u);
-  assert.match(historyPanel, /if \(!dialog\.open \|\| \(message\.id !== selectedId && message\.id !== previousId\)\) return;/u);
+  assert.match(
+    historyPanel,
+    /if \(!dialog\.open \|\| \(message\.id !== selectedId && message\.id !== previousId\)\) return;/u,
+  );
 });

@@ -57,8 +57,7 @@ function locatorFor(source, range) {
 export function captureReviewAnchor(document, item) {
   const range = resolveReviewRange(document, item);
   if (!range) return false;
-  if (range.start === 0 && range.end === 0
-      && item.anchorLocator && !item.anchorLocator.empty) return false;
+  if (range.start === 0 && range.end === 0 && item.anchorLocator && !item.anchorLocator.empty) return false;
   const next = locatorFor(document.getText('content').toString(), range);
   const changed = JSON.stringify(item.anchorLocator ?? null) !== JSON.stringify(next);
   item.anchorLocator = next;
@@ -103,8 +102,7 @@ function rangeFromContext(source, locator) {
     if (before >= 0) {
       const start = before + locator.before.length;
       const end = source.indexOf(locator.after, start);
-      if (end >= start && end - start <= 16 * 1024
-          && source.indexOf(locator.after, end + 1) < 0) {
+      if (end >= start && end - start <= 16 * 1024 && source.indexOf(locator.after, end + 1) < 0) {
         return locator.empty ? { start, end: start } : { start, end };
       }
     }

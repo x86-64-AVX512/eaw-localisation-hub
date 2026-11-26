@@ -11,8 +11,14 @@ let supplementalBloom: Uint8Array | null = null;
 const correctness = new Map<string, boolean>();
 
 type SpellcheckRequest =
-  | { id: number; type: 'initialise'; affBase64: string; dicBase64: string;
-      supplementalBloomBase64: string; words?: string[] }
+  | {
+      id: number;
+      type: 'initialise';
+      affBase64: string;
+      dicBase64: string;
+      supplementalBloomBase64: string;
+      words?: string[];
+    }
   | { id: number; type: 'check'; text: string; lineOffset?: number }
   | { id: number; type: 'suggest'; word: string }
   | { id: number; type: 'words'; words?: string[] };
@@ -29,7 +35,7 @@ function decodeBase64Text(value: string): string {
 }
 
 function cachedChecker() {
-  if (!checker || !supplementalBloom) throw new Error(uiText("Словарь ещё не загружен"));
+  if (!checker || !supplementalBloom) throw new Error(uiText('Словарь ещё не загружен'));
   const dictionary = checker;
   const bloom = supplementalBloom;
   return {
@@ -57,16 +63,16 @@ self.onmessage = ({ data }: MessageEvent<SpellcheckRequest>) => {
       ignoredWords = new Set(data.words ?? []);
       correctness.clear();
       result = { ready: true };
-    } else if (!checker) throw new Error(uiText("Словарь ещё не загружен"));
+    } else if (!checker) throw new Error(uiText('Словарь ещё не загружен'));
     else if (type === 'check') {
       result = { issues: spellingIssues(data.text, cachedChecker(), ignoredWords, { lineOffset: data.lineOffset }) };
     } else if (type === 'suggest') result = { suggestions: checker.suggest(data.word).slice(0, 6) };
     else if (type === 'words') {
       ignoredWords = new Set(data.words ?? []);
       result = { ready: true };
-    } else throw new Error(uiText("Неизвестная команда проверки орфографии"));
+    } else throw new Error(uiText('Неизвестная команда проверки орфографии'));
     self.postMessage({ id, result });
   } catch (error) {
-    self.postMessage({ id, error: errorMessage(error) || uiText("Ошибка проверки орфографии") });
+    self.postMessage({ id, error: errorMessage(error) || uiText('Ошибка проверки орфографии') });
   }
 };

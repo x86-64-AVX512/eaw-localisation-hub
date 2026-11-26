@@ -4,8 +4,12 @@ type FieldSpec =
   | { kind: 'string'; maximumBytes: number; required: boolean }
   | { kind: 'integer'; minimum: number; maximum: number; required: boolean };
 const text = (maximumBytes: number, required = true): FieldSpec => ({ kind: 'string', maximumBytes, required });
-const integer = (maximum = Number.MAX_SAFE_INTEGER, required = true): FieldSpec =>
-  ({ kind: 'integer', minimum: 0, maximum, required });
+const integer = (maximum = Number.MAX_SAFE_INTEGER, required = true): FieldSpec => ({
+  kind: 'integer',
+  minimum: 0,
+  maximum,
+  required,
+});
 
 const pathField = text(32 * 1024);
 const idField = text(256);
@@ -13,7 +17,13 @@ const base64Field = text(12 * 1024 * 1024);
 const positionField = integer(0x7fffffff);
 
 const clientSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Object.freeze({
-  open: { path: pathField, textBase64: base64Field, ticketId: text(64, false), crdt: text(32, false), variants: text(32, false) },
+  open: {
+    path: pathField,
+    textBase64: base64Field,
+    ticketId: text(64, false),
+    crdt: text(32, false),
+    variants: text(32, false),
+  },
   activate: { path: pathField, positionByte: positionField, anchorByte: positionField },
   deactivate: { path: pathField },
   close: { path: pathField },
@@ -24,36 +34,86 @@ const clientSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Objec
   undo: { path: pathField },
   redo: { path: pathField },
   reservationCreate: {
-    path: pathField, startByte: positionField, endByte: positionField,
-    assigneeId: text(256, false), assignee: text(256, false), assigneeColor: text(32, false),
+    path: pathField,
+    startByte: positionField,
+    endByte: positionField,
+    assigneeId: text(256, false),
+    assignee: text(256, false),
+    assigneeColor: text(32, false),
     comment: text(2048, false),
   },
   reservationDeleteAt: { path: pathField, positionByte: positionField },
   reservationUpdate: {
-    path: pathField, id: idField, requestId: idField, expectedRevision: integer(),
-    startByte: integer(0x7fffffff, false), endByte: integer(0x7fffffff, false),
-    assigneeId: text(256, false), assignee: text(256, false), assigneeColor: text(32, false),
+    path: pathField,
+    id: idField,
+    requestId: idField,
+    expectedRevision: integer(),
+    startByte: integer(0x7fffffff, false),
+    endByte: integer(0x7fffffff, false),
+    assigneeId: text(256, false),
+    assignee: text(256, false),
+    assigneeColor: text(32, false),
     comment: text(2048, false),
   },
   reservationDelete: { path: pathField, id: idField },
-  commentCreate: { path: pathField, startByte: positionField, endByte: positionField, bodyBase64: base64Field,
-    id: text(128, false), messageId: text(128, false), requestId: text(128, false) },
-  commentReply: { path: pathField, id: idField, bodyBase64: base64Field, messageId: text(128, false), requestId: text(128, false) },
-  discussionMessageUpdate: { path: pathField, id: idField, messageId: text(128), requestId: text(128),
-    target: text(16), expectedRevision: integer(), bodyBase64: text(4096) },
-  discussionMessageDelete: { path: pathField, id: idField, messageId: text(128), requestId: text(128),
-    target: text(16), expectedRevision: integer() },
+  commentCreate: {
+    path: pathField,
+    startByte: positionField,
+    endByte: positionField,
+    bodyBase64: base64Field,
+    id: text(128, false),
+    messageId: text(128, false),
+    requestId: text(128, false),
+  },
+  commentReply: {
+    path: pathField,
+    id: idField,
+    bodyBase64: base64Field,
+    messageId: text(128, false),
+    requestId: text(128, false),
+  },
+  discussionMessageUpdate: {
+    path: pathField,
+    id: idField,
+    messageId: text(128),
+    requestId: text(128),
+    target: text(16),
+    expectedRevision: integer(),
+    bodyBase64: text(4096),
+  },
+  discussionMessageDelete: {
+    path: pathField,
+    id: idField,
+    messageId: text(128),
+    requestId: text(128),
+    target: text(16),
+    expectedRevision: integer(),
+  },
   commentStatus: { path: pathField, id: idField, status: text(32) },
   commentDelete: { path: pathField, id: idField },
   suggestionCreate: {
-    path: pathField, startByte: positionField, endByte: positionField,
-    replacementBase64: base64Field, suggestionId: text(256, false), traceJson: text(64 * 1024, false),
+    path: pathField,
+    startByte: positionField,
+    endByte: positionField,
+    replacementBase64: base64Field,
+    suggestionId: text(256, false),
+    traceJson: text(64 * 1024, false),
   },
   suggestionUpdate: {
-    path: pathField, startByte: positionField, endByte: positionField,
-    replacementBase64: base64Field, suggestionId: idField, traceJson: text(64 * 1024, false),
+    path: pathField,
+    startByte: positionField,
+    endByte: positionField,
+    replacementBase64: base64Field,
+    suggestionId: idField,
+    traceJson: text(64 * 1024, false),
   },
-  suggestionReply: { path: pathField, id: idField, bodyBase64: base64Field, messageId: text(128, false), requestId: text(128, false) },
+  suggestionReply: {
+    path: pathField,
+    id: idField,
+    bodyBase64: base64Field,
+    messageId: text(128, false),
+    requestId: text(128, false),
+  },
   suggestionAccept: { path: pathField, id: idField },
   suggestionRevert: { path: pathField, id: idField },
   suggestionReject: { path: pathField, id: idField },
@@ -64,7 +124,11 @@ const clientSchemas: Readonly<Record<string, Record<string, FieldSpec>>> = Objec
   recoveryConfirm: { recoveryCode: text(256) },
   recoveryDiscard: {},
   externalConflictResolve: {
-    path: pathField, key: text(4096), choice: text(32), source: text(32, false), conflictId: idField,
+    path: pathField,
+    key: text(4096),
+    choice: text(32),
+    source: text(32, false),
+    conflictId: idField,
   },
   historyRequest: { path: pathField, id: idField },
   historyRestore: { path: pathField, id: idField, headId: idField },
@@ -88,8 +152,12 @@ function validateField(message: Record<string, unknown>, name: string, specifica
     }
     return;
   }
-  if (typeof value !== 'number' || !Number.isSafeInteger(value)
-    || value < specification.minimum || value > specification.maximum) {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < specification.minimum ||
+    value > specification.maximum
+  ) {
     throw new TypeError(`Protocol field '${name}' must be an integer in the accepted range`);
   }
 }
@@ -103,8 +171,11 @@ export function validateClientMessage(message: Record<string, unknown>): Record<
   }
   const originalSchema = clientSchemas[message.type];
   if (!originalSchema) throw new TypeError(`Unknown client message type: ${message.type}`);
-  const schema = ['startByte', 'endByte', 'positionByte', 'anchorByte'].some((field) => field in originalSchema)
-    && message.type !== 'edit' ? { ...originalSchema, reviewAnchors: text(64 * 1024, false) } : originalSchema;
+  const schema =
+    ['startByte', 'endByte', 'positionByte', 'anchorByte'].some((field) => field in originalSchema) &&
+    message.type !== 'edit'
+      ? { ...originalSchema, reviewAnchors: text(64 * 1024, false) }
+      : originalSchema;
   if (Object.keys(message).length > Object.keys(schema).length + 1) {
     const known = new Set(['type', ...Object.keys(schema)]);
     const unknown = Object.keys(message).filter((key) => !known.has(key));
@@ -123,8 +194,12 @@ function serverRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function serverString(value: unknown, label: string, maximumBytes = 4096,
-  { optional = false }: { optional?: boolean } = {}): string {
+function serverString(
+  value: unknown,
+  label: string,
+  maximumBytes = 4096,
+  { optional = false }: { optional?: boolean } = {},
+): string {
   if (value == null && optional) return '';
   if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > maximumBytes) {
     throw new TypeError(`${label} must be a bounded string`);
@@ -177,13 +252,15 @@ function validatePresence(value: unknown): void {
 function validateReservation(value: unknown): void {
   const reservation = serverRecord(value, 'Reservation');
   serverString(reservation.id, 'Reservation id', 256);
-  if (reservation.revision !== undefined) serverInteger(reservation.revision, 'Reservation revision', Number.MAX_SAFE_INTEGER);
+  if (reservation.revision !== undefined)
+    serverInteger(reservation.revision, 'Reservation revision', Number.MAX_SAFE_INTEGER);
   serverString(reservation.assignee, 'Reservation assignee', 256);
   serverString(reservation.color, 'Reservation color', 32);
   serverString(reservation.startRelative, 'Reservation start', 4096);
   serverString(reservation.endRelative, 'Reservation end', 4096);
-  serverArray(reservation.initialKeys ?? [], 'Reservation keys', 1000)
-    .forEach((key) => serverString(key, 'Reservation key', 4096));
+  serverArray(reservation.initialKeys ?? [], 'Reservation keys', 1000).forEach((key) =>
+    serverString(key, 'Reservation key', 4096),
+  );
 }
 
 function validateDiscussionMessage(value: unknown): void {
@@ -192,8 +269,10 @@ function validateDiscussionMessage(value: unknown): void {
   serverString(message.color, 'Discussion color', 32);
   serverString(message.body, 'Discussion body', 2048);
   if (message.revision !== undefined) serverInteger(message.revision, 'Discussion revision', Number.MAX_SAFE_INTEGER);
-  if (message.deleted !== undefined && typeof message.deleted !== 'boolean') throw new TypeError('Invalid discussion deletion');
-  if (message.mergeConflict !== undefined && typeof message.mergeConflict !== 'boolean') throw new TypeError('Invalid discussion conflict marker');
+  if (message.deleted !== undefined && typeof message.deleted !== 'boolean')
+    throw new TypeError('Invalid discussion deletion');
+  if (message.mergeConflict !== undefined && typeof message.mergeConflict !== 'boolean')
+    throw new TypeError('Invalid discussion conflict marker');
   if (message.editedAt !== undefined) serverString(message.editedAt, 'Discussion edit date', 64);
   if (message.branchMergeBase !== undefined) {
     const base = serverRecord(message.branchMergeBase, 'Discussion merge base');
@@ -217,13 +296,17 @@ function validateReviewItem(value: unknown, kind: string): void {
   serverString(item.endRelative, `${kind} end`, 4096);
   for (const message of serverArray(item.messages ?? [], `${kind} messages`, 100)) validateDiscussionMessage(message);
   if (item.deletedMessageIds !== undefined) {
-    for (const id of serverArray(item.deletedMessageIds, `${kind} deletion history`, 4096)) serverString(id, 'Deleted message id', 128);
+    for (const id of serverArray(item.deletedMessageIds, `${kind} deletion history`, 4096))
+      serverString(id, 'Deleted message id', 128);
   }
-  if (item.deletionHistoryBlocked !== undefined && typeof item.deletionHistoryBlocked !== 'boolean') throw new TypeError('Invalid discussion history flag');
+  if (item.deletionHistoryBlocked !== undefined && typeof item.deletionHistoryBlocked !== 'boolean')
+    throw new TypeError('Invalid discussion history flag');
   if (item.mergeOverflowIds !== undefined) {
-    for (const id of serverArray(item.mergeOverflowIds, `${kind} overflow history`, 4096)) serverString(id, 'Overflow message id', 128);
+    for (const id of serverArray(item.mergeOverflowIds, `${kind} overflow history`, 4096))
+      serverString(id, 'Overflow message id', 128);
   }
-  if (item.mergeOverflowBlocked !== undefined && typeof item.mergeOverflowBlocked !== 'boolean') throw new TypeError('Invalid discussion overflow flag');
+  if (item.mergeOverflowBlocked !== undefined && typeof item.mergeOverflowBlocked !== 'boolean')
+    throw new TypeError('Invalid discussion overflow flag');
   if (kind === 'Suggestion') {
     serverString(item.originalText, 'Suggestion original text', 16 * 1024);
     serverString(item.replacementText, 'Suggestion replacement text', 16 * 1024);
@@ -255,12 +338,17 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
     return message;
   }
   if (type === 'synced') {
-    if (message.discussionUpdates !== undefined && typeof message.discussionUpdates !== 'boolean') throw new TypeError('Invalid discussion capability');
+    if (message.discussionUpdates !== undefined && typeof message.discussionUpdates !== 'boolean')
+      throw new TypeError('Invalid discussion capability');
     if (message.reservationUpdates !== undefined && typeof message.reservationUpdates !== 'boolean') {
       throw new TypeError('Reservation update capability must be boolean');
     }
-    if (typeof message.protocol !== 'number' || !Number.isSafeInteger(message.protocol)
-      || message.protocol < 0 || message.protocol > 1000) {
+    if (
+      typeof message.protocol !== 'number' ||
+      !Number.isSafeInteger(message.protocol) ||
+      message.protocol < 0 ||
+      message.protocol > 1000
+    ) {
       throw new TypeError('Server protocol version must be an integer');
     }
     serverString(message.version, 'Server version', 64);
@@ -268,7 +356,8 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
     if (typeof message.canSeed !== 'boolean') throw new TypeError('Server canSeed must be boolean');
     for (const item of serverArray(message.reservations, 'Server reservations', 500)) validateReservation(item);
     for (const item of serverArray(message.commentThreads, 'Server comments', 500)) validateReviewItem(item, 'Comment');
-    for (const item of serverArray(message.suggestions, 'Server suggestions', 500)) validateReviewItem(item, 'Suggestion');
+    for (const item of serverArray(message.suggestions, 'Server suggestions', 500))
+      validateReviewItem(item, 'Suggestion');
     for (const item of serverArray(message.history ?? [], 'Server history', 100)) validateHistoryEntry(item);
     serverString(message.historyHeadId ?? '', 'History head id', 256);
     for (const item of serverArray(message.presences, 'Server presences', 256)) validatePresence(item);
@@ -286,8 +375,8 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
       for (const file of serverArray(git.changedFiles ?? [], 'Changed Git files', 500)) {
         serverString(file, 'Changed Git file', 1024);
       }
-      if (typeof git.checkedAt !== 'number' || !Number.isSafeInteger(git.checkedAt)
-        || git.checkedAt < 0) throw new TypeError('Git check date must be an integer');
+      if (typeof git.checkedAt !== 'number' || !Number.isSafeInteger(git.checkedAt) || git.checkedAt < 0)
+        throw new TypeError('Git check date must be an integer');
     }
     return message;
   }
@@ -346,7 +435,8 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
   if (type === 'reservation-update-result') {
     serverString(message.requestId, 'Reservation request id', 256);
     serverString(message.id, 'Reservation id', 256);
-    if (!['saved', 'stale', 'deleted', 'error'].includes(String(message.status))) throw new TypeError('Invalid reservation update status');
+    if (!['saved', 'stale', 'deleted', 'error'].includes(String(message.status)))
+      throw new TypeError('Invalid reservation update status');
     if (message.status === 'saved') serverInteger(message.revision, 'Reservation revision', Number.MAX_SAFE_INTEGER);
     serverString(message.message, 'Reservation update error', 2048, { optional: true });
     return message;
@@ -359,7 +449,8 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
   if (type === 'discussion-result') {
     serverString(message.requestId, 'Discussion request id', 128);
     serverString(message.id, 'Discussion id', 256);
-    if (!['saved', 'stale', 'deleted', 'error'].includes(String(message.status))) throw new TypeError('Invalid discussion result');
+    if (!['saved', 'stale', 'deleted', 'error'].includes(String(message.status)))
+      throw new TypeError('Invalid discussion result');
     if (message.revision !== undefined) serverInteger(message.revision, 'Discussion revision', Number.MAX_SAFE_INTEGER);
     serverString(message.message ?? '', 'Discussion error', 2048);
     return message;
@@ -367,7 +458,8 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
   if (type === 'review') {
     serverString(message.documentId, 'Server document id', 1024);
     for (const item of serverArray(message.commentThreads, 'Server comments', 500)) validateReviewItem(item, 'Comment');
-    for (const item of serverArray(message.suggestions, 'Server suggestions', 500)) validateReviewItem(item, 'Suggestion');
+    for (const item of serverArray(message.suggestions, 'Server suggestions', 500))
+      validateReviewItem(item, 'Suggestion');
     return message;
   }
   if (type === 'directory') {

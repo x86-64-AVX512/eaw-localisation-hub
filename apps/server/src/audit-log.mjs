@@ -21,9 +21,16 @@ export class AuditLog {
   }
   append(actor, action, target, details = {}, outcome = 'completed', operationId = crypto.randomUUID()) {
     const record = {
-      schema: 1, id: crypto.randomUUID(), sequence: this.nextSequence++, operationId,
-      at: new Date().toISOString(), actorId: bounded(actor?.id, 256), actor: bounded(actor?.displayName, 256),
-      action: bounded(action, 128), target: bounded(target, 2048), outcome,
+      schema: 1,
+      id: crypto.randomUUID(),
+      sequence: this.nextSequence++,
+      operationId,
+      at: new Date().toISOString(),
+      actorId: bounded(actor?.id, 256),
+      actor: bounded(actor?.displayName, 256),
+      action: bounded(action, 128),
+      target: bounded(target, 2048),
+      outcome,
       details: JSON.parse(JSON.stringify(details)),
     };
     const data = JSON.stringify(record) + '\n';
@@ -32,7 +39,12 @@ export class AuditLog {
     const write = this.persistence.then(async () => {
       const temporary = path.join(this.directory, `${name}.tmp`);
       const file = await fs.open(temporary, 'wx', 0o600);
-      try { await file.writeFile(data); await file.sync(); } finally { await file.close(); }
+      try {
+        await file.writeFile(data);
+        await file.sync();
+      } finally {
+        await file.close();
+      }
       await fs.rename(temporary, path.join(this.directory, name));
       return record;
     });
@@ -47,33 +59,55 @@ export class AuditLog {
     await this.persistence;
     if (destructive) await this.append(actor, action, target, details, 'started', operationId);
     let result;
-    try { result = await operation(); }
-    catch (error) {
-      await this.append(actor, action, target, { ...details, errorCode: bounded(error.code || error.name, 128) }, 'failed', operationId);
+    try {
+      result = await operation();
+    } catch (error) {
+      await this.append(
+        actor,
+        action,
+        target,
+        { ...details, errorCode: bounded(error.code || error.name, 128) },
+        'failed',
+        operationId,
+      );
       throw error;
     }
     const ticket = result?.ticket;
-    await this.append(actor, action, ticket?.id || target,
+    await this.append(
+      actor,
+      action,
+      ticket?.id || target,
       ticket ? { ...details, title: bounded(ticket.title), status: bounded(ticket.status, 64) } : details,
-      'completed', operationId);
+      'completed',
+      operationId,
+    );
     return result;
   }
   async list({ before = '', actor = '', action = '', from = '', to = '', limit = 100 } = {}) {
     const maximum = Math.min(200, Math.max(1, Number(limit) || 100));
-    const names = (await fs.readdir(this.directory)).filter((name) => RECORD_NAME.test(name) && (!before || name < before)).sort().reverse();
+    const names = (await fs.readdir(this.directory))
+      .filter((name) => RECORD_NAME.test(name) && (!before || name < before))
+      .sort()
+      .reverse();
     const records = [];
     let cursor = '';
     let scanned = 0;
     for (const name of names) {
       const record = JSON.parse(await fs.readFile(path.join(this.directory, name), 'utf8'));
-      cursor = name; scanned += 1;
-      const matches = (!actor || `${record.actorId}\n${record.actor}`.toLocaleLowerCase().includes(String(actor).toLocaleLowerCase()))
-        && (!action || record.action.startsWith(String(action)))
-        && (!from || record.at >= from) && (!to || record.at <= to);
+      cursor = name;
+      scanned += 1;
+      const matches =
+        (!actor ||
+          `${record.actorId}\n${record.actor}`.toLocaleLowerCase().includes(String(actor).toLocaleLowerCase())) &&
+        (!action || record.action.startsWith(String(action))) &&
+        (!from || record.at >= from) &&
+        (!to || record.at <= to);
       if (matches) records.push(record);
       if (records.length >= maximum || scanned >= 5000) break;
     }
     return { records, nextCursor: scanned < names.length ? cursor : '' };
   }
-  async flush() { await this.persistence; }
+  async flush() {
+    await this.persistence;
+  }
 }

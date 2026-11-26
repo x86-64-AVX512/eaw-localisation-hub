@@ -16,7 +16,11 @@ import {
 
 test('deployer validates SSH targets and refuses dangerous remote roots', () => {
   const request = validateDeploymentRequest({
-    host: '203.0.113.10', port: 22, username: 'root', remoteRoot: '/opt/eaw-localisation-hub/', password: 'secret',
+    host: '203.0.113.10',
+    port: 22,
+    username: 'root',
+    remoteRoot: '/opt/eaw-localisation-hub/',
+    password: 'secret',
   });
   assert.equal(request.remoteRoot, '/opt/eaw-localisation-hub');
   assert.throws(() => validateDeploymentRequest({ ...request, remoteRoot: '/' }), /безопасным абсолютным/);
@@ -61,7 +65,8 @@ test('deployer packs with the Windows system tar, not whichever tar PATH finds f
 test('server deployment payload excludes runtime secrets and data', async (context) => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'eaw-deployer-test-'));
   context.after(() => rm(root, { recursive: true, force: true }));
-  for (const relative of ['apps/server', 'packages/shared', 'deploy/backups', 'scripts']) await mkdir(path.join(root, relative), { recursive: true });
+  for (const relative of ['apps/server', 'packages/shared', 'deploy/backups', 'scripts'])
+    await mkdir(path.join(root, relative), { recursive: true });
   await Promise.all([
     writeFile(path.join(root, 'Dockerfile'), 'FROM scratch'),
     writeFile(path.join(root, 'package.json'), '{}'),
@@ -86,5 +91,8 @@ test('server deployment payload excludes runtime secrets and data', async (conte
   assert.match(listing.stdout, /apps\/server\/main\.mjs/);
   assert.match(listing.stdout, /scripts\/manage-server\.mjs/);
   assert.match(listing.stdout, /scripts\/check-node-runtime\.mjs/);
-  assert.equal(JSON.parse(await readFile(path.join(path.dirname(payload.archivePath), 'payload/deployment.json'), 'utf8')).version, '0.8.6F4');
+  assert.equal(
+    JSON.parse(await readFile(path.join(path.dirname(payload.archivePath), 'payload/deployment.json'), 'utf8')).version,
+    '0.8.6F4',
+  );
 });

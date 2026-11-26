@@ -18,8 +18,7 @@ interface DiscoveryOptions {
 let cachedExecutable = '';
 
 function githubDesktopCandidates(environment: GitEnvironment, readDirectory: ReadDirectory = fs.readdirSync): string[] {
-  const root = environment.LOCALAPPDATA
-    ? path.join(environment.LOCALAPPDATA, 'GitHubDesktop') : '';
+  const root = environment.LOCALAPPDATA ? path.join(environment.LOCALAPPDATA, 'GitHubDesktop') : '';
   if (!root) return [];
   let versions: string[] = [];
   try {
@@ -49,17 +48,23 @@ export function gitExecutableCandidates(
     environment.ProgramFiles,
     environment.ProgramW6432,
     environment['ProgramFiles(x86)'],
-  ].filter((root): root is string => Boolean(root))) candidates.push(path.join(root, 'Git', 'cmd', 'git.exe'));
-  return [...new Set(candidates.map((candidate) => candidate.toLowerCase()))]
-    .map((normalised) => candidates.find((candidate) => candidate.toLowerCase() === normalised)!);
+  ].filter((root): root is string => Boolean(root)))
+    candidates.push(path.join(root, 'Git', 'cmd', 'git.exe'));
+  return [...new Set(candidates.map((candidate) => candidate.toLowerCase()))].map((normalised) =>
+    candidates.find((candidate) => candidate.toLowerCase() === normalised)!,
+  );
 }
 
 export function discoverGitExecutable(options: DiscoveryOptions = {}): string {
   const environment = options.environment ?? process.env;
   const platform = options.platform ?? process.platform;
-  const probe = options.probe ?? ((candidate) => spawnSync(candidate, ['--version'], {
-    encoding: 'utf8', windowsHide: true,
-  }).status === 0);
+  const probe =
+    options.probe ??
+    ((candidate) =>
+      spawnSync(candidate, ['--version'], {
+        encoding: 'utf8',
+        windowsHide: true,
+      }).status === 0);
   for (const candidate of gitExecutableCandidates(environment, platform, options.readDirectory)) {
     try {
       if (probe(candidate)) return candidate;
@@ -85,7 +90,7 @@ export function runGitAsync(args: string[], options: Omit<ExecFileOptionsWithStr
     const execOptions = { windowsHide: true, ...options } as ExecFileOptionsWithStringEncoding;
     execOptions.encoding ??= 'utf8';
     execFile(gitExecutable(), args, execOptions, (error, stdout, stderr) => {
-      resolve({ status: error ? error.code ?? 1 : 0, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
+      resolve({ status: error ? (error.code ?? 1) : 0, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
     });
   });
 }

@@ -19,8 +19,7 @@ function fixture(t) {
 test('failed atomic replacement leaves the complete original in place and cleans its staging file', async (t) => {
   const { repository, directory, target, original } = fixture(t);
   const canonicalTarget = await fs.promises.realpath(target);
-  const pathKey = (value) => process.platform === 'win32'
-    ? path.resolve(value).toLowerCase() : path.resolve(value);
+  const pathKey = (value) => (process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value));
   const rename = fs.promises.rename;
   t.mock.method(fs.promises, 'rename', async (from, to) => {
     // Windows runners may expand RUNNER~1 or normalise path casing in realpath().
@@ -57,9 +56,13 @@ test('an invalidated save is cancelled just before replacement', async (t) => {
   const { repository, directory, target, original } = fixture(t);
   let checked = false;
   const changed = await writeTrackedTextFile(repository, target, original.replace('Original', 'Changed'), {
-    isCurrent() { checked = true; return false; },
+    isCurrent() {
+      checked = true;
+      return false;
+    },
   });
-  assert.equal(checked, true); assert.equal(changed, false);
+  assert.equal(checked, true);
+  assert.equal(changed, false);
   assert.equal(fs.readFileSync(target, 'utf8'), original);
   assert.deepEqual(fs.readdirSync(directory), ['test.yml']);
 });
@@ -83,12 +86,15 @@ test('an asynchronous freshness check is awaited before replacement', async (t) 
 test('an external edit during the asynchronous freshness check is not overwritten', async (t) => {
   const { repository, target, original } = fixture(t);
   const external = original.replace('Original', 'External');
-  await assert.rejects(writeTrackedTextFile(repository, target, original.replace('Original', 'Changed'), {
-    async isCurrent() {
-      await fs.promises.writeFile(target, external);
-      return true;
-    },
-  }), /changed during atomic write/u);
+  await assert.rejects(
+    writeTrackedTextFile(repository, target, original.replace('Original', 'Changed'), {
+      async isCurrent() {
+        await fs.promises.writeFile(target, external);
+        return true;
+      },
+    }),
+    /changed during atomic write/u,
+  );
   assert.equal(fs.readFileSync(target, 'utf8'), external);
 });
 
@@ -106,7 +112,10 @@ test('an external change during staging is not overwritten', async (t) => {
     }
     return handle;
   });
-  await assert.rejects(writeTrackedTextFile(repository, target, original.replace('Original', 'Changed')), /changed during/);
+  await assert.rejects(
+    writeTrackedTextFile(repository, target, original.replace('Original', 'Changed')),
+    /changed during/,
+  );
   assert.match(fs.readFileSync(target, 'utf8'), /External checkout/u);
 });
 
@@ -114,9 +123,11 @@ test('a disk edit made before autosave begins is not replaced by a stale materia
   const { repository, target, original } = fixture(t);
   const external = original.replace('Original', 'External');
   fs.writeFileSync(target, external);
-  await assert.rejects(writeTrackedTextFile(
-    repository, target, original.replace('Original', 'Review'),
-    { expectedText: original.replace(/^\uFEFF/u, '').replace(/\r\n/gu, '\n') },
-  ), { code: 'EAW_EXTERNAL_CHANGE' });
+  await assert.rejects(
+    writeTrackedTextFile(repository, target, original.replace('Original', 'Review'), {
+      expectedText: original.replace(/^\uFEFF/u, '').replace(/\r\n/gu, '\n'),
+    }),
+    { code: 'EAW_EXTERNAL_CHANGE' },
+  );
   assert.equal(fs.readFileSync(target, 'utf8'), external);
 });

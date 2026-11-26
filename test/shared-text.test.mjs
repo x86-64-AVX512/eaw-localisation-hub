@@ -44,10 +44,7 @@ test('tracked paths reject canonical junction escapes', (t) => {
   fs.writeFileSync(outsideFile, 'secret', 'utf8');
   const junction = path.join(russian, 'escaped');
   fs.symlinkSync(outside, junction, process.platform === 'win32' ? 'junction' : 'dir');
-  assert.throws(
-    () => normaliseTrackedPath(repository, path.join(junction, 'secret.yml')),
-    /resolves outside/,
-  );
+  assert.throws(() => normaliseTrackedPath(repository, path.join(junction, 'secret.yml')), /resolves outside/);
 });
 
 test('tracked paths preserve valid repository-relative localisation paths', (t) => {
@@ -93,10 +90,7 @@ test('secure tracked reads use an identity-checked handle', async (t) => {
   fs.writeFileSync(outsideFile, 'secret', 'utf8');
   const junction = path.join(russian, 'escaped');
   fs.symlinkSync(outside, junction, process.platform === 'win32' ? 'junction' : 'dir');
-  await assert.rejects(
-    readTrackedTextFile(repository, path.join(junction, 'secret.yml')),
-    /resolves outside/,
-  );
+  await assert.rejects(readTrackedTextFile(repository, path.join(junction, 'secret.yml')), /resolves outside/);
 });
 
 test('secure tracked writes stay inside the repository and update the opened file', async (t) => {
@@ -132,18 +126,10 @@ test('secure tracked writes preserve CRLF and skip byte-identical materialisatio
   fs.mkdirSync(directory, { recursive: true });
   fs.writeFileSync(file, '\uFEFFl_russian:\r\n key:0 "Text"\r\n', 'utf8');
 
-  assert.equal(await writeTrackedTextFile(
-    repository,
-    file,
-    '\uFEFFl_russian:\n key:0 "Changed"\n',
-  ), true);
+  assert.equal(await writeTrackedTextFile(repository, file, '\uFEFFl_russian:\n key:0 "Changed"\n'), true);
   assert.equal(fs.readFileSync(file, 'utf8'), '\uFEFFl_russian:\r\n key:0 "Changed"\r\n');
   const before = fs.statSync(file);
-  assert.equal(await writeTrackedTextFile(
-    repository,
-    file,
-    '\uFEFFl_russian:\n key:0 "Changed"\n',
-  ), false);
+  assert.equal(await writeTrackedTextFile(repository, file, '\uFEFFl_russian:\n key:0 "Changed"\n'), false);
   const after = fs.statSync(file);
   assert.equal(after.mtimeMs, before.mtimeMs);
 });
@@ -151,11 +137,12 @@ test('secure tracked writes preserve CRLF and skip byte-identical materialisatio
 test('materialisation repairs an LF worktree file when Git attributes require CRLF', async (t) => {
   const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'eaw-hub-git-eol-'));
   t.after(() => fs.rmSync(repository, { recursive: true, force: true }));
-  const runGit = (...args) => execFileSync('git', args, {
-    cwd: repository,
-    encoding: 'utf8',
-    windowsHide: true,
-  });
+  const runGit = (...args) =>
+    execFileSync('git', args, {
+      cwd: repository,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
   runGit('init', '--quiet');
   runGit('config', 'user.name', 'EaW Hub Test');
   runGit('config', 'user.email', 'test@example.invalid');
@@ -172,11 +159,7 @@ test('materialisation repairs an LF worktree file when Git attributes require CR
   assert.match(fs.readFileSync(file, 'utf8'), /\r\n/u);
   fs.writeFileSync(file, '\uFEFFl_russian:\n key:0 "Text"\n', 'utf8');
 
-  assert.equal(await writeTrackedTextFile(
-    repository,
-    file,
-    '\uFEFFl_russian:\n key:0 "Text"\n',
-  ), true);
+  assert.equal(await writeTrackedTextFile(repository, file, '\uFEFFl_russian:\n key:0 "Text"\n'), true);
   assert.match(fs.readFileSync(file, 'utf8'), /\r\n/u);
   assert.equal(runGit('status', '--porcelain', '--', 'localisation/russian/tracked_l_russian.yml'), '');
 });
@@ -215,13 +198,7 @@ test('single replacement reconstructs the target text', () => {
 });
 
 test('localisation keys are discovered inside a selection', () => {
-  const text = [
-    'l_russian:',
-    ' key_one:0 "Один"',
-    ' # comment',
-    ' key_two: "Два"',
-    '',
-  ].join('\r\n');
+  const text = ['l_russian:', ' key_one:0 "Один"', ' # comment', ' key_two: "Два"', ''].join('\r\n');
   const start = text.indexOf(' key_one');
   const end = text.indexOf(' key_two') + ' key_two: "Два"'.length;
   assert.deepEqual(keysInsideRange(text, start, end), ['key_one', 'key_two']);

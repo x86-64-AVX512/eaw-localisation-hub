@@ -18,10 +18,12 @@ interface EditorThemeDefinition {
 }
 
 interface EditorSettingsOptions {
-  monaco: { editor: {
-    defineTheme(name: string, definition: EditorThemeDefinition): void;
-    setTheme(name: string): void;
-  } };
+  monaco: {
+    editor: {
+      defineTheme(name: string, definition: EditorThemeDefinition): void;
+      setTheme(name: string): void;
+    };
+  };
   editor: { updateOptions(options: { fontFamily: string; fontSize: number; lineHeight: number }): void };
   showToast(message: string): void;
 }
@@ -32,7 +34,8 @@ const EDITOR_THEMES: Record<string, EditorThemeDefinition> = {
   light: { base: 'vs', inherit: true, rules: [], colors: {} },
   contrast: { base: 'hc-black', inherit: true, rules: [], colors: {} },
   midnight: {
-    base: 'vs-dark', inherit: true,
+    base: 'vs-dark',
+    inherit: true,
     rules: [
       { token: 'keyword', foreground: '7DD3FC', fontStyle: 'bold' },
       { token: 'type.identifier', foreground: '5EEAD4' },
@@ -41,13 +44,17 @@ const EDITOR_THEMES: Record<string, EditorThemeDefinition> = {
       { token: 'comment', foreground: '7186A3', fontStyle: 'italic' },
     ],
     colors: {
-      'editor.background': '#08111F', 'editor.foreground': '#E6EDF7',
-      'editor.lineHighlightBackground': '#12233A', 'editor.selectionBackground': '#285EA880',
-      'editorCursor.foreground': '#70A5FF', 'editorLineNumber.foreground': '#607795',
+      'editor.background': '#08111F',
+      'editor.foreground': '#E6EDF7',
+      'editor.lineHighlightBackground': '#12233A',
+      'editor.selectionBackground': '#285EA880',
+      'editorCursor.foreground': '#70A5FF',
+      'editorLineNumber.foreground': '#607795',
     },
   },
   plum: {
-    base: 'vs-dark', inherit: true,
+    base: 'vs-dark',
+    inherit: true,
     rules: [
       { token: 'keyword', foreground: 'E9A8FF', fontStyle: 'bold' },
       { token: 'type.identifier', foreground: '8FE3D5' },
@@ -56,13 +63,17 @@ const EDITOR_THEMES: Record<string, EditorThemeDefinition> = {
       { token: 'comment', foreground: '9B819F', fontStyle: 'italic' },
     ],
     colors: {
-      'editor.background': '#17101D', 'editor.foreground': '#F1E9F4',
-      'editor.lineHighlightBackground': '#281B31', 'editor.selectionBackground': '#804D9180',
-      'editorCursor.foreground': '#E9A8FF', 'editorLineNumber.foreground': '#876F8E',
+      'editor.background': '#17101D',
+      'editor.foreground': '#F1E9F4',
+      'editor.lineHighlightBackground': '#281B31',
+      'editor.selectionBackground': '#804D9180',
+      'editorCursor.foreground': '#E9A8FF',
+      'editorLineNumber.foreground': '#876F8E',
     },
   },
   forest: {
-    base: 'vs-dark', inherit: true,
+    base: 'vs-dark',
+    inherit: true,
     rules: [
       { token: 'keyword', foreground: '9ADBB7', fontStyle: 'bold' },
       { token: 'type.identifier', foreground: '6FD6C5' },
@@ -71,13 +82,17 @@ const EDITOR_THEMES: Record<string, EditorThemeDefinition> = {
       { token: 'comment', foreground: '758F80', fontStyle: 'italic' },
     ],
     colors: {
-      'editor.background': '#0D1814', 'editor.foreground': '#E5EFE9',
-      'editor.lineHighlightBackground': '#17271F', 'editor.selectionBackground': '#34735680',
-      'editorCursor.foreground': '#8DE0B0', 'editorLineNumber.foreground': '#627A6A',
+      'editor.background': '#0D1814',
+      'editor.foreground': '#E5EFE9',
+      'editor.lineHighlightBackground': '#17271F',
+      'editor.selectionBackground': '#34735680',
+      'editorCursor.foreground': '#8DE0B0',
+      'editorLineNumber.foreground': '#627A6A',
     },
   },
   sepia: {
-    base: 'vs', inherit: true,
+    base: 'vs',
+    inherit: true,
     rules: [
       { token: 'keyword', foreground: '7B4F27', fontStyle: 'bold' },
       { token: 'type.identifier', foreground: '1F6B62' },
@@ -86,17 +101,23 @@ const EDITOR_THEMES: Record<string, EditorThemeDefinition> = {
       { token: 'comment', foreground: '897866', fontStyle: 'italic' },
     ],
     colors: {
-      'editor.background': '#F4ECDD', 'editor.foreground': '#3A3025',
-      'editor.lineHighlightBackground': '#E9DCC6', 'editor.selectionBackground': '#C9975C70',
-      'editorCursor.foreground': '#8F5F32', 'editorLineNumber.foreground': '#99866F',
+      'editor.background': '#F4ECDD',
+      'editor.foreground': '#3A3025',
+      'editor.lineHighlightBackground': '#E9DCC6',
+      'editor.selectionBackground': '#C9975C70',
+      'editorCursor.foreground': '#8F5F32',
+      'editorLineNumber.foreground': '#99866F',
     },
   },
 };
 const THEME_IDS = new Set(Object.keys(EDITOR_THEMES));
 
 function loadSettings(): EditorSettings {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as Partial<EditorSettings> }; }
-  catch { return { ...DEFAULTS }; }
+  try {
+    return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as Partial<EditorSettings>) };
+  } catch {
+    return { ...DEFAULTS };
+  }
 }
 
 export function createEditorSettings({ monaco, editor, showToast }: EditorSettingsOptions) {
@@ -117,19 +138,23 @@ export function createEditorSettings({ monaco, editor, showToast }: EditorSettin
       lineHeight: Math.max(18, Math.min(48, Number(lineHeight.value) || DEFAULTS.lineHeight)),
     };
     if (settings.lineHeight < settings.fontSize + 3) settings.lineHeight = settings.fontSize + 3;
-    size.value = String(settings.fontSize); lineHeight.value = String(settings.lineHeight);
+    size.value = String(settings.fontSize);
+    lineHeight.value = String(settings.lineHeight);
     document.documentElement.dataset.theme = settings.theme;
     monaco.editor.setTheme(`eaw-${settings.theme}`);
     editor.updateOptions({
       fontFamily: reviewFontFamily(settings.fontFamily),
-      fontSize: settings.fontSize, lineHeight: settings.lineHeight,
+      fontSize: settings.fontSize,
+      lineHeight: settings.lineHeight,
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    if (announce) showToast(uiText("Настройки редактора сохранены на этом компьютере."));
+    if (announce) showToast(uiText('Настройки редактора сохранены на этом компьютере.'));
   }
 
-  theme.value = settings.theme; family.value = settings.fontFamily;
-  size.value = String(settings.fontSize); lineHeight.value = String(settings.lineHeight);
+  theme.value = settings.theme;
+  family.value = settings.fontFamily;
+  size.value = String(settings.fontSize);
+  lineHeight.value = String(settings.lineHeight);
   for (const control of [theme, family, size, lineHeight]) {
     control.addEventListener('change', () => apply({ announce: true }));
   }

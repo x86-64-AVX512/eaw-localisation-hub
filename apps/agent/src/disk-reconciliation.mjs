@@ -14,8 +14,7 @@ import {
 const MAXIMUM_CONFLICT_TEXT = 60 * 1024;
 function conflictText(value) {
   const text = String(value ?? '');
-  return text.length <= MAXIMUM_CONFLICT_TEXT
-    ? text : `${text.slice(0, MAXIMUM_CONFLICT_TEXT)}\n… diff truncated …`;
+  return text.length <= MAXIMUM_CONFLICT_TEXT ? text : `${text.slice(0, MAXIMUM_CONFLICT_TEXT)}\n… diff truncated …`;
 }
 
 const DISK_ORIGIN = Symbol('external-disk-update');
@@ -23,9 +22,12 @@ const DISK_ORIGIN = Symbol('external-disk-update');
 function broadcastConflictReset(binding, absolutePath, source = 'disk') {
   for (const attached of binding.clients) {
     const state = attached.documents.get(absolutePath);
-    if (state?.binding === binding) attached.send({
-      type: 'externalConflictReset', path: absolutePath, source,
-    });
+    if (state?.binding === binding)
+      attached.send({
+        type: 'externalConflictReset',
+        path: absolutePath,
+        source,
+      });
   }
 }
 
@@ -53,17 +55,36 @@ async function confirmDiskMerge(binding, client, absolutePath, state, pending, n
     const revision = mergeStateRevision(pending.base, binding.text.toString(), personalBefore, pending.external);
     pending.requestRevision = revision;
     if (pending.mergeRevision !== revision) pending.resolutions.clear();
-    const result = await binding.requestDiskMergeCheck(pending.base, pending.external,
-      personalBefore, pending.resolutions, pending.initialUnknown === true, pending.mergeRevision ?? '');
-    if (state.pendingExternal !== pending || state.binding !== binding
-      || client.documents.get(absolutePath) !== state) return;
+    const result = await binding.requestDiskMergeCheck(
+      pending.base,
+      pending.external,
+      personalBefore,
+      pending.resolutions,
+      pending.initialUnknown === true,
+      pending.mergeRevision ?? '',
+    );
+    if (state.pendingExternal !== pending || state.binding !== binding || client.documents.get(absolutePath) !== state)
+      return;
     if (result.error) throw Object.assign(new Error(result.error), { code: result.code });
-    if (!binding.synced || !binding.gitWritable || binding.paused || binding.closing
-      || binding.hub?.gitOperationInProgress?.()) return;
+    if (
+      !binding.synced ||
+      !binding.gitWritable ||
+      binding.paused ||
+      binding.closing ||
+      binding.hub?.gitOperationInProgress?.()
+    )
+      return;
     const diskNow = binding.readDiskText ? await binding.readDiskText(absolutePath) : pending.external;
-    if (state.pendingExternal !== pending || state.binding !== binding
-      || !binding.synced || !binding.gitWritable || binding.paused || binding.closing
-      || binding.hub?.gitOperationInProgress?.()) return;
+    if (
+      state.pendingExternal !== pending ||
+      state.binding !== binding ||
+      !binding.synced ||
+      !binding.gitWritable ||
+      binding.paused ||
+      binding.closing ||
+      binding.hub?.gitOperationInProgress?.()
+    )
+      return;
     if (diskNow !== pending.external) {
       pending.external = diskNow;
       pending.resolutions.clear();
@@ -73,14 +94,16 @@ async function confirmDiskMerge(binding, client, absolutePath, state, pending, n
       schedulePendingRetry(binding, client, absolutePath, state, pending, notice, 250);
       return;
     }
-    if (result.stale || result.sharedHash !== currentHash(binding)
-      || binding.localFileText() !== personalBefore) {
+    if (result.stale || result.sharedHash !== currentHash(binding) || binding.localFileText() !== personalBefore) {
       pending.resolutions.clear();
       pending.mergeRevision = null;
       pending.conflicts = null;
       binding.emitExternalConflicts(client, absolutePath, state);
-      client.send({ type: 'notice', path: absolutePath,
-        message: 'Совместный документ изменился во время проверки конфликта; проверка повторяется.' });
+      client.send({
+        type: 'notice',
+        path: absolutePath,
+        message: 'Совместный документ изменился во время проверки конфликта; проверка повторяется.',
+      });
       schedulePendingRetry(binding, client, absolutePath, state, pending, notice, 250);
       return;
     }
@@ -88,17 +111,26 @@ async function confirmDiskMerge(binding, client, absolutePath, state, pending, n
     pending.conflicts = result.conflicts;
     if (result.conflicts.length) {
       binding.emitExternalConflicts(client, absolutePath, state);
-      client.send({ type: 'notice', path: absolutePath,
-        message: `Сервер подтвердил конфликтов: ${result.conflicts.length}.` });
+      client.send({
+        type: 'notice',
+        path: absolutePath,
+        message: `Сервер подтвердил конфликтов: ${result.conflicts.length}.`,
+      });
       return;
     }
     binding.finishExternalMerge(client, absolutePath, state, result.sharedText, result.personalText, notice);
   } catch (error) {
     if (state.pendingExternal === pending) {
       pending.conflicts = null;
-      if (!pending.errorNotified) client.send({ type: 'notice', path: absolutePath,
-        message: error.code === 'EAW_MERGE_LIMIT' ? error.message
-          : 'Сервер не подтвердил состояние файла. Сохранение приостановлено до повторной проверки.' });
+      if (!pending.errorNotified)
+        client.send({
+          type: 'notice',
+          path: absolutePath,
+          message:
+            error.code === 'EAW_MERGE_LIMIT'
+              ? error.message
+              : 'Сервер не подтвердил состояние файла. Сохранение приостановлено до повторной проверки.',
+        });
       pending.errorNotified = true;
       if (error.code === 'EAW_MERGE_LIMIT') pending.limitRevision = pending.requestRevision;
       if (error.code !== 'EAW_MERGE_LIMIT') {
@@ -115,12 +147,22 @@ export function retryPendingDiskMerges(binding) {
     for (const [absolutePath, state] of client.documents) {
       const pending = state.pendingExternal;
       if (state.binding === binding && pending && !pending.checking) {
-        if (pending.limitRevision && pending.limitRevision === mergeStateRevision(pending.base,
-          binding.text.toString(), binding.localFileText() ?? '', pending.external)) continue;
+        if (
+          pending.limitRevision &&
+          pending.limitRevision ===
+            mergeStateRevision(pending.base, binding.text.toString(), binding.localFileText() ?? '', pending.external)
+        )
+          continue;
         if (pending.retryTimer) clearTimeout(pending.retryTimer);
         pending.retryTimer = null;
-        void confirmDiskMerge(binding, client, absolutePath, state, pending,
-          'Файл согласован с совместным документом после повторной проверки.');
+        void confirmDiskMerge(
+          binding,
+          client,
+          absolutePath,
+          state,
+          pending,
+          'Файл согласован с совместным документом после повторной проверки.',
+        );
       }
     }
   }
@@ -167,9 +209,7 @@ export function scheduleDiskCheck(binding, client, absolutePath, state, delay = 
 
 export async function readDiskText(binding, absolutePath) {
   try {
-    return normaliseLineEndings(withoutUtf8Bom(
-      await readTrackedTextFile(binding.hub.options.repo, absolutePath),
-    ));
+    return normaliseLineEndings(withoutUtf8Bom(await readTrackedTextFile(binding.hub.options.repo, absolutePath)));
   } catch (error) {
     if (error.code === 'ENOENT') return '';
     throw error;
@@ -200,8 +240,8 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
   }
   if (state.diskSignature === diskSignature && state.materialisationExpected === null) return;
   const externalText = await binding.readDiskText(absolutePath);
-  if (binding.paused || binding.closing || state.binding !== binding
-      || client.documents.get(absolutePath) !== state) return;
+  if (binding.paused || binding.closing || state.binding !== binding || client.documents.get(absolutePath) !== state)
+    return;
   // A read can hold the old file handle across an atomic rename. Never turn
   // that snapshot into an external merge (or Git rollback) after our own save.
   if (binding.materialisationActive || (binding.materialisationEpoch ?? 0) !== writeEpoch) {
@@ -225,8 +265,7 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
       binding.persistBaseSnapshot(state, externalText);
       return;
     }
-    if (Date.now() < state.materialisationDeadline
-      && state.materialisationMismatch !== externalText) {
+    if (Date.now() < state.materialisationDeadline && state.materialisationMismatch !== externalText) {
       state.materialisationMismatch = externalText;
       binding.scheduleDiskCheck(client, absolutePath, state, 300);
       return;
@@ -266,18 +305,33 @@ export async function checkDiskChange(binding, client, absolutePath, state) {
     }
     binding.replacePersonalDocument(gitText);
     client.send({
-      type: 'notice', path: absolutePath,
+      type: 'notice',
+      path: absolutePath,
       message: 'Git-откат применён только к вашему локальному файлу; совместный документ не изменён.',
     });
     return;
   }
-  if (personal === null) { state.diskSignature = ''; return; }
+  if (personal === null) {
+    state.diskSignature = '';
+    return;
+  }
 
-  const pending = { base: state.diskBase, external: externalText,
-    resolutions: new Map(), conflicts: null, checking: false };
+  const pending = {
+    base: state.diskBase,
+    external: externalText,
+    resolutions: new Map(),
+    conflicts: null,
+    checking: false,
+  };
   state.pendingExternal = pending;
-  await confirmDiskMerge(binding, client, absolutePath, state, pending,
-    'Изменения с диска объединены с совместным документом.');
+  await confirmDiskMerge(
+    binding,
+    client,
+    absolutePath,
+    state,
+    pending,
+    'Изменения с диска объединены с совместным документом.',
+  );
 }
 
 export function persistBaseSnapshot(binding, state, text) {
@@ -341,8 +395,14 @@ export function reconcileInitialDisk(binding, client, absolutePath, state) {
       resolutions: new Map(),
       initialUnknown: true,
     };
-    void confirmDiskMerge(binding, client, absolutePath, state, state.pendingExternal,
-      'Начальная база слияния создана; выбранная версия будет сохранена.');
+    void confirmDiskMerge(
+      binding,
+      client,
+      absolutePath,
+      state,
+      state.pendingExternal,
+      'Начальная база слияния создана; выбранная версия будет сохранена.',
+    );
     client.send({
       type: 'notice',
       message: 'Нет сохранённой базы слияния: ожидается проверка начального состояния сервером.',
@@ -357,11 +417,22 @@ export function reconcileInitialDisk(binding, client, absolutePath, state) {
     return;
   }
 
-  const pending = { base: state.diskBase, external: localText,
-    resolutions: new Map(), conflicts: null, checking: false };
+  const pending = {
+    base: state.diskBase,
+    external: localText,
+    resolutions: new Map(),
+    conflicts: null,
+    checking: false,
+  };
   state.pendingExternal = pending;
-  void confirmDiskMerge(binding, client, absolutePath, state, pending,
-    'Локальный Git-файл согласован с совместной сессией после запуска.');
+  void confirmDiskMerge(
+    binding,
+    client,
+    absolutePath,
+    state,
+    pending,
+    'Локальный Git-файл согласован с совместной сессией после запуска.',
+  );
 }
 
 export function emitExternalConflicts(binding, client, absolutePath, state) {
@@ -369,7 +440,8 @@ export function emitExternalConflicts(binding, client, absolutePath, state) {
   const conflicts = state.pendingExternal?.conflicts ?? [];
   for (const conflict of conflicts) {
     let detail = 'Один и тот же ключ изменён совместно и на диске.';
-    if (conflict.key === '__initial_state__') detail = 'База слияния ещё не создана. Выберите совместную версию или локальный файл Git.';
+    if (conflict.key === '__initial_state__')
+      detail = 'База слияния ещё не создана. Выберите совместную версию или локальный файл Git.';
     else if (conflict.key === '__file_structure__') detail = 'Комментарии или структура файла изменены с обеих сторон.';
     else if (conflict.key === '__duplicate_keys__') detail = `${conflict.label}. Выбор применяется ко всему файлу.`;
     else if (conflict.externalLine == null) detail = 'Git удаляет ключ, изменённый в совместной сессии.';
@@ -394,19 +466,14 @@ export function applyMergedText(binding, nextText) {
   const replacement = computeSingleReplace(canonical, nextText);
   if (!replacement) return;
   const start = utf8ByteOffsetToUtf16Index(canonical, replacement.positionByte);
-  const end = utf8ByteOffsetToUtf16Index(
-    canonical,
-    replacement.positionByte + replacement.deleteBytes,
-  );
+  const end = utf8ByteOffsetToUtf16Index(canonical, replacement.positionByte + replacement.deleteBytes);
   binding.document.transact(() => {
     if (end > start) binding.text.delete(start, end - start);
     if (replacement.insertText) binding.text.insert(start, replacement.insertText);
   }, DISK_ORIGIN);
 }
 
-export function finishExternalMerge(
-  binding, client, absolutePath, state, sharedText, personalText, notice,
-) {
+export function finishExternalMerge(binding, client, absolutePath, state, sharedText, personalText, notice) {
   // The disk still contains the external snapshot checked by the server. The
   // chosen projection becomes the disk base only after the atomic write succeeds.
   const checkedDisk = normaliseLineEndings(state.pendingExternal?.external ?? state.diskBase);
@@ -441,21 +508,39 @@ export function resolveExternalConflict(binding, client, absolutePath, message) 
     throw new Error('Conflict resolution requires a key and a valid choice');
   }
   const pending = state.pendingExternal;
-  const revision = mergeStateRevision(pending.base, binding.text.toString(),
-    binding.localFileText() ?? '', pending.external);
-  if (pending.mergeRevision !== revision || !pending.conflicts?.some((conflict) =>
-    conflict.key === key && conflict.conflictId === message.conflictId)) {
+  const revision = mergeStateRevision(
+    pending.base,
+    binding.text.toString(),
+    binding.localFileText() ?? '',
+    pending.external,
+  );
+  if (
+    pending.mergeRevision !== revision ||
+    !pending.conflicts?.some((conflict) => conflict.key === key && conflict.conflictId === message.conflictId)
+  ) {
     client.send({ type: 'notice', message: 'Состояние конфликта изменилось; ожидается новая проверка сервера.' });
     pending.resolutions.clear();
     pending.conflicts = null;
     binding.emitExternalConflicts(client, absolutePath, state);
-    void confirmDiskMerge(binding, client, absolutePath, state, pending,
-      'Файл согласован с актуальной совместной версией.');
+    void confirmDiskMerge(
+      binding,
+      client,
+      absolutePath,
+      state,
+      pending,
+      'Файл согласован с актуальной совместной версией.',
+    );
     return true;
   }
   pending.resolutions.set(key, choice);
   pending.conflicts = null;
-  void confirmDiskMerge(binding, client, absolutePath, state, pending,
-    'Конфликты разрешены; итоговый файл подготовлен к сохранению.');
+  void confirmDiskMerge(
+    binding,
+    client,
+    absolutePath,
+    state,
+    pending,
+    'Конфликты разрешены; итоговый файл подготовлен к сохранению.',
+  );
   return true;
 }

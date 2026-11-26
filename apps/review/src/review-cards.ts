@@ -13,18 +13,29 @@ export function visibleComparisonText(text: unknown): string {
   const value = String(text ?? '');
   if (!/^(?:\r\n|\r|\n)+$/u.test(value)) return value;
   const count = (value.match(/\r\n|\r|\n/gu) ?? []).length;
-  return count === 1 ? uiText("[перенос строки]") : uiText("[переносы строк: {0}]", count);
+  return count === 1 ? uiText('[перенос строки]') : uiText('[переносы строк: {0}]', count);
 }
 
-export function reviewCardFingerprint(item: { id: string; startByte: number; endByte: number },
-  messages: unknown[] | undefined, editingSuggestionId: string, userId: string): string {
+export function reviewCardFingerprint(
+  item: { id: string; startByte: number; endByte: number },
+  messages: unknown[] | undefined,
+  editingSuggestionId: string,
+  userId: string,
+): string {
   const { startByte, endByte, ...content } = item;
   return JSON.stringify([content, messages ?? [], item.id === editingSuggestionId, userId]);
 }
 
 export function createReviewCards({
-  state, editor, rangeFromBytes, send, discussionEditor, showToast = () => {}, onEditSuggestion = (_item) => false,
-  onAcceptSuggestion = (_item) => {}, onRevertSuggestion = (_item) => {},
+  state,
+  editor,
+  rangeFromBytes,
+  send,
+  discussionEditor,
+  showToast = () => {},
+  onEditSuggestion = (_item) => false,
+  onAcceptSuggestion = (_item) => {},
+  onRevertSuggestion = (_item) => {},
 }: ReviewCardsOptions) {
   const cards = requiredElement<HTMLElement>('#cards');
   const empty = requiredElement<HTMLElement>('#empty-review');
@@ -52,54 +63,83 @@ export function createReviewCards({
       if (item.traceJson) {
         comparison.classList.add('traced');
         for (const part of suggestionTraceParts(original, replacement, item.traceJson)) {
-          const node = document.createElement(part.kind === 'delete' ? 'del'
-            : part.kind === 'insert' ? 'ins' : 'span');
+          const node = document.createElement(part.kind === 'delete' ? 'del' : part.kind === 'insert' ? 'ins' : 'span');
           node.textContent = visibleComparisonText(part.text);
           comparison.append(node);
         }
       } else {
         const oldText = document.createElement('del');
-        oldText.textContent = original || uiText("[вставка]");
+        oldText.textContent = original || uiText('[вставка]');
         if (!original) oldText.classList.add('empty-marker');
         const newText = document.createElement('ins');
-        newText.textContent = replacement || uiText("[удалить]");
+        newText.textContent = replacement || uiText('[удалить]');
         if (!replacement) newText.classList.add('empty-marker');
         comparison.append(oldText, newText);
       }
       card.append(comparison);
     }
     renderMessages(card, item, messages, showToast);
-    discussionEditor.enhance(card,item,messages);
+    discussionEditor.enhance(card, item, messages);
     const actions = document.createElement('div');
     actions.className = 'card-actions';
-    actions.append(cardButton(uiText("Ответить"), value => discussionEditor.reply(value), item));
+    actions.append(cardButton(uiText('Ответить'), (value) => discussionEditor.reply(value), item));
     if (item.kind === 'suggestion' && item.status === 'open') {
       const ownSuggestion = item.authorId ? item.authorId === state.userId : item.author === state.user;
-      if (ownSuggestion && canEditDocument(state, state.relativePath ?? '')) actions.append(cardButton(
-        item.id === state.editingSuggestionId ? uiText("Редактируется") : uiText("Редактировать"),
-        (value) => onEditSuggestion(value), item,
-      ));
-      if (canDecideSuggestions(state)) actions.append(
-        cardButton(uiText("Принять"), onAcceptSuggestion, item),
-        cardButton(uiText("Отклонить"), (value) => send({ type: 'suggestionReject', path: state.path, id: value.id }), item),
-      );
+      if (ownSuggestion && canEditDocument(state, state.relativePath ?? ''))
+        actions.append(
+          cardButton(
+            item.id === state.editingSuggestionId ? uiText('Редактируется') : uiText('Редактировать'),
+            (value) => onEditSuggestion(value),
+            item,
+          ),
+        );
+      if (canDecideSuggestions(state))
+        actions.append(
+          cardButton(uiText('Принять'), onAcceptSuggestion, item),
+          cardButton(
+            uiText('Отклонить'),
+            (value) => send({ type: 'suggestionReject', path: state.path, id: value.id }),
+            item,
+          ),
+        );
     }
     if (item.kind === 'suggestion' && item.status === 'accepted' && canDecideSuggestions(state)) {
-      actions.append(cardButton(uiText("Отменить принятие"), onRevertSuggestion, item));
+      actions.append(cardButton(uiText('Отменить принятие'), onRevertSuggestion, item));
     }
     if (item.kind === 'comment' && canEditDocument(state, state.relativePath ?? '')) {
       const nextStatus = item.status === 'resolved' ? 'open' : 'resolved';
-      actions.append(cardButton(item.status === 'resolved' ? uiText("Вернуть") : uiText("Закрыть"),
-        (value) => send({ type: 'commentStatus', path: state.path, id: value.id, status: nextStatus }), item));
+      actions.append(
+        cardButton(
+          item.status === 'resolved' ? uiText('Вернуть') : uiText('Закрыть'),
+          (value) => send({ type: 'commentStatus', path: state.path, id: value.id, status: nextStatus }),
+          item,
+        ),
+      );
     }
     const deleteType = item.kind === 'comment' ? 'commentDelete' : 'suggestionDelete';
-    if (canEditDocument(state, state.relativePath ?? '')) actions.append(cardButton(uiText("Удалить"), async (value, button) => {
-      if (await confirmAction(button, item.kind === 'comment' ? uiText("Удалить комментарий и ответы?") : uiText("Удалить правку и ответы?"), { label: uiText("Удалить"), danger: true })) {
-        button.disabled = true;
-        send({ type: deleteType, path: state.path, id: value.id });
-        setTimeout(() => { if (button.isConnected) button.disabled = false; }, 5000);
-      }
-    }, item, 'danger'));
+    if (canEditDocument(state, state.relativePath ?? ''))
+      actions.append(
+        cardButton(
+          uiText('Удалить'),
+          async (value, button) => {
+            if (
+              await confirmAction(
+                button,
+                item.kind === 'comment' ? uiText('Удалить комментарий и ответы?') : uiText('Удалить правку и ответы?'),
+                { label: uiText('Удалить'), danger: true },
+              )
+            ) {
+              button.disabled = true;
+              send({ type: deleteType, path: state.path, id: value.id });
+              setTimeout(() => {
+                if (button.isConnected) button.disabled = false;
+              }, 5000);
+            }
+          },
+          item,
+          'danger',
+        ),
+      );
     card.append(actions);
     card.addEventListener('click', (event) => {
       if (event.target instanceof Element && event.target.closest('button, .thread, .comparison')) return;
@@ -114,38 +154,45 @@ export function createReviewCards({
   }
 
   function render() {
-    const restoreFocus=discussionEditor.preserveFocus();
+    const restoreFocus = discussionEditor.preserveFocus();
     const items = [
       ...[...state.comments.values()].map((item) => ({ ...item, kind: 'comment' as const })),
       ...[...state.suggestions.values()].map((item) => ({ ...item, kind: 'suggestion' as const })),
-    ].filter((item) => item.kind !== 'suggestion' || item.status !== 'accepted' || showAccepted.checked
-      || discussionEditor.hasDraftFor(item.kind,item.id))
+    ]
+      .filter(
+        (item) =>
+          item.kind !== 'suggestion' ||
+          item.status !== 'accepted' ||
+          showAccepted.checked ||
+          discussionEditor.hasDraftFor(item.kind, item.id),
+      )
       .sort((left, right) => left.startByte - right.startByte);
     count.textContent = String(items.length);
     empty.hidden = items.length !== 0;
     const liveKeys = new Set<string>();
     const nodes = items.map((item) => {
       const key = `${item.kind}:${item.id}`;
-      const messages = item.kind === 'suggestion'
-        ? state.suggestionMessages.get(item.id) : state.commentMessages.get(item.id);
-      const fingerprint = reviewCardFingerprint(item, messages, state.editingSuggestionId, state.userId)
-        + JSON.stringify([state.roles ?? [],state.discussionUpdates]);
+      const messages =
+        item.kind === 'suggestion' ? state.suggestionMessages.get(item.id) : state.commentMessages.get(item.id);
+      const fingerprint =
+        reviewCardFingerprint(item, messages, state.editingSuggestionId, state.userId) +
+        JSON.stringify([state.roles ?? [], state.discussionUpdates]);
       liveKeys.add(key);
       const cached = cardCache.get(key);
       if (cached?.fingerprint === fingerprint) {
         cached.item.startByte = item.startByte;
         cached.item.endByte = item.endByte;
         cached.card.dataset.startByte = String(item.startByte);
-        discussionEditor.mount(cached.card,item);
+        discussionEditor.mount(cached.card, item);
         return cached.card;
       }
       const card = createCard(item, messages);
-      discussionEditor.mount(card,item);
+      discussionEditor.mount(card, item);
       cardCache.set(key, { card, fingerprint, item });
       return card;
     });
     nodes.push(...discussionEditor.newCards());
-    nodes.sort((left,right)=>Number(left.dataset.startByte)-Number(right.dataset.startByte));
+    nodes.sort((left, right) => Number(left.dataset.startByte) - Number(right.dataset.startByte));
     empty.hidden = nodes.length !== 0;
     for (const key of cardCache.keys()) if (!liveKeys.has(key)) cardCache.delete(key);
     nodes.forEach((node, index) => {
@@ -160,8 +207,9 @@ export function createReviewCards({
   showAccepted.addEventListener('change', render);
 
   function focusCard(kind: CardItem['kind'], id: string): boolean {
-    const card = [...cards.querySelectorAll<HTMLElement>('article')]
-      .find((candidate) => candidate.dataset.itemKey === `${kind}:${id}`);
+    const card = [...cards.querySelectorAll<HTMLElement>('article')].find(
+      (candidate) => candidate.dataset.itemKey === `${kind}:${id}`,
+    );
     if (!card) return false;
     clearTimeout(focusTimer);
     for (const candidate of cards.children) candidate.classList.remove('review-card-focused');

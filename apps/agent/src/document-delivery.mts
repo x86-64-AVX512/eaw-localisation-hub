@@ -42,8 +42,10 @@ export function handleSocketClose(binding: DeliveryBinding): void {
   binding.pendingUpdateSent = false;
 }
 
-export function handleFlushAcknowledgement(binding: DeliveryBinding,
-  message: { type: string; requestId?: string }): boolean {
+export function handleFlushAcknowledgement(
+  binding: DeliveryBinding,
+  message: { type: string; requestId?: string },
+): boolean {
   if (message.type !== 'sync-flushed') return false;
   const waiter = binding.flushWaiter;
   if (waiter && waiter.id === message.requestId) waiter.finish(true);
@@ -73,8 +75,11 @@ export function flushToServer(binding: DeliveryBinding, timeoutMilliseconds = 50
       resolve(succeeded && !binding.deliveryFailed);
     };
     binding.flushWaiter = { id, finish };
-    try { socket.send(JSON.stringify({ type: 'sync-flush', requestId: id })); }
-    catch { finish(false); }
+    try {
+      socket.send(JSON.stringify({ type: 'sync-flush', requestId: id }));
+    } catch {
+      finish(false);
+    }
   });
 }
 

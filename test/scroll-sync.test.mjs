@@ -17,13 +17,7 @@ test('scroll synchronisation maps localisation keys instead of raw line numbers'
     ' SECOND_KEY:0 "Второй"',
     ' continuation without a key',
   ]);
-  const english = modelFrom([
-    'l_english:',
-    '',
-    ' FIRST_KEY:0 "First"',
-    '',
-    ' SECOND_KEY:0 "Second"',
-  ]);
+  const english = modelFrom(['l_english:', '', ' FIRST_KEY:0 "First"', '', ' SECOND_KEY:0 "Second"']);
 
   assert.equal(keyAtLine(russian, 5), 'SECOND_KEY');
   assert.equal(lineForKey(english, 'SECOND_KEY'), 5);

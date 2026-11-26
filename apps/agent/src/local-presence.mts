@@ -49,9 +49,15 @@ export class LocalPresenceMux {
     const { socket, synced, hub } = this.binding;
     if (!synced || !socket || socket.readyState !== SOCKET_OPEN) return;
     const current = this.current();
-    socket.send(JSON.stringify(current ?? {
-      type: 'presence', clientId: hub.presenceClientId, offline: true,
-    }));
+    socket.send(
+      JSON.stringify(
+        current ?? {
+          type: 'presence',
+          clientId: hub.presenceClientId,
+          offline: true,
+        },
+      ),
+    );
   }
 
   replay(): void {

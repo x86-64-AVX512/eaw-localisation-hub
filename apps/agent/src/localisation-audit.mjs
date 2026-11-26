@@ -17,7 +17,8 @@ function counterpart(relativePath) {
 }
 
 function entries(text) {
-  return parseLocalisationRecords(text).filter((record) => !record.fault)
+  return parseLocalisationRecords(text)
+    .filter((record) => !record.fault)
     .map((record) => ({ key: record.key, text: record.value, line: record.lineNumber }));
 }
 
@@ -40,9 +41,18 @@ function commentParts(line) {
   let escaped = false;
   for (let index = 0; index < line.length; index += 1) {
     const character = line[index];
-    if (escaped) { escaped = false; continue; }
-    if (character === '\\' && quoted) { escaped = true; continue; }
-    if (character === '"') { quoted = !quoted; continue; }
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === '\\' && quoted) {
+      escaped = true;
+      continue;
+    }
+    if (character === '"') {
+      quoted = !quoted;
+      continue;
+    }
     if (character === '#' && !quoted) {
       return { content: line.slice(0, index), comment: line.slice(index) };
     }
@@ -51,48 +61,58 @@ function commentParts(line) {
 }
 
 export function localisationStructure(text) {
-  return withoutUtf8Bom(text).replaceAll('\r\n', '\n').split('\n').map((line) => {
-    const parts = commentParts(line);
-    const content = parts.content.trim();
-    const comment = parts.comment.trim();
-    if (!content && comment) return `# КОММЕНТАРИЙ ${comment}`;
-    if (!content) return '␠ ПУСТАЯ СТРОКА';
-    const suffix = comment ? ` ${comment}` : '';
-    if (/^l_(?:russian|english)\s*:\s*$/iu.test(content)) {
-      return `◆ ЗАГОЛОВОК ЛОКАЛИЗАЦИИ${suffix}`;
-    }
-    const key = /^([^#\s][^:]*)\s*:/u.exec(content)?.[1]?.trim();
-    // Inline comments on localisation entries are informational. They remain
-    // visible in Review, but do not make two language structures different.
-    if (key) return `КЛЮЧ ${key}`;
-    return `⋯ СТРОКА БЕЗ КЛЮЧА${suffix}`;
-  });
+  return withoutUtf8Bom(text)
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .map((line) => {
+      const parts = commentParts(line);
+      const content = parts.content.trim();
+      const comment = parts.comment.trim();
+      if (!content && comment) return `# КОММЕНТАРИЙ ${comment}`;
+      if (!content) return '␠ ПУСТАЯ СТРОКА';
+      const suffix = comment ? ` ${comment}` : '';
+      if (/^l_(?:russian|english)\s*:\s*$/iu.test(content)) {
+        return `◆ ЗАГОЛОВОК ЛОКАЛИЗАЦИИ${suffix}`;
+      }
+      const key = /^([^#\s][^:]*)\s*:/u.exec(content)?.[1]?.trim();
+      // Inline comments on localisation entries are informational. They remain
+      // visible in Review, but do not make two language structures different.
+      if (key) return `КЛЮЧ ${key}`;
+      return `⋯ СТРОКА БЕЗ КЛЮЧА${suffix}`;
+    });
 }
 
 export function localisationDiffText(text) {
-  return withoutUtf8Bom(text).replaceAll('\r\n', '\n').split('\n').map((line) => {
-    const parts = commentParts(line);
-    const content = parts.content.trim();
-    const suffix = parts.comment ? `${parts.content.trimEnd() ? ' ' : ''}${parts.comment.trim()}` : '';
-    if (!content) return suffix;
-    if (/^l_(?:russian|english)\s*:\s*$/iu.test(content)) return `l_localisation:${suffix}`;
-    const match = /^(\s*)([^#\s][^:]*?)(\s*:\s*\d*)\s*(?:".*")?\s*$/u.exec(parts.content);
-    // Version suffixes (:0, :1, …) are not part of the key structure.
-    // The diff view must use the same equivalence as localisationStructure.
-    if (match) return `${match[1]}${match[2].trim()}: "…"`;
-    return `${parts.content}${suffix}`;
-  }).join('\n');
+  return withoutUtf8Bom(text)
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .map((line) => {
+      const parts = commentParts(line);
+      const content = parts.content.trim();
+      const suffix = parts.comment ? `${parts.content.trimEnd() ? ' ' : ''}${parts.comment.trim()}` : '';
+      if (!content) return suffix;
+      if (/^l_(?:russian|english)\s*:\s*$/iu.test(content)) return `l_localisation:${suffix}`;
+      const match = /^(\s*)([^#\s][^:]*?)(\s*:\s*\d*)\s*(?:".*")?\s*$/u.exec(parts.content);
+      // Version suffixes (:0, :1, …) are not part of the key structure.
+      // The diff view must use the same equivalence as localisationStructure.
+      if (match) return `${match[1]}${match[2].trim()}: "…"`;
+      return `${parts.content}${suffix}`;
+    })
+    .join('\n');
 }
 
 export function localisationInlineComments(text) {
-  return withoutUtf8Bom(text).replaceAll('\r\n', '\n').split('\n').flatMap((line, index) => {
-    const parts = commentParts(line);
-    if (!parts.comment) return [];
-    const content = parts.content.trim();
-    if (/^l_(?:russian|english)\s*:\s*$/iu.test(content)) return [];
-    const key = /^([^#\s][^:]*)\s*:/u.exec(content)?.[1]?.trim();
-    return key ? [{ line: index + 1, text: parts.comment.trim() }] : [];
-  });
+  return withoutUtf8Bom(text)
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .flatMap((line, index) => {
+      const parts = commentParts(line);
+      if (!parts.comment) return [];
+      const content = parts.content.trim();
+      if (/^l_(?:russian|english)\s*:\s*$/iu.test(content)) return [];
+      const key = /^([^#\s][^:]*)\s*:/u.exec(content)?.[1]?.trim();
+      return key ? [{ line: index + 1, text: parts.comment.trim() }] : [];
+    });
 }
 
 async function readAuditPair(repository, requestedPath) {
@@ -101,7 +121,9 @@ async function readAuditPair(repository, requestedPath) {
   const [source, other] = await Promise.all([
     fs.readFile(path.resolve(repository, sourcePath)),
     fs.readFile(path.resolve(repository, otherPath)),
-  ]).catch((error) => { throw new Error(`Не удалось найти парный файл: ${otherPath}. ${error.message}`); });
+  ]).catch((error) => {
+    throw new Error(`Не удалось найти парный файл: ${otherPath}. ${error.message}`);
+  });
   return { sourcePath, otherPath, source, other };
 }
 
@@ -110,9 +132,15 @@ async function readAuditPair(repository, requestedPath) {
 const AUDIT_CACHE_VERSION = 3;
 
 function auditCacheKey({ sourcePath, otherPath, source, other }) {
-  const digest = crypto.createHash('sha256')
-    .update(sourcePath).update('\0').update(source)
-    .update('\0').update(otherPath).update('\0').update(other)
+  const digest = crypto
+    .createHash('sha256')
+    .update(sourcePath)
+    .update('\0')
+    .update(source)
+    .update('\0')
+    .update(otherPath)
+    .update('\0')
+    .update(other)
     .digest('hex');
   return JSON.stringify([AUDIT_CACHE_VERSION, sourcePath, otherPath, digest]);
 }
@@ -130,9 +158,11 @@ function auditPair({ sourcePath, otherPath, source: sourceBuffer, other: otherBu
   const otherKeys = grouped(otherEntries);
   const missingInPair = [...sourceKeys.keys()].filter((key) => !otherKeys.has(key));
   const missingInCurrent = [...otherKeys.keys()].filter((key) => !sourceKeys.has(key));
-  const duplicatesCurrent = [...sourceKeys].filter(([, values]) => values.length > 1)
+  const duplicatesCurrent = [...sourceKeys]
+    .filter(([, values]) => values.length > 1)
     .map(([key, values]) => ({ key, count: values.length }));
-  const duplicatesPair = [...otherKeys].filter(([, values]) => values.length > 1)
+  const duplicatesPair = [...otherKeys]
+    .filter(([, values]) => values.length > 1)
     .map(([key, values]) => ({ key, count: values.length }));
   const sourceIsRussian = sourcePath.includes('/russian/');
   const russianPath = sourceIsRussian ? sourcePath : otherPath;
@@ -155,17 +185,25 @@ function auditPair({ sourcePath, otherPath, source: sourceBuffer, other: otherBu
     return { key, status, russian, english, technicalIssues };
   });
   return {
-    currentPath: sourcePath, pairPath: otherPath,
-    currentKeyCount: sourceKeys.size, pairKeyCount: otherKeys.size,
+    currentPath: sourcePath,
+    pairPath: otherPath,
+    currentKeyCount: sourceKeys.size,
+    pairKeyCount: otherKeys.size,
     currentLineCount: withoutUtf8Bom(source).split(/\r?\n/u).length,
     pairLineCount: withoutUtf8Bom(other).split(/\r?\n/u).length,
-    missingInPair, missingInCurrent, duplicatesCurrent, duplicatesPair,
-    russianPath, englishPath,
-    russianKeyCount: russianKeys.size, englishKeyCount: englishKeys.size,
+    missingInPair,
+    missingInCurrent,
+    duplicatesCurrent,
+    duplicatesPair,
+    russianPath,
+    englishPath,
+    russianKeyCount: russianKeys.size,
+    englishKeyCount: englishKeys.size,
     russianLineCount: withoutUtf8Bom(russianText).split(/\r?\n/u).length,
     englishLineCount: withoutUtf8Bom(englishText).split(/\r?\n/u).length,
-    structureMatches: russianStructure.length === englishStructure.length
-      && russianStructure.every((line, index) => line === englishStructure[index]),
+    structureMatches:
+      russianStructure.length === englishStructure.length &&
+      russianStructure.every((line, index) => line === englishStructure[index]),
     russianStructureText: russianStructure.join('\n'),
     englishStructureText: englishStructure.join('\n'),
     russianDiffText: localisationDiffText(russianText),

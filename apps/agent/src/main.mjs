@@ -21,10 +21,7 @@ function parseArguments(argv) {
     token: environmentToken,
     workspace: null,
     workspaceExplicit: false,
-    state: path.join(
-      process.env.LOCALAPPDATA ?? path.join(os.homedir(), '.local', 'share'),
-      'EaWLocalisationHub',
-    ),
+    state: path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), '.local', 'share'), 'EaWLocalisationHub'),
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -35,14 +32,13 @@ function parseArguments(argv) {
     else if (argument === '--token') result.token = argv[++index];
     else if (argument === '--token-file') {
       result.token = fs.readFileSync(path.resolve(argv[++index]), 'utf8').trim();
-    }
-    else if (argument === '--state') result.state = path.resolve(argv[++index]);
-    else if (argument === '--windows-credentials' && process.platform === 'win32') result.readToken = readWindowsAgentToken;
+    } else if (argument === '--state') result.state = path.resolve(argv[++index]);
+    else if (argument === '--windows-credentials' && process.platform === 'win32')
+      result.readToken = readWindowsAgentToken;
     else if (argument === '--workspace') {
       result.workspace = argv[++index];
       result.workspaceExplicit = true;
-    }
-    else if (argument === '--help') result.help = true;
+    } else if (argument === '--help') result.help = true;
     else throw new Error(`Unknown argument: ${argument}`);
   }
   if (result.help) return result;
@@ -55,9 +51,11 @@ function parseArguments(argv) {
     });
     if (branch.status !== 0 || !branch.stdout.trim()) {
       const detail = String(branch.stderr ?? '').trim();
-      throw new Error(detail
-        ? `Не удалось определить текущую Git-ветку: ${detail}`
-        : 'Репозиторий находится в detached HEAD либо текущая Git-ветка недоступна.');
+      throw new Error(
+        detail
+          ? `Не удалось определить текущую Git-ветку: ${detail}`
+          : 'Репозиторий находится в detached HEAD либо текущая Git-ветка недоступна.',
+      );
     }
     result.workspace = branch.stdout.trim();
   }

@@ -33,7 +33,10 @@ test('persisted history keeps decompressed text only for the editable head', asy
   history.record(baseline.replace('"Git"', '"Second"'), alice, 'restore', { coalesce: false });
   await history.serialiseAsync();
   assert.equal(history.entries.at(-1)._text.includes('Second'), true);
-  assert.equal(history.entries.slice(0, -1).every((entry) => entry._text === undefined), true);
+  assert.equal(
+    history.entries.slice(0, -1).every((entry) => entry._text === undefined),
+    true,
+  );
   assert.equal(history.text(history.entries[0].id), baseline);
 });
 
@@ -41,14 +44,22 @@ test('async history pruning keeps the live history identical to the bounded pers
   const history = new DocumentHistory('unused');
   const packed = Buffer.alloc(512 * 1024, 0x61).toString('base64');
   history.entries = Array.from({ length: 40 }, (_, index) => ({
-    id: `entry-${index}`, timestamp: index, authorId: 'alice', author: 'Alice',
-    color: '#f00', reason: 'edit', textGzipBase64: packed,
+    id: `entry-${index}`,
+    timestamp: index,
+    authorId: 'alice',
+    author: 'Alice',
+    color: '#f00',
+    reason: 'edit',
+    textGzipBase64: packed,
   }));
   const value = await history.serialiseAsync();
   const persisted = JSON.parse(value).entries;
   assert.ok(Buffer.byteLength(value, 'utf8') <= 24 * 1024 * 1024);
   assert.ok(persisted.length < 40);
-  assert.deepEqual(history.entries.map(({ id }) => id), persisted.map(({ id }) => id));
+  assert.deepEqual(
+    history.entries.map(({ id }) => id),
+    persisted.map(({ id }) => id),
+  );
 });
 
 test('an incorporated personal edit cannot overwrite a later Git version after reload', async (t) => {
@@ -62,19 +73,22 @@ test('an incorporated personal edit cannot overwrite a later Git version after r
   history.updateGitBase(own);
   assert.equal(history.authorVariants.get('alice').size, 0);
   await fs.writeFile(target, history.serialise());
-  const restored = new DocumentHistory(target); await restored.load();
+  const restored = new DocumentHistory(target);
+  await restored.load();
   const upstream = baseline.replace('"Git"', '"Upstream"');
   assert.equal(restored.personalProjection('alice', upstream), upstream);
   assert.deepEqual(restored.personalGitConflicts('alice'), []);
 });
 
 test('Git rebases an independent personal edit but preserves a hidden author conflict for explicit resolution', () => {
-  const history = new DocumentHistory('unused'); history.ensureBaseline(baseline);
+  const history = new DocumentHistory('unused');
+  history.ensureBaseline(baseline);
   history.record(baseline.replace('"Git"', '"Alice"'), alice);
   history.record(baseline.replace('"Git"', '"Bob"'), bob);
   const git = baseline.replace('"Git"', '"Bob"').replace('"Keep"', '"Upstream"');
   const personal = history.personalProjection('alice', git);
-  assert.match(personal, /"Alice"/u); assert.match(personal, /"Upstream"/u);
+  assert.match(personal, /"Alice"/u);
+  assert.match(personal, /"Upstream"/u);
   const [conflict] = history.personalGitConflicts('alice');
   assert.equal(conflict.key, 'key');
   assert.equal(history.personalProjection('bob', git), git);
@@ -88,7 +102,8 @@ test('unresolved personal conflicts survive another Git update and a restart', a
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-history-conflict-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const target = path.join(directory, 'history.json');
-  const history = new DocumentHistory(target); history.ensureBaseline(baseline);
+  const history = new DocumentHistory(target);
+  history.ensureBaseline(baseline);
   history.record(baseline.replace('"Git"', '"Alice"'), alice);
   const firstGit = baseline.replace('"Git"', '"Server"');
   history.updateGitBase(firstGit);
@@ -96,7 +111,8 @@ test('unresolved personal conflicts survive another Git update and a restart', a
   const nextGit = firstGit.replace('"Keep"', '"Next"');
   history.updateGitBase(nextGit);
   await fs.writeFile(target, history.serialise());
-  const restored = new DocumentHistory(target); await restored.load();
+  const restored = new DocumentHistory(target);
+  await restored.load();
   const [conflict] = restored.personalGitConflicts('alice');
   assert.notEqual(conflict.id, firstId);
   assert.equal(restored.resolvePersonalGitConflict('alice', 'key', 'mine', firstId), false);
@@ -109,12 +125,16 @@ test('schema-3 histories retain unproven variants but require a choice before wr
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-history-migrate-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const target = path.join(directory, 'history.json');
-  const history = new DocumentHistory(target); history.ensureBaseline(baseline);
+  const history = new DocumentHistory(target);
+  history.ensureBaseline(baseline);
   history.record(baseline.replace('"Git"', '"Old"'), alice);
   const legacy = JSON.parse(history.serialise());
-  legacy.schema = 3; delete legacy.gitBaseGzipBase64; delete legacy.rebaseConflicts;
+  legacy.schema = 3;
+  delete legacy.gitBaseGzipBase64;
+  delete legacy.rebaseConflicts;
   await fs.writeFile(target, JSON.stringify(legacy));
-  const restored = new DocumentHistory(target); await restored.load();
+  const restored = new DocumentHistory(target);
+  await restored.load();
   const currentGit = baseline.replace('"Git"', '"New"');
   assert.match(restored.personalProjection('alice', currentGit), /"Old"/u);
   assert.equal(restored.personalGitConflicts('alice')[0].reason, 'legacy-base-unknown');
@@ -153,15 +173,29 @@ test('legacy suggestion attribution migrates away from its creator without losin
 
   const restored = new DocumentHistory(target);
   await restored.load();
-  assert.equal(restored.reconcileSuggestionAttribution([{
-    id: 'suggestion-1', status: 'accepted', authorId: 'alice', author: 'Alice', color: '#f00',
-    decidedById: 'bob', decidedBy: 'Bob', originalText: '"Git"', replacementText: '"Proposed"',
-  }]), true);
+  assert.equal(
+    restored.reconcileSuggestionAttribution([
+      {
+        id: 'suggestion-1',
+        status: 'accepted',
+        authorId: 'alice',
+        author: 'Alice',
+        color: '#f00',
+        decidedById: 'bob',
+        decidedBy: 'Bob',
+        originalText: '"Git"',
+        replacementText: '"Proposed"',
+      },
+    ]),
+    true,
+  );
   const entry = restored.summaries().find(({ reason }) => reason === 'suggestion');
   assert.equal(entry.author, 'Bob');
   assert.equal(entry.suggestionAuthor, 'Alice');
-  assert.equal(restored.personalProjection('alice', baseline),
-    baseline.replace('other:0 "Keep"', 'other:0 "Alice own"'));
+  assert.equal(
+    restored.personalProjection('alice', baseline),
+    baseline.replace('other:0 "Keep"', 'other:0 "Alice own"'),
+  );
   assert.equal(restored.personalProjection('bob', baseline), accepted);
   assert.equal(restored.reconcileSuggestionAttribution([]), false);
   assert.equal(JSON.parse(restored.serialise()).schema, 5);
@@ -175,7 +209,8 @@ test('personal projections retain moved blank lines, comments, key order, and an
     'l_russian:\n\n b:0 "B"\n # comment\n a:0 "A"\n',
     '',
   ]) {
-    const history = new DocumentHistory('unused'); history.ensureBaseline(git);
+    const history = new DocumentHistory('unused');
+    history.ensureBaseline(git);
     history.record(edited, alice);
     assert.equal(history.personalProjection('alice', git), edited);
   }
@@ -208,15 +243,22 @@ test('personal projection keeps Git plus only the selected author changes', () =
   const git = 'l_russian:\n a:0 "A"\n b:0 "B"\n c:0 "C"\n';
   const history = new DocumentHistory('unused');
   history.ensureBaseline(git);
-  history.record('l_russian:\n a:0 "Alice"\n b:0 "B"\n c:0 "C"\n',
-    { id: 'alice', displayName: 'Alice', color: '#f00' });
-  history.record('l_russian:\n a:0 "Alice"\n b:0 "Bob"\n c:0 "C"\n',
-    { id: 'bob', displayName: 'Bob', color: '#0f0' });
-  history.record('l_russian:\n a:0 "Alice"\n b:0 "Bob"\n c:0 "Alice too"\n',
-    { id: 'alice', displayName: 'Alice', color: '#f00' });
-  assert.equal(history.personalProjection('alice', git),
-    'l_russian:\n a:0 "Alice"\n b:0 "B"\n c:0 "Alice too"\n');
-  assert.deepEqual(history.contributors().map(({ displayName }) => displayName), ['Alice', 'Bob']);
+  history.record('l_russian:\n a:0 "Alice"\n b:0 "B"\n c:0 "C"\n', {
+    id: 'alice',
+    displayName: 'Alice',
+    color: '#f00',
+  });
+  history.record('l_russian:\n a:0 "Alice"\n b:0 "Bob"\n c:0 "C"\n', { id: 'bob', displayName: 'Bob', color: '#0f0' });
+  history.record('l_russian:\n a:0 "Alice"\n b:0 "Bob"\n c:0 "Alice too"\n', {
+    id: 'alice',
+    displayName: 'Alice',
+    color: '#f00',
+  });
+  assert.equal(history.personalProjection('alice', git), 'l_russian:\n a:0 "Alice"\n b:0 "B"\n c:0 "Alice too"\n');
+  assert.deepEqual(
+    history.contributors().map(({ displayName }) => displayName),
+    ['Alice', 'Bob'],
+  );
 });
 
 test('a local Git rollback replaces only the author projection', () => {
@@ -224,10 +266,7 @@ test('a local Git rollback replaces only the author projection', () => {
   const history = new DocumentHistory('unused');
   history.ensureBaseline(git);
   history.record(git.replace('a:0 "Git"', 'a:0 "Alice"'), alice);
-  history.record(
-    git.replace('a:0 "Git"', 'a:0 "Alice"').replace('b:0 "Git"', 'b:0 "Bob"'),
-    bob,
-  );
+  history.record(git.replace('a:0 "Git"', 'a:0 "Alice"').replace('b:0 "Git"', 'b:0 "Bob"'), bob);
   const shared = history.text(history.headId());
 
   assert.equal(history.replacePersonalProjection(alice, git, git), true);
@@ -237,8 +276,12 @@ test('a local Git rollback replaces only the author projection', () => {
 });
 
 test('restoring canonical BAR-like lines also restores the author projection with unrelated duplicate keys', () => {
-  const git = 'l_russian:\n barrad_silver.42.a:0 "A reversal of roles."\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
-  const removed = git.replace(' barrad_silver.42.a:0 "A reversal of roles."\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n', '\n');
+  const git =
+    'l_russian:\n barrad_silver.42.a:0 "A reversal of roles."\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
+  const removed = git.replace(
+    ' barrad_silver.42.a:0 "A reversal of roles."\n barrad_silver.43.t:0 "Panacea"\n barrad_silver.43.d:0 "Description"\n',
+    '\n',
+  );
   const history = new DocumentHistory('unused');
   history.ensureBaseline(git);
   history.record(removed, alice);
@@ -254,24 +297,26 @@ test('same-key author variants remain separate and are reported as conflicts', a
   try {
     const history = new DocumentHistory(target);
     history.ensureBaseline(git);
-    history.record(git.replace('"Git"', '"Alice"'),
-      { id: 'alice', displayName: 'Alice', color: '#f00' });
-    history.record(git.replace('"Git"', '"Bob"'),
-      { id: 'bob', displayName: 'Bob', color: '#0f0' });
+    history.record(git.replace('"Git"', '"Alice"'), { id: 'alice', displayName: 'Alice', color: '#f00' });
+    history.record(git.replace('"Git"', '"Bob"'), { id: 'bob', displayName: 'Bob', color: '#0f0' });
     assert.match(history.personalProjection('alice', git), /shared:0 "Alice"/u);
     assert.match(history.personalProjection('bob', git), /shared:0 "Bob"/u);
-    assert.deepEqual(history.conflicts(git), [{
-      key: 'shared',
-      baseLine: ' shared:0 "Git"',
-      variants: [
-        { authorId: 'alice', author: 'Alice', line: ' shared:0 "Alice"' },
-        { authorId: 'bob', author: 'Bob', line: ' shared:0 "Bob"' },
-      ],
-    }]);
-    assert.equal(history.conflicts(git, 'alice').length, 1,
-      'an involved author sees the personal-variant conflict');
-    assert.deepEqual(history.conflicts(git, 'unrelated-user'), [],
-      'an unrelated user is not warned about other authors\' personal variants');
+    assert.deepEqual(history.conflicts(git), [
+      {
+        key: 'shared',
+        baseLine: ' shared:0 "Git"',
+        variants: [
+          { authorId: 'alice', author: 'Alice', line: ' shared:0 "Alice"' },
+          { authorId: 'bob', author: 'Bob', line: ' shared:0 "Bob"' },
+        ],
+      },
+    ]);
+    assert.equal(history.conflicts(git, 'alice').length, 1, 'an involved author sees the personal-variant conflict');
+    assert.deepEqual(
+      history.conflicts(git, 'unrelated-user'),
+      [],
+      "an unrelated user is not warned about other authors' personal variants",
+    );
     await fs.writeFile(target, history.serialise());
     const restored = new DocumentHistory(target);
     await restored.load();

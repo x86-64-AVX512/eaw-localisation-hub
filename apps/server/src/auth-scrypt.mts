@@ -7,8 +7,12 @@ interface ScryptParameters {
   maxmem: number;
 }
 
-export function scryptAsync(password: string, salt: Uint8Array, keyLength: number,
-  options: ScryptParameters): Promise<Buffer> {
+export function scryptAsync(
+  password: string,
+  salt: Uint8Array,
+  keyLength: number,
+  options: ScryptParameters,
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     crypto.scrypt(password, salt, keyLength, options, (error, key) => {
       if (error) reject(error);

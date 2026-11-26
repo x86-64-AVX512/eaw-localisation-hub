@@ -31,7 +31,10 @@ test('local diff cache persists payloads, prunes old entries, and clears on requ
     assert.equal(before.entries, 2);
     assert.equal(before.bytes > 0, true);
     assert.deepEqual(await restarted.stats(), {
-      entries: 0, bytes: 0, maximumBytes: 1024 * 1024, maximumEntries: 2,
+      entries: 0,
+      bytes: 0,
+      maximumBytes: 1024 * 1024,
+      maximumEntries: 2,
     });
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
@@ -80,16 +83,17 @@ test('Agent serves immutable history versions from the local cache before contac
     historyCacheKey: AgentHub.prototype.historyCacheKey,
   };
 
-  await AgentHub.prototype.requestHistoryVersion.call(
-    context, client, absolutePath, binding, 'cached',
-  );
-  assert.deepEqual(sent, [{
-    type: 'historyVersion', path: absolutePath, id: 'cached', textBase64: 'Y2FjaGVk',
-  }]);
+  await AgentHub.prototype.requestHistoryVersion.call(context, client, absolutePath, binding, 'cached');
+  assert.deepEqual(sent, [
+    {
+      type: 'historyVersion',
+      path: absolutePath,
+      id: 'cached',
+      textBase64: 'Y2FjaGVk',
+    },
+  ]);
   assert.deepEqual(serverRequests, []);
 
-  await AgentHub.prototype.requestHistoryVersion.call(
-    context, client, absolutePath, binding, 'missing',
-  );
+  await AgentHub.prototype.requestHistoryVersion.call(context, client, absolutePath, binding, 'missing');
   assert.deepEqual(serverRequests, [{ type: 'history-get', id: 'missing' }]);
 });

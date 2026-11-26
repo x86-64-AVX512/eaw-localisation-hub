@@ -21,13 +21,16 @@ test('English original lookup resolves an exact key from the ticket base commit'
   const runGit = (...args) => spawnSync('git', args, { cwd: repository, encoding: 'utf8', windowsHide: true });
   try {
     await fs.mkdir(path.join(repository, 'localisation', 'english'), { recursive: true });
-    await fs.writeFile(path.join(repository, relative), [
-      'l_english:',
-      ' TEST_KEY:0 "The original line"',
-      ' VERSIONLESS_EVENT.20.t: "Versionless title"',
-      ' TEST_KEY_LONG:0 "Different key"',
-      '',
-    ].join('\n'));
+    await fs.writeFile(
+      path.join(repository, relative),
+      [
+        'l_english:',
+        ' TEST_KEY:0 "The original line"',
+        ' VERSIONLESS_EVENT.20.t: "Versionless title"',
+        ' TEST_KEY_LONG:0 "Different key"',
+        '',
+      ].join('\n'),
+    );
     assert.equal(runGit('init', '-b', 'general-dev').status, 0);
     assert.equal(runGit('config', 'user.name', 'Test').status, 0);
     assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
@@ -40,12 +43,22 @@ test('English original lookup resolves an exact key from the ticket base commit'
     };
     const result = await englishOriginal(hub, 'TEST_KEY', 'ticket-id');
     assert.equal(result.commit, commit);
-    assert.deepEqual(result.matches, [{
-      file: relative, line: 2, key: 'TEST_KEY', text: 'The original line',
-    }]);
-    assert.deepEqual((await englishOriginal(hub, 'VERSIONLESS_EVENT.20.t', 'ticket-id')).matches, [{
-      file: relative, line: 3, key: 'VERSIONLESS_EVENT.20.t', text: 'Versionless title',
-    }]);
+    assert.deepEqual(result.matches, [
+      {
+        file: relative,
+        line: 2,
+        key: 'TEST_KEY',
+        text: 'The original line',
+      },
+    ]);
+    assert.deepEqual((await englishOriginal(hub, 'VERSIONLESS_EVENT.20.t', 'ticket-id')).matches, [
+      {
+        file: relative,
+        line: 3,
+        key: 'VERSIONLESS_EVENT.20.t',
+        text: 'Versionless title',
+      },
+    ]);
     await assert.rejects(englishOriginal(hub, 'BAD KEY', ''), /ключ/u);
   } finally {
     await fs.rm(repository, { recursive: true, force: true });

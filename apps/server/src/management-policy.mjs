@@ -36,7 +36,11 @@ export function assertCanAssignRoles(actor, target, roles) {
 export function assertCanCreateInvite(actor, roles) {
   requireManager(actor);
   if (!actor.roles.includes('admin') && roles.includes('admin')) {
-    throw new AuthError('Only administrators can create administrator invitations', 403, 'administrator_role_forbidden');
+    throw new AuthError(
+      'Only administrators can create administrator invitations',
+      403,
+      'administrator_role_forbidden',
+    );
   }
 }
 

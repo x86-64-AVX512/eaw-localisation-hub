@@ -1,5 +1,7 @@
 import {
-  computeSingleReplace, parseLocalisationKeys, utf8ByteOffsetToUtf16Index,
+  computeSingleReplace,
+  parseLocalisationKeys,
+  utf8ByteOffsetToUtf16Index,
 } from '../../../packages/shared/src/text.mts';
 
 function splitLines(text) {

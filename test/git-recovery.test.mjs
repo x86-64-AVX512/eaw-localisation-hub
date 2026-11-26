@@ -25,19 +25,28 @@ test('Agent preserves an uncommitted localisation file before canonical blocking
     git(repository, 'commit', '-m', 'base');
     await fs.writeFile(absolutePath, 'l_russian:\n test:0 "local"\n');
     const binding = {
-      ticketId: '', relativePath, clients: new Set(),
+      ticketId: '',
+      relativePath,
+      clients: new Set(),
       hub: { options: { repo: repository, state: path.join(root, 'state') } },
     };
     const state = { binding };
     binding.clients.add({ documents: new Map([[absolutePath, state]]) });
     const saved = await preserveChangedFile(binding, {
-      status: 'file-outdated', remoteBlob: 'a'.repeat(40), remoteHead: 'b'.repeat(40),
+      status: 'file-outdated',
+      remoteBlob: 'a'.repeat(40),
+      remoteHead: 'b'.repeat(40),
     });
     assert.match(saved, /git-recovery/u);
     assert.equal(await fs.readFile(saved, 'utf8'), 'l_russian:\n test:0 "local"\n');
-    assert.equal(await preserveChangedFile(binding, {
-      status: 'file-outdated', remoteBlob: 'a'.repeat(40), remoteHead: 'b'.repeat(40),
-    }), '');
+    assert.equal(
+      await preserveChangedFile(binding, {
+        status: 'file-outdated',
+        remoteBlob: 'a'.repeat(40),
+        remoteHead: 'b'.repeat(40),
+      }),
+      '',
+    );
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

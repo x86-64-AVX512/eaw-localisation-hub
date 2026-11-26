@@ -26,7 +26,9 @@ export function createReviewRefresh(refresh: () => void) {
   return {
     schedule,
     handleBatch,
-    dispose() { if (frame) cancelAnimationFrame(frame); },
+    dispose() {
+      if (frame) cancelAnimationFrame(frame);
+    },
   };
 }
 
@@ -45,12 +47,17 @@ export function createCollaborationRefresh(
     schedule(type: string) {
       if (type.startsWith('presence')) sections.add('presences');
       else if (type.startsWith('reservationTarget')) {
-        sections.add('targets'); sections.add('reservations');
+        sections.add('targets');
+        sections.add('reservations');
       } else if (type.startsWith('reservation')) sections.add('reservations');
       else if (type.startsWith('externalConflict')) sections.add('conflicts');
       if (sections.size) refresh.schedule();
     },
-    refreshAll() { sections.clear(); refreshDecorations(); panel.refresh(); },
+    refreshAll() {
+      sections.clear();
+      refreshDecorations();
+      panel.refresh();
+    },
     dispose: refresh.dispose,
   };
 }

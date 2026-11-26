@@ -9,7 +9,10 @@ export function updateReservation(room, socket, message) {
     throw new Error('Invalid reservation revision');
   }
   const index = room.reservations.findIndex((item) => item.id === id);
-  if (index < 0) { room.broadcastReservations(); return { status: 'deleted' }; }
+  if (index < 0) {
+    room.broadcastReservations();
+    return { status: 'deleted' };
+  }
   const previous = room.reservations[index];
   const revision = previous.revision ?? 0;
   if (message.expectedRevision !== revision) {
@@ -25,9 +28,11 @@ export function updateReservation(room, socket, message) {
     const assigneeId = controlledString(message.assigneeId, 'Reservation assignee id', 128);
     const assignee = room.authStore.required
       ? room.authStore.findDirectoryUser(socket.identity, assigneeId)
-      : { id: assigneeId || null,
+      : {
+          id: assigneeId || null,
           displayName: controlledString(message.assignee, 'Reservation assignee', 128, { required: true }),
-          color: controlledString(message.assigneeColor ?? previous.color, 'Reservation color', 16, { required: true }) };
+          color: controlledString(message.assigneeColor ?? previous.color, 'Reservation color', 16, { required: true }),
+        };
     if (!assignee) throw new Error('Reservation assignee account is unavailable');
     next.assigneeId = assignee.id;
     next.assignee = assignee.displayName;
@@ -35,7 +40,8 @@ export function updateReservation(room, socket, message) {
   }
   const rangeFields = ['startRelative', 'endRelative'];
   if (rangeFields.some((field) => message[field] !== undefined)) {
-    for (const field of rangeFields) next[field] = controlledString(message[field], `Reservation ${field}`, 4096, { required: true });
+    for (const field of rangeFields)
+      next[field] = controlledString(message[field], `Reservation ${field}`, 4096, { required: true });
     delete next.orphaned;
     const range = resolveReservationRange(room.document, next);
     if (!range || range.start === range.end) throw new Error('Invalid reservation range');
@@ -44,11 +50,16 @@ export function updateReservation(room, socket, message) {
     if (!next.initialKeys.length || next.initialKeys.length > 1000) throw new Error('Invalid reservation key count');
     // Same bound as reservation-create: Agent rejects a whole snapshot with an overlong key.
     // A plain Error: the user gets an ordinary failed-update result, not a closed socket.
-    if (next.initialKeys.some((key) => Buffer.byteLength(key, 'utf8') > 256)) throw new Error('Reservation key is too long');
+    if (next.initialKeys.some((key) => Buffer.byteLength(key, 'utf8') > 256))
+      throw new Error('Reservation key is too long');
   }
   room.reservations[index] = next;
-  try { room.assertMetadataBudget(); }
-  catch (error) { room.reservations[index] = previous; throw error; }
+  try {
+    room.assertMetadataBudget();
+  } catch (error) {
+    room.reservations[index] = previous;
+    throw error;
+  }
   room.schedulePersist();
   room.broadcastReservations();
   return { status: 'saved', revision: next.revision };

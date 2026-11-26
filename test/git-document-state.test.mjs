@@ -16,31 +16,48 @@ test('Agent exposes a canonical conflict received in the initial room sync', asy
   };
   const client = {
     documents: new Map([['C:\\test.yml', { binding }]]),
-    send(message) { sent.push(message); },
+    send(message) {
+      sent.push(message);
+    },
   };
   binding.clients.add(client);
   applySyncedMessage(binding, {
     canSeed: false,
     git: {
       status: 'conflict',
-      conflicts: [{
-        key: 'same_key', label: 'same_key', detail: 'Both sides changed it',
-        conflictId: 'confirmed-snapshot',
-        baseLine: 'same_key: "Base"',
-        collaborativeLine: 'same_key: "Shared"',
-        externalLine: 'same_key: "Git"',
-      }],
+      conflicts: [
+        {
+          key: 'same_key',
+          label: 'same_key',
+          detail: 'Both sides changed it',
+          conflictId: 'confirmed-snapshot',
+          baseLine: 'same_key: "Base"',
+          collaborativeLine: 'same_key: "Shared"',
+          externalLine: 'same_key: "Git"',
+        },
+      ],
     },
-    reservations: [], commentThreads: [], suggestions: [], history: [], presences: [], directory: [],
+    reservations: [],
+    commentThreads: [],
+    suggestions: [],
+    history: [],
+    presences: [],
+    directory: [],
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(sent, [
     { type: 'externalConflictReset', path: 'C:\\test.yml', source: 'canonical' },
     {
-      type: 'externalConflict', path: 'C:\\test.yml', source: 'canonical',
-      key: 'same_key', label: 'same_key', detail: 'Both sides changed it',
+      type: 'externalConflict',
+      path: 'C:\\test.yml',
+      source: 'canonical',
+      key: 'same_key',
+      label: 'same_key',
+      detail: 'Both sides changed it',
       conflictId: 'confirmed-snapshot',
-      baseLine: 'same_key: "Base"', collaborativeLine: 'same_key: "Shared"', externalLine: 'same_key: "Git"',
+      baseLine: 'same_key: "Base"',
+      collaborativeLine: 'same_key: "Shared"',
+      externalLine: 'same_key: "Git"',
     },
   ]);
 });

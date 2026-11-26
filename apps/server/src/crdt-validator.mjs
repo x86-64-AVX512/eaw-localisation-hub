@@ -80,7 +80,10 @@ export class CrdtUpdateValidator {
       MAX_TIMEOUT_MILLISECONDS,
       BASE_TIMEOUT_MILLISECONDS + Math.ceil(totalBytes / (1024 * 1024)) * 100,
     );
-    job.timer = setTimeout(() => this.#restart('CRDT update validation timed out', 'crdt-validation-timeout'), timeoutMilliseconds);
+    job.timer = setTimeout(
+      () => this.#restart('CRDT update validation timed out', 'crdt-validation-timeout'),
+      timeoutMilliseconds,
+    );
     job.timer.unref?.();
     this.current = job;
     const transfers = [job.update.buffer];

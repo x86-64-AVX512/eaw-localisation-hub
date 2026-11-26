@@ -13,7 +13,8 @@ function lineStarts(text) {
 }
 
 function lineAt(starts, offset) {
-  let low = 0; let high = starts.length;
+  let low = 0;
+  let high = starts.length;
   while (low < high) {
     const middle = (low + high) >>> 1;
     if (starts[middle] <= offset) low = middle + 1;
@@ -33,10 +34,14 @@ function discussionSummary(document, item, starts) {
     orphaned: Boolean(item.orphaned || !range),
     originalText: item.originalText ?? '',
     replacementText: item.replacementText ?? '',
-    messages: (item.messages ?? []).filter((message) => !message.deleted).map((message) => ({
-      id: message.id, author: message.author, body: message.body,
-      createdAt: message.createdAt,
-    })),
+    messages: (item.messages ?? [])
+      .filter((message) => !message.deleted)
+      .map((message) => ({
+        id: message.id,
+        author: message.author,
+        body: message.body,
+        createdAt: message.createdAt,
+      })),
   };
 }
 
@@ -48,28 +53,31 @@ export class DeletedBranchArchive {
   }
 
   async isDeleted(branch) {
-    if (!this.canonicalSource?.enabled
-      || this.roomRegistry.mergedBranches.has(branch)
-      || !this.roomRegistry.branchHints.has(branch)) return false;
+    if (
+      !this.canonicalSource?.enabled ||
+      this.roomRegistry.mergedBranches.has(branch) ||
+      !this.roomRegistry.branchHints.has(branch)
+    )
+      return false;
     return this.canonicalSource.branchDeleted(branch);
   }
 
   async list() {
     // Refresh refs once per menu opening; individual branch probes then reuse the result.
     await this.canonicalSource.remoteBranchNames?.({ force: true });
-    const branches = [...this.roomRegistry.branchHints.keys()]
-      .filter((branch) => !this.roomRegistry.mergedBranches.has(branch));
+    const branches = [...this.roomRegistry.branchHints.keys()].filter(
+      (branch) => !this.roomRegistry.mergedBranches.has(branch),
+    );
     const results = [];
     // Bound the GitHub requests and avoid loading any document merely to draw the menu.
     for (const branch of branches) {
-      const fileIds = this.roomRegistry.documentIdsForBranch(branch)
-        .filter((id) => this.roomRegistry.persisted.has(
-          crypto.createHash('sha256').update(id).digest('hex')));
+      const fileIds = this.roomRegistry
+        .documentIdsForBranch(branch)
+        .filter((id) => this.roomRegistry.persisted.has(crypto.createHash('sha256').update(id).digest('hex')));
       const unknownCount = this.roomRegistry.unresolvedLegacyHashes(branch, []).length;
       if (!fileIds.length && !unknownCount) continue;
-      if (!await this.isDeleted(branch)) continue;
-      const tickets = this.ticketStore.list({ archived: true })
-        .filter((ticket) => ticket.baseBranch === branch).length;
+      if (!(await this.isDeleted(branch))) continue;
+      const tickets = this.ticketStore.list({ archived: true }).filter((ticket) => ticket.baseBranch === branch).length;
       results.push({
         branch,
         commit: this.roomRegistry.branchHints.get(branch)?.commit ?? '',
@@ -82,7 +90,7 @@ export class DeletedBranchArchive {
   }
 
   async document(branch, relativePath) {
-    if (!TRACKED_PATH_PATTERN.test(relativePath) || !await this.isDeleted(branch)) return null;
+    if (!TRACKED_PATH_PATTERN.test(relativePath) || !(await this.isDeleted(branch))) return null;
     const documentId = `${branch}:${relativePath}`;
     const hash = crypto.createHash('sha256').update(documentId).digest('hex');
     if (!this.roomRegistry.persisted.has(hash)) return null;
@@ -102,7 +110,8 @@ export class DeletedBranchArchive {
     const text = room.currentText();
     const starts = lineStarts(text);
     return {
-      branch, relativePath,
+      branch,
+      relativePath,
       commit: room.gitBase.commit,
       textBase64: Buffer.from(text, 'utf8').toString('base64'),
       comments: room.commentThreads.map((thread) => discussionSummary(room.document, thread, starts)),

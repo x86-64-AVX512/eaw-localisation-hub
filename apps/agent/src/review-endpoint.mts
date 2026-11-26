@@ -15,15 +15,25 @@ type StoredEndpoint = ReviewEndpoint & { endpointPath: string };
 
 function errorCode(error: unknown): string | undefined {
   return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
-    ? error.code : undefined;
+    ? error.code
+    : undefined;
 }
 
 function validEndpoint(value: unknown): value is ReviewEndpoint {
-  return value !== null && typeof value === 'object' && 'schema' in value
-    && 'port' in value && 'token' in value && value.schema === 1
-    && typeof value.port === 'number' && Number.isInteger(value.port)
-    && value.port > 0 && value.port <= 65_535
-    && typeof value.token === 'string' && /^[A-Za-z0-9_-]{43}$/u.test(value.token);
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'schema' in value &&
+    'port' in value &&
+    'token' in value &&
+    value.schema === 1 &&
+    typeof value.port === 'number' &&
+    Number.isInteger(value.port) &&
+    value.port > 0 &&
+    value.port <= 65_535 &&
+    typeof value.token === 'string' &&
+    /^[A-Za-z0-9_-]{43}$/u.test(value.token)
+  );
 }
 
 export async function loadReviewEndpoint(options: { state: string }): Promise<StoredEndpoint> {
@@ -86,7 +96,12 @@ function ownerProof(token: string, nonce: string): string {
   return crypto.createHmac('sha256', token).update(`eaw-review-owner:${nonce}`).digest('hex');
 }
 
-export function respondToReviewOwnerProbe(request: IncomingMessage, response: ServerResponse, url: URL, token: string): boolean {
+export function respondToReviewOwnerProbe(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  token: string,
+): boolean {
   if (request.method !== 'HEAD' || url.pathname !== OWNER_PROBE_PATH) return false;
   const nonce = url.searchParams.get('nonce') ?? '';
   if (!/^[0-9a-f]{32}$/u.test(nonce)) {
@@ -102,7 +117,9 @@ async function runningReviewOwnsPort(endpoint: StoredEndpoint): Promise<boolean>
   try {
     // The listener proves it owns our endpoint without receiving its bearer token.
     const response = await fetch(`http://127.0.0.1:${endpoint.port}${OWNER_PROBE_PATH}?nonce=${nonce}`, {
-      method: 'HEAD', redirect: 'error', signal: AbortSignal.timeout(750),
+      method: 'HEAD',
+      redirect: 'error',
+      signal: AbortSignal.timeout(750),
     });
     return response.status === 204 && response.headers.get('X-EaW-Review-Owner') === ownerProof(endpoint.token, nonce);
   } catch {
@@ -120,7 +137,7 @@ export async function listenReviewEndpoint(server: Server, endpoint: StoredEndpo
     } catch (error) {
       failureCode = errorCode(error);
       if (failureCode !== 'EADDRINUSE' && failureCode !== 'EACCES') throw error;
-      if (failureCode === 'EADDRINUSE' && await runningReviewOwnsPort(endpoint)) {
+      if (failureCode === 'EADDRINUSE' && (await runningReviewOwnsPort(endpoint))) {
         throw new Error('Desktop Agent is already running for this Review state directory', { cause: error });
       }
       // An open Review can still attempt to reconnect to the old origin.
@@ -130,6 +147,8 @@ export async function listenReviewEndpoint(server: Server, endpoint: StoredEndpo
   endpoint.port = await listenLoopback(server, 0);
   await saveReviewEndpoint(endpoint);
   if (previousPort) {
-    console.warn(`[agent] Review moved from port ${previousPort} to ${endpoint.port} (${failureCode}). Drafts and settings in browser storage remain associated with the old address.`);
+    console.warn(
+      `[agent] Review moved from port ${previousPort} to ${endpoint.port} (${failureCode}). Drafts and settings in browser storage remain associated with the old address.`,
+    );
   }
 }

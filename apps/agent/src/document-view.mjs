@@ -1,8 +1,6 @@
 import { Buffer } from 'node:buffer';
 import * as Y from 'yjs';
-import {
-  computeSingleReplace,
-} from '../../../packages/shared/src/text.mts';
+import { computeSingleReplace } from '../../../packages/shared/src/text.mts';
 
 const COORDINATE_STEP = 4096;
 
@@ -11,11 +9,11 @@ function documentCoordinates(binding, text) {
     return binding.coordinateCheckpoints;
   }
   const checkpoints = [{ utf16: 0, bytes: 0 }];
-  let utf16 = 0; let bytes = 0;
+  let utf16 = 0;
+  let bytes = 0;
   while (utf16 < text.length) {
     let next = Math.min(text.length, utf16 + COORDINATE_STEP);
-    if (next < text.length && /[\uD800-\uDBFF]/u.test(text[next - 1])
-      && /[\uDC00-\uDFFF]/u.test(text[next])) next -= 1;
+    if (next < text.length && /[\uD800-\uDBFF]/u.test(text[next - 1]) && /[\uDC00-\uDFFF]/u.test(text[next])) next -= 1;
     bytes += Buffer.byteLength(text.slice(utf16, next), 'utf8');
     utf16 = next;
     checkpoints.push({ utf16, bytes });
@@ -29,13 +27,17 @@ function byteOffsetFor(binding, text, utf16Index) {
   if (!Number.isSafeInteger(utf16Index) || utf16Index < 0 || utf16Index > text.length) {
     throw new RangeError('Invalid UTF-16 position');
   }
-  if (utf16Index > 0 && utf16Index < text.length
-    && /[\uD800-\uDBFF]/u.test(text[utf16Index - 1])
-    && /[\uDC00-\uDFFF]/u.test(text[utf16Index])) {
+  if (
+    utf16Index > 0 &&
+    utf16Index < text.length &&
+    /[\uD800-\uDBFF]/u.test(text[utf16Index - 1]) &&
+    /[\uDC00-\uDFFF]/u.test(text[utf16Index])
+  ) {
     throw new RangeError('UTF-16 position splits a surrogate pair');
   }
   const checkpoints = documentCoordinates(binding, text);
-  let low = 0; let high = checkpoints.length - 1;
+  let low = 0;
+  let high = checkpoints.length - 1;
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
     if (checkpoints[middle].utf16 <= utf16Index) low = middle;
@@ -65,25 +67,34 @@ export function emitDocumentStatus(binding, status) {
     syncing: 'Agent подключается к совместному документу на сервере.',
     offline: 'Соединение с сервером потеряно; Agent повторит подключение автоматически.',
     unauthorized: 'Сервер отклонил сохранённую сессию пользователя.',
-    'git-branch-merged': 'Ветка влита в general-dev. Комментарии и тикеты перенесены; переключите локальный Git на general-dev.',
-    'git-branch-deleted': 'Ветка удалена без подтверждённого слияния с general-dev. Данные и тикеты сохранены; редактирование приостановлено.',
+    'git-branch-merged':
+      'Ветка влита в general-dev. Комментарии и тикеты перенесены; переключите локальный Git на general-dev.',
+    'git-branch-deleted':
+      'Ветка удалена без подтверждённого слияния с general-dev. Данные и тикеты сохранены; редактирование приостановлено.',
     'git-unavailable': 'Канонический Git временно недоступен. Данные сохранены; редактирование приостановлено.',
     'git-branch-outdated': 'В ветке появился новый коммит, но Git blob этого файла совпадает с сервером.',
-    'git-file-outdated': git.reason === 'local-file-not-in-head'
-      ? 'Файл отсутствует в локальном HEAD. Добавьте его в Git или обновите репозиторий.'
-      : 'Git blob открытого файла отличается от канонической версии сервера.',
+    'git-file-outdated':
+      git.reason === 'local-file-not-in-head'
+        ? 'Файл отсутствует в локальном HEAD. Добавьте его в Git или обновите репозиторий.'
+        : 'Git blob открытого файла отличается от канонической версии сервера.',
     'git-conflict': 'Git-обновление конфликтует с совместным документом; откройте Review для просмотра diff.',
   };
   for (const client of binding.clients) {
     for (const [absolutePath, state] of client.documents) {
-      if (state.binding === binding) client.send({
-        type: 'documentStatus', path: absolutePath, status,
-        branch: String(git.branch ?? ''),
-        localHead: String(git.localHead ?? ''), remoteHead: String(git.remoteHead ?? ''),
-        localBlob: String(git.localBlob ?? ''), remoteBlob: String(git.remoteBlob ?? ''),
-        reason: String(git.reason ?? ''), message: messages[status] ?? String(git.message ?? ''),
-        changedFiles: Array.isArray(git.changedFiles) ? git.changedFiles.slice(0, 500) : [],
-      });
+      if (state.binding === binding)
+        client.send({
+          type: 'documentStatus',
+          path: absolutePath,
+          status,
+          branch: String(git.branch ?? ''),
+          localHead: String(git.localHead ?? ''),
+          remoteHead: String(git.remoteHead ?? ''),
+          localBlob: String(git.localBlob ?? ''),
+          remoteBlob: String(git.remoteBlob ?? ''),
+          reason: String(git.reason ?? ''),
+          message: messages[status] ?? String(git.message ?? ''),
+          changedFiles: Array.isArray(git.changedFiles) ? git.changedFiles.slice(0, 500) : [],
+        });
     }
   }
 }
@@ -105,16 +116,18 @@ export function syncClientView(binding, client, absolutePath) {
   const state = binding.requireState(client, absolutePath);
   const canonical = binding.text.toString();
   if (client.kind === 'review' && client.reviewCrdt) {
-    if (!state.reviewSynced) client.send({
-      type: 'documentSync', path: absolutePath, documentId: binding.documentId,
-      updateBase64: Buffer.from(Y.encodeStateAsUpdate(binding.document)).toString('base64'),
-    });
+    if (!state.reviewSynced)
+      client.send({
+        type: 'documentSync',
+        path: absolutePath,
+        documentId: binding.documentId,
+        updateBase64: Buffer.from(Y.encodeStateAsUpdate(binding.document)).toString('base64'),
+      });
     state.reviewSynced = true;
     state.mirror = canonical;
     return;
   }
-  const visible = !binding.ticketId && client.kind !== 'review'
-    ? binding.localFileText() : canonical;
+  const visible = !binding.ticketId && client.kind !== 'review' ? binding.localFileText() : canonical;
   if (visible === null) return;
   const replacement = computeSingleReplace(state.mirror, visible);
   if (replacement) {
@@ -159,7 +172,7 @@ export function resolveAnchoredItem(binding, item) {
 
 export function discussionText(_binding, item) {
   return (item.messages ?? [])
-    .filter(message => !message.deleted)
+    .filter((message) => !message.deleted)
     .map((message) => `${message.author ?? 'Unknown'}: ${message.body ?? ''}`)
     .join('\n\n');
 }
@@ -173,15 +186,18 @@ export function emitReview(binding, onlyClient = null) {
   const canonical = binding.text.toString();
   const threads = [...binding.commentThreads.values()].map((thread) => {
     const resolved = binding.resolveAnchoredItem(thread);
-    const status = thread.status === 'resolved' ? 'resolved' : (resolved ? 'open' : 'orphaned');
+    const status = thread.status === 'resolved' ? 'resolved' : resolved ? 'open' : 'orphaned';
     return { thread, resolved, status };
   });
   const suggestions = [...binding.suggestions.values()].map((suggestion) => {
     const resolved = binding.resolveAnchoredItem(suggestion);
     let status = suggestion.status;
-    if (status === 'open') status = !resolved
-      ? 'orphaned'
-      : canonical.slice(resolved.start, resolved.end) === suggestion.originalText ? 'open' : 'stale';
+    if (status === 'open')
+      status = !resolved
+        ? 'orphaned'
+        : canonical.slice(resolved.start, resolved.end) === suggestion.originalText
+          ? 'open'
+          : 'stale';
     return { suggestion, resolved, status };
   });
   const positionFingerprint = JSON.stringify([
@@ -193,8 +209,7 @@ export function emitReview(binding, onlyClient = null) {
   for (const client of recipients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
-      if (client.kind === 'review' && !onlyClient
-        && state.reviewPositionFingerprint === positionFingerprint) continue;
+      if (client.kind === 'review' && !onlyClient && state.reviewPositionFingerprint === positionFingerprint) continue;
       state.reviewPositionFingerprint = positionFingerprint;
       targets.push({ client, absolutePath });
     }
@@ -203,80 +218,86 @@ export function emitReview(binding, onlyClient = null) {
   /** @type {Array<{type: string; [key: string]: any}>} */
   const messages = [{ type: 'commentReset', canUpdate: binding.discussionUpdates === true }];
   for (const { thread, resolved, status } of threads) {
-        const lastMessage = thread.messages?.findLast(item => !item.deleted);
-        messages.push({
-          type: 'commentThread',
-          id: thread.id,
-          author: thread.author,
-          authorId: thread.authorId ?? '',
-          avatarBase64: avatarFor(binding, thread.authorId),
-          color: thread.color ?? '#8a8a8a',
-          createdAt: thread.createdAt ?? thread.messages?.[0]?.createdAt ?? '',
-          status,
-          messageCount: thread.messages?.filter(item => !item.deleted).length ?? 0,
-          summaryAuthor: lastMessage?.author ?? thread.author,
-          summaryColor: lastMessage?.color ?? thread.color ?? '#8a8a8a',
-          summaryBase64: Buffer.from(lastMessage?.body ?? '', 'utf8').toString('base64'),
-          threadBase64: Buffer.from(binding.discussionText(thread), 'utf8').toString('base64'),
-          startByte: resolved ? byteOffsetFor(binding, canonical, resolved.start) : 0,
-          endByte: resolved ? byteOffsetFor(binding, canonical, resolved.end) : 0,
-        });
-        for (const discussionMessage of thread.messages ?? []) {
-          if (discussionMessage.deleted) continue;
-          messages.push({
-            type: 'commentMessage',
-            messageId: discussionMessage.id, revision: discussionMessage.revision ?? 0, editedAt: discussionMessage.editedAt ?? '', mergeConflict: discussionMessage.mergeConflict === true,
-            id: thread.id,
-            author: discussionMessage.author,
-            authorId: discussionMessage.authorId ?? '',
-            avatarBase64: avatarFor(binding, discussionMessage.authorId),
-            color: discussionMessage.color ?? '#8a8a8a',
-            createdAt: discussionMessage.createdAt ?? '',
-            bodyBase64: Buffer.from(discussionMessage.body ?? '', 'utf8').toString('base64'),
-          });
-        }
+    const lastMessage = thread.messages?.findLast((item) => !item.deleted);
+    messages.push({
+      type: 'commentThread',
+      id: thread.id,
+      author: thread.author,
+      authorId: thread.authorId ?? '',
+      avatarBase64: avatarFor(binding, thread.authorId),
+      color: thread.color ?? '#8a8a8a',
+      createdAt: thread.createdAt ?? thread.messages?.[0]?.createdAt ?? '',
+      status,
+      messageCount: thread.messages?.filter((item) => !item.deleted).length ?? 0,
+      summaryAuthor: lastMessage?.author ?? thread.author,
+      summaryColor: lastMessage?.color ?? thread.color ?? '#8a8a8a',
+      summaryBase64: Buffer.from(lastMessage?.body ?? '', 'utf8').toString('base64'),
+      threadBase64: Buffer.from(binding.discussionText(thread), 'utf8').toString('base64'),
+      startByte: resolved ? byteOffsetFor(binding, canonical, resolved.start) : 0,
+      endByte: resolved ? byteOffsetFor(binding, canonical, resolved.end) : 0,
+    });
+    for (const discussionMessage of thread.messages ?? []) {
+      if (discussionMessage.deleted) continue;
+      messages.push({
+        type: 'commentMessage',
+        messageId: discussionMessage.id,
+        revision: discussionMessage.revision ?? 0,
+        editedAt: discussionMessage.editedAt ?? '',
+        mergeConflict: discussionMessage.mergeConflict === true,
+        id: thread.id,
+        author: discussionMessage.author,
+        authorId: discussionMessage.authorId ?? '',
+        avatarBase64: avatarFor(binding, discussionMessage.authorId),
+        color: discussionMessage.color ?? '#8a8a8a',
+        createdAt: discussionMessage.createdAt ?? '',
+        bodyBase64: Buffer.from(discussionMessage.body ?? '', 'utf8').toString('base64'),
+      });
+    }
   }
   messages.push({ type: 'suggestionReset' });
   for (const { suggestion, resolved, status } of suggestions) {
-        messages.push({
-          type: 'suggestion',
-          id: suggestion.id,
-          author: suggestion.author,
-          authorId: suggestion.authorId ?? '',
-          avatarBase64: avatarFor(binding, suggestion.authorId),
-          color: suggestion.color ?? '#8a8a8a',
-          createdAt: suggestion.createdAt ?? '',
-          decidedBy: suggestion.decidedBy ?? '',
-          status,
-          messageCount: suggestion.messages?.length ?? 0,
-          originalBase64: Buffer.from(suggestion.originalText ?? '', 'utf8').toString('base64'),
-          replacementBase64: Buffer.from(suggestion.replacementText ?? '', 'utf8').toString('base64'),
-          traceJson: suggestion.traceJson ?? '',
-          threadBase64: Buffer.from(binding.discussionText(suggestion), 'utf8').toString('base64'),
-          startByte: resolved ? byteOffsetFor(binding, canonical, resolved.start) : 0,
-          endByte: resolved ? byteOffsetFor(binding, canonical, resolved.end) : 0,
-        });
-        for (const discussionMessage of suggestion.messages ?? []) {
-          if (discussionMessage.deleted) continue;
-          messages.push({
-            type: 'suggestionMessage',
-            messageId: discussionMessage.id, revision: discussionMessage.revision ?? 0, editedAt: discussionMessage.editedAt ?? '', mergeConflict: discussionMessage.mergeConflict === true,
-            id: suggestion.id,
-            author: discussionMessage.author,
-            authorId: discussionMessage.authorId ?? '',
-            avatarBase64: avatarFor(binding, discussionMessage.authorId),
-            color: discussionMessage.color ?? '#8a8a8a',
-            createdAt: discussionMessage.createdAt ?? '',
-            bodyBase64: Buffer.from(discussionMessage.body ?? '', 'utf8').toString('base64'),
-          });
-        }
+    messages.push({
+      type: 'suggestion',
+      id: suggestion.id,
+      author: suggestion.author,
+      authorId: suggestion.authorId ?? '',
+      avatarBase64: avatarFor(binding, suggestion.authorId),
+      color: suggestion.color ?? '#8a8a8a',
+      createdAt: suggestion.createdAt ?? '',
+      decidedBy: suggestion.decidedBy ?? '',
+      status,
+      messageCount: suggestion.messages?.length ?? 0,
+      originalBase64: Buffer.from(suggestion.originalText ?? '', 'utf8').toString('base64'),
+      replacementBase64: Buffer.from(suggestion.replacementText ?? '', 'utf8').toString('base64'),
+      traceJson: suggestion.traceJson ?? '',
+      threadBase64: Buffer.from(binding.discussionText(suggestion), 'utf8').toString('base64'),
+      startByte: resolved ? byteOffsetFor(binding, canonical, resolved.start) : 0,
+      endByte: resolved ? byteOffsetFor(binding, canonical, resolved.end) : 0,
+    });
+    for (const discussionMessage of suggestion.messages ?? []) {
+      if (discussionMessage.deleted) continue;
+      messages.push({
+        type: 'suggestionMessage',
+        messageId: discussionMessage.id,
+        revision: discussionMessage.revision ?? 0,
+        editedAt: discussionMessage.editedAt ?? '',
+        mergeConflict: discussionMessage.mergeConflict === true,
+        id: suggestion.id,
+        author: discussionMessage.author,
+        authorId: discussionMessage.authorId ?? '',
+        avatarBase64: avatarFor(binding, discussionMessage.authorId),
+        color: discussionMessage.color ?? '#8a8a8a',
+        createdAt: discussionMessage.createdAt ?? '',
+        bodyBase64: Buffer.from(discussionMessage.body ?? '', 'utf8').toString('base64'),
+      });
+    }
   }
   for (const { client, absolutePath } of targets) {
-      if (client.kind === 'review') {
-        client.send({ type: 'reviewBatchStart', path: absolutePath });
-        for (const message of messages) client.send({ ...message, path: absolutePath });
-        client.send({ type: 'reviewBatchEnd', path: absolutePath });
-      } else for (const message of messages) client.send({ ...message, path: absolutePath });
+    if (client.kind === 'review') {
+      client.send({ type: 'reviewBatchStart', path: absolutePath });
+      for (const message of messages) client.send({ ...message, path: absolutePath });
+      client.send({ type: 'reviewBatchEnd', path: absolutePath });
+    } else for (const message of messages) client.send({ ...message, path: absolutePath });
   }
 }
 
@@ -287,7 +308,9 @@ export function emitHistory(binding, onlyClient = null) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
       client.send({
-        type: 'history', path: absolutePath, headId: binding.historyHeadId,
+        type: 'history',
+        path: absolutePath,
+        headId: binding.historyHeadId,
         entries: binding.history,
       });
     }
@@ -323,8 +346,8 @@ export function emitReservations(binding, onlyClient = null) {
   for (const client of recipients) {
     for (const [absolutePath, state] of client.documents) {
       if (state.binding !== binding || !state.initialised) continue;
-      if (client.kind === 'review' && !onlyClient
-        && state.reservationPositionFingerprint === positionFingerprint) continue;
+      if (client.kind === 'review' && !onlyClient && state.reservationPositionFingerprint === positionFingerprint)
+        continue;
       state.reservationPositionFingerprint = positionFingerprint;
       const encoded = reservations.map(({ startIndex, endIndex, ...reservation }) => ({
         ...reservation,
@@ -332,13 +355,15 @@ export function emitReservations(binding, onlyClient = null) {
         endByte: byteOffsetFor(binding, canonical, endIndex),
       }));
       if (client.kind === 'review') {
-        client.send({ type: 'reservationSnapshot', path: absolutePath, reservations: encoded,
-          canUpdate });
+        client.send({ type: 'reservationSnapshot', path: absolutePath, reservations: encoded, canUpdate });
       } else {
         client.send({ type: 'reservationReset', path: absolutePath });
-        for (const reservation of encoded) client.send({
-          type: 'reservation', path: absolutePath, ...reservation,
-        });
+        for (const reservation of encoded)
+          client.send({
+            type: 'reservation',
+            path: absolutePath,
+            ...reservation,
+          });
       }
     }
   }
@@ -368,8 +393,8 @@ export function emitPresences(binding, onlyClient = null) {
             type: 'presence',
             path: absolutePath,
             clientId: presence.clientId,
-          user: presence.user,
-          avatarBase64: binding.hub.directory.find((user) => user.displayName === presence.user)?.avatarBase64 ?? '',
+            user: presence.user,
+            avatarBase64: binding.hub.directory.find((user) => user.displayName === presence.user)?.avatarBase64 ?? '',
             color: presence.color,
             positionByte: byteOffsetFor(binding, canonical, caret.index),
             anchorByte: byteOffsetFor(binding, canonical, anchor.index),
@@ -387,19 +412,24 @@ export function emitPresences(binding, onlyClient = null) {
 
 export function emitReservationTargets(binding, onlyClient = null) {
   const recipients = onlyClient ? [onlyClient] : binding.clients;
-  const configured = binding.hub.directory.length > 0
-    ? binding.hub.directory
-    : [
-        { id: '', displayName: binding.hub.options.user, color: binding.hub.options.color },
-        ...[...binding.presences.values()].map((presence) => ({
-          id: '',
-          displayName: presence.user,
-          color: presence.color,
-        })),
-      ];
+  const configured =
+    binding.hub.directory.length > 0
+      ? binding.hub.directory
+      : [
+          { id: '', displayName: binding.hub.options.user, color: binding.hub.options.color },
+          ...[...binding.presences.values()].map((presence) => ({
+            id: '',
+            displayName: presence.user,
+            color: presence.color,
+          })),
+        ];
   const seen = new Set();
   const targets = configured.filter((user) => {
-    const key = user.id || String(user.displayName ?? '').trim().toLowerCase();
+    const key =
+      user.id ||
+      String(user.displayName ?? '')
+        .trim()
+        .toLowerCase();
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -417,9 +447,7 @@ export function emitReservationTargets(binding, onlyClient = null) {
           displayName: String(target.displayName ?? ''),
           color: String(target.color ?? '#6aa9ff'),
           avatarBase64: String(target.avatarBase64 ?? ''),
-          isSelf: target.id
-            ? target.id === binding.hub.identity?.id
-            : target.displayName === binding.hub.options.user,
+          isSelf: target.id ? target.id === binding.hub.identity?.id : target.displayName === binding.hub.options.user,
         };
         if (client.kind === 'review') items.push(item);
         else client.send(item);

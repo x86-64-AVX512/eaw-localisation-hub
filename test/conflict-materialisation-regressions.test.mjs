@@ -10,11 +10,21 @@ import { WebSocket } from 'ws';
 import { DocumentHistory } from '../apps/server/src/document-history.mjs';
 import { DocumentRoom } from '../apps/server/src/document-room.mjs';
 import { evaluateDiskMerge } from '../apps/server/src/disk-merge.mjs';
-import { checkDiskChange, finishExternalMerge, confirmDiskMaterialisation,
-  resolveExternalConflict, emitExternalConflicts, retryPendingDiskMerges } from '../apps/agent/src/disk-reconciliation.mjs';
+import {
+  checkDiskChange,
+  finishExternalMerge,
+  confirmDiskMaterialisation,
+  resolveExternalConflict,
+  emitExternalConflicts,
+  retryPendingDiskMerges,
+} from '../apps/agent/src/disk-reconciliation.mjs';
 import { writeTrackedTextFile } from '../packages/shared/src/text.mts';
 import { requestDiskMergeCheck, receiveDiskMergeResult } from '../apps/agent/src/disk-merge-request.mjs';
-import { setLocalisationSelection, localisationVariantConflicts, localisationSelectionChanges } from '../packages/shared/src/merge.mts';
+import {
+  setLocalisationSelection,
+  localisationVariantConflicts,
+  localisationSelectionChanges,
+} from '../packages/shared/src/merge.mts';
 import { mergeConflictId, mergeStateRevision } from '../packages/shared/src/merge-state.mts';
 
 const actor = { id: 'alice', displayName: 'Alice' };
@@ -25,8 +35,12 @@ test('partial BAR deletion -> personal projection -> unchecked keys writes exact
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-partial-key-'));
   const absolutePath = path.join(root, 'localisation/russian/bar_l_russian.yml');
   await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-  const git = 'l_russian:\n before:0 "Before"\n\n BAR_friend_white_star_is_helping_tooltip:0 "White Star is here to help her brother."\n BAR_fix_the_climate_tooltip:0 "Effects of Barrad climate will be less severe."\n\n\n after:0 "After"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
-  const shared = git.replace(' BAR_friend_white_star_is_helping_tooltip:0 "White Star is here to help her brother."\n BAR_fix_the_climate_tooltip:0 "Effects of Barrad climate will be less severe."', ' BAR_friend_white_star_is_helping_tooltip:');
+  const git =
+    'l_russian:\n before:0 "Before"\n\n BAR_friend_white_star_is_helping_tooltip:0 "White Star is here to help her brother."\n BAR_fix_the_climate_tooltip:0 "Effects of Barrad climate will be less severe."\n\n\n after:0 "After"\n sp_bar_magical_reactor:0 "One"\n sp_bar_magical_reactor:0 "Two"\n';
+  const shared = git.replace(
+    ' BAR_friend_white_star_is_helping_tooltip:0 "White Star is here to help her brother."\n BAR_fix_the_climate_tooltip:0 "Effects of Barrad climate will be less severe."',
+    ' BAR_friend_white_star_is_helping_tooltip:',
+  );
   const history = new DocumentHistory(path.join(root, 'history.json'));
   history.ensureBaseline(git);
   history.record(shared, actor);
@@ -45,7 +59,9 @@ test('partial BAR deletion -> personal projection -> unchecked keys writes exact
     assert.equal((await fs.readFile(absolutePath, 'utf8')).replace(/^\uFEFF/u, ''), git);
     assert.equal(history.text(history.entries.at(-1).id), shared, 'checkboxes must not change the canonical document');
     assert.ok(localisationSelectionChanges(git, shared, local).entries.every(({ state }) => state === 'excluded'));
-  } finally { await fs.rm(root, { recursive: true, force: true }); }
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test('deleted group with blank and ASCII suffix keeps its layout through server confirmation and disk writes', async () => {
@@ -56,7 +72,8 @@ test('deleted group with blank and ASCII suffix keeps its layout through server 
   const git = `l_russian:\n before:0 "Before"\n${block}\n\n # ASCII heading\n # #### ###\n\n\n after:0 "After"\n repeated:0 "One"\n repeated:0 "Two"\n`;
   const shared = git.replace(block, '');
   const history = new DocumentHistory(path.join(root, 'history.json'));
-  history.ensureBaseline(git); history.record(shared, actor);
+  history.ensureBaseline(git);
+  history.record(shared, actor);
   try {
     let local = history.personalProjection(actor.id, git);
     assert.equal(local, shared);
@@ -66,14 +83,20 @@ test('deleted group with blank and ASCII suffix keeps its layout through server 
         const previous = local;
         local = setLocalisationSelection(git, shared, local, `key:${key}`, include);
         history.replacePersonalProjection(actor, local, git);
-        assert.equal(history.personalProjection(actor.id, git), local, 'server confirmation cannot move the restored group');
+        assert.equal(
+          history.personalProjection(actor.id, git),
+          local,
+          'server confirmation cannot move the restored group',
+        );
         await writeTrackedTextFile(root, absolutePath, local, { expectedText: previous });
       }
       assert.equal(local, include ? shared : git);
       assert.equal((await fs.readFile(absolutePath, 'utf8')).replace(/^\uFEFF/u, ''), local);
     }
     assert.equal(history.text(history.entries.at(-1).id), shared);
-  } finally { await fs.rm(root, { recursive: true, force: true }); }
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 function rebaseDuplicate() {
@@ -113,19 +136,41 @@ test('A2: chosen collaborative version must survive the disk check after that re
   const state = { diskBase: single, pendingExternal: { base: single, external }, materialisationExpected: null };
   const client = { documents: new Map([[absolutePath, state]]), send() {} };
   const binding = {
-    clients: new Set([client]), synced: true, gitWritable: true, personalText: mine,
+    clients: new Set([client]),
+    synced: true,
+    gitWritable: true,
+    personalText: mine,
     hub: { gitOperationInProgress: () => false, readGitHeadText: () => single },
-    text: { toString: () => shared }, localFileText() { return this.personalText; },
-    async readDiskText() { return external; },
-    applyMergedText(value) { shared = value; },
-    replacePersonalDocument(value) { this.personalText = value; },
+    text: { toString: () => shared },
+    localFileText() {
+      return this.personalText;
+    },
+    async readDiskText() {
+      return external;
+    },
+    applyMergedText(value) {
+      shared = value;
+    },
+    replacePersonalDocument(value) {
+      this.personalText = value;
+    },
     persistBaseSnapshot() {},
     emitExternalConflicts() {},
-    finishExternalMerge(...args) { return finishExternalMerge(this, ...args); },
+    finishExternalMerge(...args) {
+      return finishExternalMerge(this, ...args);
+    },
     async requestDiskMergeCheck(baseText, externalText, personalText, resolutions) {
-      return { sharedHash: crypto.createHash('sha256').update(shared).digest('hex'), stale: false,
-        ...evaluateDiskMerge({ baseText, externalText, personalText, sharedText: shared,
-          resolutions: Object.fromEntries(resolutions) }) };
+      return {
+        sharedHash: crypto.createHash('sha256').update(shared).digest('hex'),
+        stale: false,
+        ...evaluateDiskMerge({
+          baseText,
+          externalText,
+          personalText,
+          sharedText: shared,
+          resolutions: Object.fromEntries(resolutions),
+        }),
+      };
     },
   };
   state.binding = binding;
@@ -169,17 +214,25 @@ test('D: a delayed canonical conflict choice must not resolve a newer Git snapsh
   const oldGit = single.replace('"Git"', '"Git version seen by user"');
   const newGit = single.replace('"Git"', '"Unseen newer Git version"');
   const room = {
-    destroyed: false, gitConflict: true, gitBase: { text: single },
+    destroyed: false,
+    gitConflict: true,
+    gitBase: { text: single },
     pendingGitSnapshot: { text: newGit, blob: 'new-blob', commit: 'new-commit' },
-    gitConflictResolutions: {}, document: { getText: () => ({ toString: () => shared }) },
+    gitConflictResolutions: {},
+    document: { getText: () => ({ toString: () => shared }) },
     gitConflicts: [{ key: 'key' }],
-    broadcastGitConflict() {}, finishCanonicalSnapshot(snapshot, merged) { this.accepted = { snapshot, merged }; },
+    broadcastGitConflict() {},
+    finishCanonicalSnapshot(snapshot, merged) {
+      this.accepted = { snapshot, merged };
+    },
   };
   const socket = { readyState: WebSocket.OPEN };
   // A valid choice for the old conflict must not be valid for the newer Git text.
   assert.notEqual(oldGit, newGit);
   DocumentRoom.prototype.applyJson.call(room, socket, {
-    type: 'git-conflict-resolve', key: 'key', choice: 'external',
+    type: 'git-conflict-resolve',
+    key: 'key',
+    choice: 'external',
     conflictId: mergeConflictId(mergeStateRevision(single, shared, oldGit), 'key'),
   });
   assert.equal(room.accepted, undefined, 'stale choice must be rejected or re-confirmed');
@@ -194,12 +247,17 @@ test('E: an external change observed offline must be checked after reconnection'
   const state = { diskBase: single, pendingExternal: null, materialisationExpected: null, diskSignature: '' };
   const client = { documents: new Map([[absolutePath, state]]), send() {} };
   const binding = {
-    synced: false, gitWritable: true, clients: new Set([client]),
-    text: { toString: () => single }, localFileText: () => single,
+    synced: false,
+    gitWritable: true,
+    clients: new Set([client]),
+    text: { toString: () => single },
+    localFileText: () => single,
     hub: { gitOperationInProgress: () => false, readGitHeadText: () => single },
     readDiskText: () => fs.readFile(absolutePath, 'utf8'),
-    async requestDiskMergeCheck() { requested += 1; return { conflicts: [{ key: 'key' }],
-      sharedHash: crypto.createHash('sha256').update(single).digest('hex') }; },
+    async requestDiskMergeCheck() {
+      requested += 1;
+      return { conflicts: [{ key: 'key' }], sharedHash: crypto.createHash('sha256').update(single).digest('hex') };
+    },
     emitExternalConflicts() {},
   };
   state.binding = binding;
@@ -216,13 +274,21 @@ test('E: an external change observed offline must be checked after reconnection'
 test('F: a supported 5 MiB document must fit a server disk-merge request', async () => {
   const text = 'l_russian:\n key:0 "' + 'a'.repeat(5 * 1024 * 1024) + '"\n';
   const binding = { synced: true, text: { toString: () => text }, diskMergeRequests: new Map() };
-  binding.socket = { readyState: WebSocket.OPEN, send(payload, callback) {
-    const request = JSON.parse(payload);
-    queueMicrotask(() => receiveDiskMergeResult(binding, {
-      type: 'disk-merge-result', requestId: request.requestId, stale: false, conflicts: [],
-    }));
-    callback?.();
-  } };
+  binding.socket = {
+    readyState: WebSocket.OPEN,
+    send(payload, callback) {
+      const request = JSON.parse(payload);
+      queueMicrotask(() =>
+        receiveDiskMergeResult(binding, {
+          type: 'disk-merge-result',
+          requestId: request.requestId,
+          stale: false,
+          conflicts: [],
+        }),
+      );
+      callback?.();
+    },
+  };
   await assert.doesNotReject(requestDiskMergeCheck(binding, text, text.replace('key:', 'changed:'), text));
 });
 
@@ -259,8 +325,10 @@ test('duplicate-count conflicts and both whole-file choices survive durable hist
     assert.equal(restored.resolvePersonalGitConflict(actor.id, conflict.key, choice, oldId), false);
     assert.equal(restored.resolvePersonalGitConflict(actor.id, conflict.key, choice, conflict.id), true);
     assert.deepEqual(restored.personalGitConflicts(actor.id), []);
-    assert.equal(restored.personalProjection(actor.id, newest), choice === 'git'
-      ? newest : duplicate.replace('"One"', '"Mine"'));
+    assert.equal(
+      restored.personalProjection(actor.id, newest),
+      choice === 'git' ? newest : duplicate.replace('"One"', '"Mine"'),
+    );
   }
 });
 
@@ -271,7 +339,13 @@ test('an asynchronous save retains the duplicate conflict snapshot it started wi
   history.record(duplicate.replace('"One"', '"New mine"'), actor);
   const saved = JSON.parse(await saving);
   const stored = saved.rebaseConflicts.find(({ authorId }) => authorId === actor.id).conflicts[0];
-  assert.equal(crypto.createHash('sha256').update(JSON.stringify([next, stored])).digest('hex'), before);
+  assert.equal(
+    crypto
+      .createHash('sha256')
+      .update(JSON.stringify([next, stored]))
+      .digest('hex'),
+    before,
+  );
   assert.notEqual(history.personalGitConflicts(actor.id)[0].id, before);
 });
 
@@ -293,9 +367,14 @@ test('a shared key that became unique still uses its Git occurrence ID for perso
   history.record(unique.replace('"One"', '"Bob"'), { id: 'bob', displayName: 'Bob' });
   assert.equal(history.authorVariants.get('bob').has('repeated'), false);
   assert.equal(history.authorVariants.get('bob').get('occ:1:repeated'), ' repeated:0 "Bob"');
-  const legacy = new Map([['alice', new Map([['repeated', ' repeated:0 "Alice"']])],
-    ['bob', history.authorVariants.get('bob')]]);
-  assert.deepEqual(localisationVariantConflicts(duplicate, legacy).map(({ key }) => key), ['occ:1:repeated']);
+  const legacy = new Map([
+    ['alice', new Map([['repeated', ' repeated:0 "Alice"']])],
+    ['bob', history.authorVariants.get('bob')],
+  ]);
+  assert.deepEqual(
+    localisationVariantConflicts(duplicate, legacy).map(({ key }) => key),
+    ['occ:1:repeated'],
+  );
 });
 
 test('legacy mixed bare/occurrence IDs reload without a phantom third declaration', async (t) => {
@@ -304,8 +383,13 @@ test('legacy mixed bare/occurrence IDs reload without a phantom third declaratio
   const target = path.join(root, 'history.json');
   const history = new DocumentHistory(target);
   history.ensureBaseline(duplicate);
-  history.authorVariants.set(actor.id, new Map([['repeated', ' repeated:0 "Obsolete"'],
-    ['occ:1:repeated', ' repeated:0 "Mine"']]));
+  history.authorVariants.set(
+    actor.id,
+    new Map([
+      ['repeated', ' repeated:0 "Obsolete"'],
+      ['occ:1:repeated', ' repeated:0 "Mine"'],
+    ]),
+  );
   await fs.writeFile(target, history.serialise());
   const restored = new DocumentHistory(target);
   await restored.load();
@@ -314,9 +398,11 @@ test('legacy mixed bare/occurrence IDs reload without a phantom third declaratio
 });
 
 test('restoring the first key removes only its placeholder and preserves real blank lines', () => {
-  for (const base of [' first:0 "First"\n other:0 "Other"\n',
+  for (const base of [
+    ' first:0 "First"\n other:0 "Other"\n',
     '\n first:0 "First"\n other:0 "Other"\n',
-    '# Comment\n first:0 "First"\n\n other:0 "Other"\n']) {
+    '# Comment\n first:0 "First"\n\n other:0 "Other"\n',
+  ]) {
     const deleted = base.replace(' first:0 "First"', '');
     assert.equal(setLocalisationSelection(base, deleted, deleted, 'key:first', false), base);
   }
@@ -327,68 +413,122 @@ test('old partial canonical choices cannot be carried into a newer shared revisi
   const shared = base.replaceAll('Git', 'Mine');
   const upstream = base.replaceAll('Git', 'New');
   const revision = mergeStateRevision(base, shared, upstream);
-  const room = { destroyed: false, gitConflict: true, gitBase: { text: base },
-    pendingGitSnapshot: { text: upstream }, gitConflictRevision: 'older-shared-revision',
-    gitConflictResolutions: { first: 'external' }, gitConflicts: [{ key: 'first' }, { key: 'second' }],
+  const room = {
+    destroyed: false,
+    gitConflict: true,
+    gitBase: { text: base },
+    pendingGitSnapshot: { text: upstream },
+    gitConflictRevision: 'older-shared-revision',
+    gitConflictResolutions: { first: 'external' },
+    gitConflicts: [{ key: 'first' }, { key: 'second' }],
     document: { getText: () => ({ toString: () => shared }) },
-    broadcastGitConflict(_snapshot, conflicts) { this.remaining = conflicts; },
-    finishCanonicalSnapshot() { this.accepted = true; } };
-  DocumentRoom.prototype.applyJson.call(room, { readyState: WebSocket.OPEN }, {
-    type: 'git-conflict-resolve', key: 'second', choice: 'external',
-    conflictId: mergeConflictId(revision, 'second'),
-  });
+    broadcastGitConflict(_snapshot, conflicts) {
+      this.remaining = conflicts;
+    },
+    finishCanonicalSnapshot() {
+      this.accepted = true;
+    },
+  };
+  DocumentRoom.prototype.applyJson.call(
+    room,
+    { readyState: WebSocket.OPEN },
+    {
+      type: 'git-conflict-resolve',
+      key: 'second',
+      choice: 'external',
+      conflictId: mergeConflictId(revision, 'second'),
+    },
+  );
   assert.equal(room.accepted, undefined);
-  assert.deepEqual(room.remaining.map(({ key }) => key), ['first']);
+  assert.deepEqual(
+    room.remaining.map(({ key }) => key),
+    ['first'],
+  );
 });
 
-test('confirmed disk choice writes the checked file, updates both views, and survives the next poll', { timeout: 5000 }, async (t) => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-resolved-disk-'));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const absolutePath = path.join(root, 'localisation/russian/test_l_russian.yml');
-  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-  const mine = duplicate.replace('"One"', '"Mine"');
-  const external = duplicate.replace('"One"', '"Disk"');
-  let shared = mine.replace('"Unchanged"', '"Other author"');
-  await fs.writeFile(absolutePath, external);
-  const state = { diskBase: duplicate, materialisationExpected: null, diskSignature: '' };
-  const secondState = { ...state };
-  const sent = [];
-  let saveRequested;
-  const readyToSave = new Promise((resolve) => { saveRequested = resolve; });
-  const client = { documents: new Map([[absolutePath, state]]), send(m) {
-    sent.push(m);
-    if (m.type === 'saveRequested') saveRequested();
-  } };
-  const secondClient = { documents: new Map([[absolutePath, secondState]]), send() {} };
-  const binding = { clients: new Set([client, secondClient]), synced: true, gitWritable: true,
-    personalText: mine, hub: { gitOperationInProgress: () => false, readGitHeadText: () => duplicate },
-    text: { toString: () => shared }, localFileText() { return this.personalText; },
-    readDiskText: () => fs.readFile(absolutePath, 'utf8'), requireState: () => state,
-    applyMergedText(text) { shared = text; }, replacePersonalDocument(text) { this.personalText = text; },
-    persistBaseSnapshot() {},
-    emitExternalConflicts(...args) { emitExternalConflicts(this, ...args); },
-    finishExternalMerge(...args) { finishExternalMerge(this, ...args); },
-    async requestDiskMergeCheck(baseText, externalText, personalText, resolutions) {
-      return { sharedHash: crypto.createHash('sha256').update(shared).digest('hex'), stale: false,
-        ...evaluateDiskMerge({ baseText, externalText, personalText, sharedText: shared,
-          resolutions: Object.fromEntries(resolutions) }) };
-    } };
-  state.binding = secondState.binding = binding;
-  await checkDiskChange(binding, client, absolutePath, state);
-  const conflict = sent.find(({ type }) => type === 'externalConflict');
-  assert.equal(conflict.key, 'occ:1:repeated');
-  resolveExternalConflict(binding, client, absolutePath, { ...conflict, choice: 'collaborative' });
-  await readyToSave;
-  assert.equal(state.pendingExternal, null);
-  assert.equal(state.diskBase, external, 'checked disk remains the write precondition');
-  await writeTrackedTextFile(root, absolutePath, mine, { expectedText: state.diskBase });
-  confirmDiskMaterialisation(binding, absolutePath, state, mine);
-  await checkDiskChange(binding, client, absolutePath, state);
-  assert.equal(await fs.readFile(absolutePath, 'utf8'), mine);
-  assert.equal(secondState.diskBase, mine);
-  assert.equal(shared, mine.replace('"Unchanged"', '"Other author"'));
-  assert.equal(state.pendingExternal, null);
-});
+test(
+  'confirmed disk choice writes the checked file, updates both views, and survives the next poll',
+  { timeout: 5000 },
+  async (t) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-resolved-disk-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const absolutePath = path.join(root, 'localisation/russian/test_l_russian.yml');
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    const mine = duplicate.replace('"One"', '"Mine"');
+    const external = duplicate.replace('"One"', '"Disk"');
+    let shared = mine.replace('"Unchanged"', '"Other author"');
+    await fs.writeFile(absolutePath, external);
+    const state = { diskBase: duplicate, materialisationExpected: null, diskSignature: '' };
+    const secondState = { ...state };
+    const sent = [];
+    let saveRequested;
+    const readyToSave = new Promise((resolve) => {
+      saveRequested = resolve;
+    });
+    const client = {
+      documents: new Map([[absolutePath, state]]),
+      send(m) {
+        sent.push(m);
+        if (m.type === 'saveRequested') saveRequested();
+      },
+    };
+    const secondClient = { documents: new Map([[absolutePath, secondState]]), send() {} };
+    const binding = {
+      clients: new Set([client, secondClient]),
+      synced: true,
+      gitWritable: true,
+      personalText: mine,
+      hub: { gitOperationInProgress: () => false, readGitHeadText: () => duplicate },
+      text: { toString: () => shared },
+      localFileText() {
+        return this.personalText;
+      },
+      readDiskText: () => fs.readFile(absolutePath, 'utf8'),
+      requireState: () => state,
+      applyMergedText(text) {
+        shared = text;
+      },
+      replacePersonalDocument(text) {
+        this.personalText = text;
+      },
+      persistBaseSnapshot() {},
+      emitExternalConflicts(...args) {
+        emitExternalConflicts(this, ...args);
+      },
+      finishExternalMerge(...args) {
+        finishExternalMerge(this, ...args);
+      },
+      async requestDiskMergeCheck(baseText, externalText, personalText, resolutions) {
+        return {
+          sharedHash: crypto.createHash('sha256').update(shared).digest('hex'),
+          stale: false,
+          ...evaluateDiskMerge({
+            baseText,
+            externalText,
+            personalText,
+            sharedText: shared,
+            resolutions: Object.fromEntries(resolutions),
+          }),
+        };
+      },
+    };
+    state.binding = secondState.binding = binding;
+    await checkDiskChange(binding, client, absolutePath, state);
+    const conflict = sent.find(({ type }) => type === 'externalConflict');
+    assert.equal(conflict.key, 'occ:1:repeated');
+    resolveExternalConflict(binding, client, absolutePath, { ...conflict, choice: 'collaborative' });
+    await readyToSave;
+    assert.equal(state.pendingExternal, null);
+    assert.equal(state.diskBase, external, 'checked disk remains the write precondition');
+    await writeTrackedTextFile(root, absolutePath, mine, { expectedText: state.diskBase });
+    confirmDiskMaterialisation(binding, absolutePath, state, mine);
+    await checkDiskChange(binding, client, absolutePath, state);
+    assert.equal(await fs.readFile(absolutePath, 'utf8'), mine);
+    assert.equal(secondState.diskBase, mine);
+    assert.equal(shared, mine.replace('"Unchanged"', '"Other author"'));
+    assert.equal(state.pendingExternal, null);
+  },
+);
 
 test('a disk edit during the server check invalidates the result before document mutation', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-disk-race-'));
@@ -401,19 +541,37 @@ test('a disk edit during the server check invalidates the result before document
   const client = { documents: new Map([[absolutePath, state]]), send() {} };
   let answer;
   let started;
-  const requested = new Promise((resolve) => { started = resolve; });
-  const binding = { synced: true, gitWritable: true, clients: new Set([client]),
-    text: { toString: () => single }, localFileText: () => single,
+  const requested = new Promise((resolve) => {
+    started = resolve;
+  });
+  const binding = {
+    synced: true,
+    gitWritable: true,
+    clients: new Set([client]),
+    text: { toString: () => single },
+    localFileText: () => single,
     hub: { gitOperationInProgress: () => false, readGitHeadText: () => single },
-    readDiskText: () => fs.readFile(absolutePath, 'utf8'), emitExternalConflicts() {},
-    finishExternalMerge() { this.accepted = true; },
-    requestDiskMergeCheck() { started(); return new Promise((resolve) => { answer = resolve; }); } };
+    readDiskText: () => fs.readFile(absolutePath, 'utf8'),
+    emitExternalConflicts() {},
+    finishExternalMerge() {
+      this.accepted = true;
+    },
+    requestDiskMergeCheck() {
+      started();
+      return new Promise((resolve) => {
+        answer = resolve;
+      });
+    },
+  };
   state.binding = binding;
   const checking = checkDiskChange(binding, client, absolutePath, state);
   await requested;
   await fs.writeFile(absolutePath, newer);
-  answer({ stale: false, sharedHash: crypto.createHash('sha256').update(single).digest('hex'),
-    ...evaluateDiskMerge({ baseText: single, sharedText: single, personalText: single, externalText: external }) });
+  answer({
+    stale: false,
+    sharedHash: crypto.createHash('sha256').update(single).digest('hex'),
+    ...evaluateDiskMerge({ baseText: single, sharedText: single, personalText: single, externalText: external }),
+  });
   await checking;
   clearTimeout(state.pendingExternal.retryTimer);
   assert.equal(binding.accepted, undefined);
@@ -431,12 +589,19 @@ test('a size-limit failure does not create a timer or repeat on unchanged Git st
   let requests = 0;
   const state = { diskBase: single, diskSignature: '', materialisationExpected: null };
   const client = { documents: new Map([[absolutePath, state]]), send() {} };
-  const binding = { synced: true, gitWritable: true, clients: new Set([client]),
-    text: { toString: () => single }, localFileText: () => single,
+  const binding = {
+    synced: true,
+    gitWritable: true,
+    clients: new Set([client]),
+    text: { toString: () => single },
+    localFileText: () => single,
     hub: { gitOperationInProgress: () => false, readGitHeadText: () => single },
     readDiskText: () => fs.readFile(absolutePath, 'utf8'),
-    requestDiskMergeCheck() { requests += 1; return Promise.reject(Object.assign(new Error('too large'),
-      { code: 'EAW_MERGE_LIMIT' })); } };
+    requestDiskMergeCheck() {
+      requests += 1;
+      return Promise.reject(Object.assign(new Error('too large'), { code: 'EAW_MERGE_LIMIT' }));
+    },
+  };
   state.binding = binding;
   await checkDiskChange(binding, client, absolutePath, state);
   assert.equal(state.pendingExternal.retryTimer, undefined);

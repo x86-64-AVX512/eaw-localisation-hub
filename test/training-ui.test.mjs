@@ -4,27 +4,61 @@ import { AgentHub } from '../apps/agent/src/agent-hub.mjs';
 import { createHelpPanel } from '../apps/review/src/help-panel.ts';
 
 const SEGMENT_IDS = [
-  'start', 'editing', 'suggestions', 'discussion', 'personal-file', 'git-updates',
-  'conflicts', 'tickets', 'language-tools', 'history-diff', 'notifications', 'agent-plugin',
+  'start',
+  'editing',
+  'suggestions',
+  'discussion',
+  'personal-file',
+  'git-updates',
+  'conflicts',
+  'tickets',
+  'language-tools',
+  'history-diff',
+  'notifications',
+  'agent-plugin',
 ];
 
 function fakeElement() {
   const listeners = new Map();
   return {
-    checked: true, disabled: false, hidden: true, open: false, textContent: '',
-    addEventListener(type, listener) { listeners.set(type, listener); },
-    dispatch(type) { listeners.get(type)?.({ preventDefault() {} }); },
-    showModal() { this.open = true; this.opens = (this.opens ?? 0) + 1; },
-    close() { this.open = false; },
+    checked: true,
+    disabled: false,
+    hidden: true,
+    open: false,
+    textContent: '',
+    addEventListener(type, listener) {
+      listeners.set(type, listener);
+    },
+    dispatch(type) {
+      listeners.get(type)?.({ preventDefault() {} });
+    },
+    showModal() {
+      this.open = true;
+      this.opens = (this.opens ?? 0) + 1;
+    },
+    close() {
+      this.open = false;
+    },
   };
 }
 
 test('automatic training waits for a server-confirmed incomplete account', (t) => {
   const selectors = [
-    '#help-dialog', '#tutorial-dialog', '#tutorial-content', '#tutorial-heading',
-    '#tutorial-progress', '#notifications-enabled', '#notification-sound', '#tutorial-back',
-    '#tutorial-next', '#help-open', '#help-close', '#tutorial-repeat', '#version-notice',
-    '#diff-cache-info', '#diff-cache-clear',
+    '#help-dialog',
+    '#tutorial-dialog',
+    '#tutorial-content',
+    '#tutorial-heading',
+    '#tutorial-progress',
+    '#notifications-enabled',
+    '#notification-sound',
+    '#tutorial-back',
+    '#tutorial-next',
+    '#help-open',
+    '#help-close',
+    '#tutorial-repeat',
+    '#version-notice',
+    '#diff-cache-info',
+    '#diff-cache-clear',
   ];
   const elements = new Map(selectors.map((selector) => [selector, fakeElement()]));
   const stored = new Map();
@@ -41,8 +75,10 @@ test('automatic training waits for a server-confirmed incomplete account', (t) =
   });
 
   const state = {
-    version: '0.8.8F5', serverVersion: '0.8.8F5',
-    trainingProgress: {}, trainingProgressConfirmed: false,
+    version: '0.8.8F5',
+    serverVersion: '0.8.8F5',
+    trainingProgress: {},
+    trainingProgressConfirmed: false,
   };
   const panel = createHelpPanel({ state, token: 'local', showToast() {} });
   const tutorial = elements.get('#tutorial-dialog');
@@ -54,9 +90,9 @@ test('automatic training waits for a server-confirmed incomplete account', (t) =
   assert.equal(tutorial.opens, 1, 'the server-confirmed incomplete account starts training');
 
   tutorial.close();
-  state.trainingProgress = Object.fromEntries(SEGMENT_IDS.map((id) => [
-    id, id === 'agent-plugin' ? 3 : ['personal-file', 'history-diff'].includes(id) ? 2 : 1,
-  ]));
+  state.trainingProgress = Object.fromEntries(
+    SEGMENT_IDS.map((id) => [id, id === 'agent-plugin' ? 3 : ['personal-file', 'history-diff'].includes(id) ? 2 : 1]),
+  );
   panel.refresh();
   assert.equal(tutorial.opens, 1, 'server-confirmed completed training stays closed');
 });
@@ -71,17 +107,24 @@ test('the standalone Review workflow is mandatory training revision 3', () => {
       return elements.get(selector);
     },
   };
-  globalThis.localStorage = { getItem() { return null; }, setItem() {} };
+  globalThis.localStorage = {
+    getItem() {
+      return null;
+    },
+    setItem() {},
+  };
   test.after(() => {
     globalThis.document = previousDocument;
     globalThis.localStorage = previousLocalStorage;
   });
 
   const state = {
-    version: '0.8.8F5', serverVersion: '0.8.8F5', trainingProgressConfirmed: true,
-    trainingProgress: Object.fromEntries(SEGMENT_IDS.map((id) => [
-      id, ['personal-file', 'history-diff'].includes(id) ? 2 : 1,
-    ])),
+    version: '0.8.8F5',
+    serverVersion: '0.8.8F5',
+    trainingProgressConfirmed: true,
+    trainingProgress: Object.fromEntries(
+      SEGMENT_IDS.map((id) => [id, ['personal-file', 'history-diff'].includes(id) ? 2 : 1]),
+    ),
   };
   const panel = createHelpPanel({ state, token: 'local', showToast() {} });
   panel.refresh();
@@ -101,17 +144,24 @@ test('per-key local-file selection is mandatory training revision 2', () => {
       return elements.get(selector);
     },
   };
-  globalThis.localStorage = { getItem() { return null; }, setItem() {} };
+  globalThis.localStorage = {
+    getItem() {
+      return null;
+    },
+    setItem() {},
+  };
   test.after(() => {
     globalThis.document = previousDocument;
     globalThis.localStorage = previousLocalStorage;
   });
 
   const state = {
-    version: '0.8.8F5', serverVersion: '0.8.8F5', trainingProgressConfirmed: true,
-    trainingProgress: Object.fromEntries(SEGMENT_IDS.map((id) => [
-      id, id === 'agent-plugin' ? 3 : id === 'history-diff' ? 2 : 1,
-    ])),
+    version: '0.8.8F5',
+    serverVersion: '0.8.8F5',
+    trainingProgressConfirmed: true,
+    trainingProgress: Object.fromEntries(
+      SEGMENT_IDS.map((id) => [id, id === 'agent-plugin' ? 3 : id === 'history-diff' ? 2 : 1]),
+    ),
   };
   const panel = createHelpPanel({ state, token: 'local', showToast() {} });
   panel.refresh();
@@ -124,7 +174,8 @@ test('per-key local-file selection is mandatory training revision 2', () => {
 test('Agent distinguishes local startup from server-confirmed training progress', () => {
   const messages = [];
   const context = {
-    identity: null, serverVersion: '0.8.8F5',
+    identity: null,
+    serverVersion: '0.8.8F5',
     options: { user: 'Alice', color: '#abcdef', workspace: 'general-dev' },
     clients: new Set(),
   };
@@ -132,22 +183,38 @@ test('Agent distinguishes local startup from server-confirmed training progress'
   assert.equal(messages.at(-1).trainingProgressConfirmed, false);
 
   AgentHub.prototype.updateIdentity.call(context, {
-    id: 'alice', displayName: 'Alice', roles: [], avatarBase64: '',
+    id: 'alice',
+    displayName: 'Alice',
+    roles: [],
+    avatarBase64: '',
   });
   AgentHub.prototype.sendAgentHello.call(context, { send: (message) => messages.push(message) });
-  assert.equal(messages.at(-1).trainingProgressConfirmed, false,
-    'the compact WebSocket identity does not confirm training progress');
+  assert.equal(
+    messages.at(-1).trainingProgressConfirmed,
+    false,
+    'the compact WebSocket identity does not confirm training progress',
+  );
 
   AgentHub.prototype.updateIdentity.call(context, {
-    id: 'alice', displayName: 'Alice', roles: [], avatarBase64: '', trainingProgress: {},
+    id: 'alice',
+    displayName: 'Alice',
+    roles: [],
+    avatarBase64: '',
+    trainingProgress: {},
   });
   AgentHub.prototype.sendAgentHello.call(context, { send: (message) => messages.push(message) });
   assert.equal(messages.at(-1).trainingProgressConfirmed, true);
 
   AgentHub.prototype.updateIdentity.call(context, {
-    id: 'alice', displayName: 'Alice', roles: [], avatarBase64: '',
+    id: 'alice',
+    displayName: 'Alice',
+    roles: [],
+    avatarBase64: '',
   });
   AgentHub.prototype.sendAgentHello.call(context, { send: (message) => messages.push(message) });
-  assert.equal(messages.at(-1).trainingProgressConfirmed, true,
-    'a later compact identity cannot erase the earlier server confirmation');
+  assert.equal(
+    messages.at(-1).trainingProgressConfirmed,
+    true,
+    'a later compact identity cannot erase the earlier server confirmation',
+  );
 });

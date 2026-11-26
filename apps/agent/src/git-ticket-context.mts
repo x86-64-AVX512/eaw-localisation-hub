@@ -21,8 +21,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isTicketSnapshotFile(value: unknown): value is TicketSnapshotFile {
-  return isRecord(value) && typeof value.path === 'string'
-    && typeof value.ticketInitialised === 'boolean' && typeof value.ticketTextBase64 === 'string';
+  return (
+    isRecord(value) &&
+    typeof value.path === 'string' &&
+    typeof value.ticketInitialised === 'boolean' &&
+    typeof value.ticketTextBase64 === 'string'
+  );
 }
 
 function decode(value: string): string {
@@ -31,7 +35,9 @@ function decode(value: string): string {
 
 export function currentGitCommit(repository: string): string {
   const commit = runGitSync(['rev-parse', 'HEAD'], {
-    cwd: repository, encoding: 'utf8', windowsHide: true,
+    cwd: repository,
+    encoding: 'utf8',
+    windowsHide: true,
   });
   if (commit.status !== 0 || !/^[0-9a-f]{40,64}$/iu.test(commit.stdout.trim())) {
     throw new Error('Не удалось определить текущий Git-коммит.');
@@ -43,7 +49,10 @@ export async function currentGitCommitAsync(repository: string): Promise<string>
   let stdout: string;
   try {
     ({ stdout } = await execFileAsync(gitExecutable(), ['rev-parse', 'HEAD'], {
-      cwd: repository, encoding: 'utf8', windowsHide: true, timeout: 10_000,
+      cwd: repository,
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 10_000,
     }));
   } catch {
     throw new Error('Не удалось определить текущий Git-коммит.');
@@ -57,7 +66,9 @@ export async function currentGitCommitAsync(repository: string): Promise<string>
 export function currentGitFileBlob(repository: string, relativePath: string): string {
   const normalised = checkedGitFilePath(relativePath);
   const blob = runGitSync(['rev-parse', `HEAD:${normalised}`], {
-    cwd: repository, encoding: 'utf8', windowsHide: true,
+    cwd: repository,
+    encoding: 'utf8',
+    windowsHide: true,
   });
   if (blob.status !== 0 || !/^[0-9a-f]{40,64}$/iu.test(blob.stdout.trim())) {
     throw new Error('Не удалось определить Git-версию файла. Обновите репозиторий через GitHub Desktop.');
@@ -78,7 +89,10 @@ export async function currentGitFileBlobAsync(repository: string, relativePath: 
   let stdout: string;
   try {
     ({ stdout } = await execFileAsync(gitExecutable(), ['rev-parse', `HEAD:${normalised}`], {
-      cwd: repository, encoding: 'utf8', windowsHide: true, timeout: 10_000,
+      cwd: repository,
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 10_000,
     }));
   } catch {
     throw new Error('Не удалось определить Git-версию файла. Обновите репозиторий через GitHub Desktop.');
@@ -92,23 +106,30 @@ export async function currentGitFileBlobAsync(repository: string, relativePath: 
 export async function ticketBootstrap(hub: TicketContextHub, ticketId: string, relativePath: string) {
   const payload = await hub.ticketRequest(`/api/tickets/${encodeURIComponent(ticketId)}/snapshot`, { method: 'GET' });
   const ticket = payload.ticket;
-  if (!isRecord(ticket) || !Array.isArray(ticket.files) || !ticket.files.includes(relativePath)
-    || typeof ticket.baseCommit !== 'string') throw new Error('Файл не входит в выбранный тикет.');
+  if (
+    !isRecord(ticket) ||
+    !Array.isArray(ticket.files) ||
+    !ticket.files.includes(relativePath) ||
+    typeof ticket.baseCommit !== 'string'
+  )
+    throw new Error('Файл не входит в выбранный тикет.');
   const shown = runGitSync(['show', `${ticket.baseCommit}:${relativePath}`], {
-    cwd: hub.options.repo, encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024,
+    cwd: hub.options.repo,
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 16 * 1024 * 1024,
   });
   if (shown.status !== 0) {
     throw new Error('Базовый коммит тикета отсутствует в локальном репозитории. Обновите его через GitHub Desktop.');
   }
   const snapshot = Array.isArray(payload.files)
-    ? payload.files.find((file) => isTicketSnapshotFile(file) && file.path === relativePath) : undefined;
+    ? payload.files.find((file) => isTicketSnapshotFile(file) && file.path === relativePath)
+    : undefined;
   if (!snapshot) throw new Error('Файл тикета не найден на сервере.');
   if (!isTicketSnapshotFile(snapshot)) throw new Error('Invalid ticket snapshot');
   return {
     ticket,
-    text: snapshot.ticketInitialised
-      ? withoutUtf8Bom(decode(snapshot.ticketTextBase64))
-      : withoutUtf8Bom(shown.stdout),
+    text: snapshot.ticketInitialised ? withoutUtf8Bom(decode(snapshot.ticketTextBase64)) : withoutUtf8Bom(shown.stdout),
   };
 }
 
@@ -125,13 +146,27 @@ export async function englishOriginal(hub: TicketContextHub, key: string, ticket
     }
     commit = payload.ticket.baseCommit;
   }
-  const searched = runGitSync([
-    'grep', '-n', '-F', '-e', `${localisationKey}:`, commit, '--',
-    'localisation/english', 'localisation/replace/english',
-  ], {
-    cwd: hub.options.repo, encoding: 'utf8', windowsHide: true, maxBuffer: 8 * 1024 * 1024,
-  });
-  if (searched.status !== 0 && searched.status !== 1) throw new Error('Не удалось прочитать английскую локализацию из Git.');
+  const searched = runGitSync(
+    [
+      'grep',
+      '-n',
+      '-F',
+      '-e',
+      `${localisationKey}:`,
+      commit,
+      '--',
+      'localisation/english',
+      'localisation/replace/english',
+    ],
+    {
+      cwd: hub.options.repo,
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: 8 * 1024 * 1024,
+    },
+  );
+  if (searched.status !== 0 && searched.status !== 1)
+    throw new Error('Не удалось прочитать английскую локализацию из Git.');
   const prefix = `${commit}:`;
   const matches: { file: string; line: number; key: string; text: string }[] = [];
   for (const line of searched.stdout.split(/\r?\n/u)) {

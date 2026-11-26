@@ -6,8 +6,12 @@ test('suggestion history removes and recreates an automatic review suggestion', 
   const sent = [];
   const history = createSuggestionHistory((message) => sent.push(message));
   const action = {
-    type: 'suggestionCreate', path: 'x.yml', suggestionId: 'suggestion-1',
-    startByte: 10, endByte: 12, replacementBase64: 'WA==',
+    type: 'suggestionCreate',
+    path: 'x.yml',
+    suggestionId: 'suggestion-1',
+    startByte: 10,
+    endByte: 12,
+    replacementBase64: 'WA==',
   };
   history.record(action);
   assert.equal(history.undo('x.yml'), true);

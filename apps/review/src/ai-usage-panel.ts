@@ -53,7 +53,9 @@ function bindUsageTooltip(triggerId: string, popupId: string) {
     trigger.setAttribute('aria-expanded', String(open));
     if (open) position();
   }
-  const hover = (event: PointerEvent) => { if (event.pointerType === 'mouse') show(); };
+  const hover = (event: PointerEvent) => {
+    if (event.pointerType === 'mouse') show();
+  };
   trigger.addEventListener('pointerenter', hover);
   trigger.addEventListener('pointerleave', leave);
   trigger.addEventListener('focus', show);
@@ -62,22 +64,27 @@ function bindUsageTooltip(triggerId: string, popupId: string) {
   popup.addEventListener('pointerleave', leave);
   popup.addEventListener('toggle', toggle);
   window.addEventListener('resize', toggle);
-  return { hide, dispose() {
-    hide();
-    trigger.removeEventListener('pointerenter', hover);
-    trigger.removeEventListener('pointerleave', leave);
-    trigger.removeEventListener('focus', show);
-    trigger.removeEventListener('blur', leave);
-    popup.removeEventListener('pointerenter', cancelDismiss);
-    popup.removeEventListener('pointerleave', leave);
-    popup.removeEventListener('toggle', toggle);
-    window.removeEventListener('resize', toggle);
-  } };
+  return {
+    hide,
+    dispose() {
+      hide();
+      trigger.removeEventListener('pointerenter', hover);
+      trigger.removeEventListener('pointerleave', leave);
+      trigger.removeEventListener('focus', show);
+      trigger.removeEventListener('blur', leave);
+      popup.removeEventListener('pointerenter', cancelDismiss);
+      popup.removeEventListener('pointerleave', leave);
+      popup.removeEventListener('toggle', toggle);
+      window.removeEventListener('resize', toggle);
+    },
+  };
 }
 
 export function createAiUsagePanel() {
-  const tooltips = [bindUsageTooltip('#ai-limits-trigger', '#ai-limits-details'),
-    bindUsageTooltip('#ai-context-trigger', '#ai-context-details')];
+  const tooltips = [
+    bindUsageTooltip('#ai-limits-trigger', '#ai-limits-details'),
+    bindUsageTooltip('#ai-context-trigger', '#ai-context-details'),
+  ];
   const limitsRing = requiredElement('#ai-limits-ring');
   const limitsPercent = requiredElement('#ai-limits-percent');
   const contextRing = requiredElement('#ai-context-ring');
@@ -98,7 +105,9 @@ export function createAiUsagePanel() {
       plan.hidden = windows.hidden = rollover.hidden = idle.hidden = cached.hidden = true;
       windows.replaceChildren();
       unavailable.hidden = false;
-      count.textContent = signedIn ? uiText('Контекст пока недоступен.') : uiText('Аккаунт Codex для Review не подключён.');
+      count.textContent = signedIn
+        ? uiText('Контекст пока недоступен.')
+        : uiText('Аккаунт Codex для Review не подключён.');
       return;
     }
     const number = new Intl.NumberFormat(getUiLanguage());
@@ -107,59 +116,77 @@ export function createAiUsagePanel() {
     const source = usage.rateLimits?.plan;
     plan.hidden = !source || source === 'unknown';
     if (source) {
-      const label = { free: 'Free', go: 'Go', plus: 'Plus', pro: 'Pro', business: 'Business', team: 'Team', edu: 'Edu' }[source] ?? source;
+      const label =
+        { free: 'Free', go: 'Go', plus: 'Plus', pro: 'Pro', business: 'Business', team: 'Team', edu: 'Edu' }[source] ??
+        source;
       plan.textContent = uiText('Тариф ChatGPT: {0}', label);
     }
     windows.hidden = limits.length === 0;
     cached.hidden = usage.live || limits.length === 0;
     unavailable.hidden = limits.length > 0;
-    const remaining = limits.length ? Math.min(...limits.map(item => item.remainingPercent)) : null;
-    const accountWindows = limits.filter(item => !item.name);
+    const remaining = limits.length ? Math.min(...limits.map((item) => item.remainingPercent)) : null;
+    const accountWindows = limits.filter((item) => !item.name);
     const headlineWindows = accountWindows.length ? accountWindows : limits.slice(0, 1);
-    limitsPercent.textContent = headlineWindows.map(item => `${number.format(item.remainingPercent)}%`).join(' / ') || '—';
+    limitsPercent.textContent =
+      headlineWindows.map((item) => `${number.format(item.remainingPercent)}%`).join(' / ') || '—';
     limitsRing.style.setProperty('--used', `${remaining === null ? 0 : 100 - remaining}%`);
-    windows.replaceChildren(...limits.map(item => {
-      const line = document.createElement('li');
-      const row = document.createElement('div');
-      row.className = 'ai-limit-row';
-      const title = document.createElement('span');
-      const label = item.durationMinutes === 300 ? uiText('5-часовой лимит')
-        : item.durationMinutes === 10_080 ? uiText('Недельный лимит')
-        : item.durationMinutes === null ? uiText('Лимит Codex')
-        : uiText('Лимит на {0} мин.', number.format(item.durationMinutes));
-      title.textContent = item.name ? `${item.name} · ${label}` : label;
-      const remaining = document.createElement('strong');
-      remaining.textContent = uiText('Осталось {0}%', number.format(item.remainingPercent));
-      row.append(title, remaining);
-      line.append(row);
-      if (item.resetsAt !== null) {
-        const reset = document.createElement('time');
-        reset.dateTime = new Date(item.resetsAt).toISOString();
-        reset.textContent = uiText('Обновится {0}', time.format(item.resetsAt));
-        line.append(reset);
-      }
-      return line;
-    }));
+    windows.replaceChildren(
+      ...limits.map((item) => {
+        const line = document.createElement('li');
+        const row = document.createElement('div');
+        row.className = 'ai-limit-row';
+        const title = document.createElement('span');
+        const label =
+          item.durationMinutes === 300
+            ? uiText('5-часовой лимит')
+            : item.durationMinutes === 10_080
+              ? uiText('Недельный лимит')
+              : item.durationMinutes === null
+                ? uiText('Лимит Codex')
+                : uiText('Лимит на {0} мин.', number.format(item.durationMinutes));
+        title.textContent = item.name ? `${item.name} · ${label}` : label;
+        const remaining = document.createElement('strong');
+        remaining.textContent = uiText('Осталось {0}%', number.format(item.remainingPercent));
+        row.append(title, remaining);
+        line.append(row);
+        if (item.resetsAt !== null) {
+          const reset = document.createElement('time');
+          reset.dateTime = new Date(item.resetsAt).toISOString();
+          reset.textContent = uiText('Обновится {0}', time.format(item.resetsAt));
+          line.append(reset);
+        }
+        return line;
+      }),
+    );
 
     const context = usage.context;
     rollover.hidden = false;
     const used = number.format(context.usedTokens);
     const limit = number.format(context.rolloverTokens);
-    const fill = Math.min(100, Math.floor(context.usedTokens / context.rolloverTokens * 100));
+    const fill = Math.min(100, Math.floor((context.usedTokens / context.rolloverTokens) * 100));
     percent.textContent = `${number.format(fill)}%`;
     contextRing.style.setProperty('--used', `${fill}%`);
     count.textContent = context.active
-      ? uiText(context.estimated ? 'Примерно {0} из {1} токенов до нового чата.' : '{0} из {1} токенов до нового чата.', used, limit)
+      ? uiText(
+          context.estimated ? 'Примерно {0} из {1} токенов до нового чата.' : '{0} из {1} токенов до нового чата.',
+          used,
+          limit,
+        )
       : uiText('Новый чат откроется при следующем запросе к Luna.');
-    rollover.textContent = context.usedTokens >= context.rolloverTokens
-      ? uiText('Порог достигнут. Следующий запрос к Luna откроет новый чат.')
-      : uiText('Порог нового чата: {0} токенов с учётом следующего запроса.', limit);
+    rollover.textContent =
+      context.usedTokens >= context.rolloverTokens
+        ? uiText('Порог достигнут. Следующий запрос к Luna откроет новый чат.')
+        : uiText('Порог нового чата: {0} токенов с учётом следующего запроса.', limit);
     if (context.modelWindowTokens) {
       rollover.textContent += ` ${uiText('Окно модели: {0} токенов.', number.format(context.modelWindowTokens))}`;
     }
     idle.hidden = context.idleResetAt === null;
-    if (context.idleResetAt !== null) idle.textContent = uiText('Без новых проверок чат закроется в {0}.', time.format(context.idleResetAt));
+    if (context.idleResetAt !== null)
+      idle.textContent = uiText('Без новых проверок чат закроется в {0}.', time.format(context.idleResetAt));
   }
-  return { render, hide: () => tooltips.forEach(tooltip => tooltip.hide()),
-    dispose: () => tooltips.forEach(tooltip => tooltip.dispose()) };
+  return {
+    render,
+    hide: () => tooltips.forEach((tooltip) => tooltip.hide()),
+    dispose: () => tooltips.forEach((tooltip) => tooltip.dispose()),
+  };
 }

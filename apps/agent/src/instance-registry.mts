@@ -27,7 +27,8 @@ export interface AgentInstanceRegistration {
 
 function errorCode(error: unknown): string | undefined {
   return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
-    ? error.code : undefined;
+    ? error.code
+    : undefined;
 }
 
 export function instanceRegistryPath(stateDirectory: string): string {
@@ -47,13 +48,20 @@ async function acquireFileLock(stateDirectory: string): Promise<() => Promise<vo
   } catch (error) {
     lock?.close();
     // SQLITE_BUSY means another process holds the exclusive transaction.
-    if (errorCode(error) === 'ERR_SQLITE_ERROR' && typeof error === 'object'
-      && error !== null && 'errcode' in error && error.errcode === 5) {
+    if (
+      errorCode(error) === 'ERR_SQLITE_ERROR' &&
+      typeof error === 'object' &&
+      error !== null &&
+      'errcode' in error &&
+      error.errcode === 5
+    ) {
       throw instanceAlreadyRunning(error);
     }
     throw error;
   }
-  return async () => { lock.close(); };
+  return async () => {
+    lock.close();
+  };
 }
 
 export async function acquireAgentInstanceLock(stateDirectory: string): Promise<() => Promise<void>> {
@@ -64,7 +72,7 @@ export async function acquireAgentInstanceLock(stateDirectory: string): Promise<
   const name = 'eaw-hub-agent-' + createHash('sha256').update(identity).digest('hex');
   // Windows pipes and Linux abstract sockets disappear when the owner process exits.
   const address = process.platform === 'win32' ? '\\\\.\\pipe\\' + name : '\0' + name;
-  const lock = createServer(socket => socket.destroy());
+  const lock = createServer((socket) => socket.destroy());
   try {
     lock.listen({ path: address, exclusive: true });
     await once(lock, 'listening');
@@ -72,13 +80,16 @@ export async function acquireAgentInstanceLock(stateDirectory: string): Promise<
     if (errorCode(error) === 'EADDRINUSE') throw instanceAlreadyRunning(error);
     throw error;
   }
-  return () => new Promise<void>((resolve, reject) => {
-    lock.close(error => error ? reject(error) : resolve());
-  });
+  return () =>
+    new Promise<void>((resolve, reject) => {
+      lock.close((error) => (error ? reject(error) : resolve()));
+    });
 }
 
-export async function registerAgentInstance(options: AgentInstanceOptions,
-  details: { version?: string } = {}): Promise<AgentInstanceRegistration> {
+export async function registerAgentInstance(
+  options: AgentInstanceOptions,
+  details: { version?: string } = {},
+): Promise<AgentInstanceRegistration> {
   const target = instanceRegistryPath(options.state);
   await fs.mkdir(path.dirname(target), { recursive: true });
   const record: AgentInstanceRecord = {
@@ -103,12 +114,21 @@ export async function registerAgentInstance(options: AgentInstanceOptions,
   return { target, record };
 }
 
-export async function unregisterAgentInstance(registration: AgentInstanceRegistration | null | undefined): Promise<void> {
+export async function unregisterAgentInstance(
+  registration: AgentInstanceRegistration | null | undefined,
+): Promise<void> {
   if (!registration?.target) return;
   try {
     const current: unknown = JSON.parse(await fs.readFile(registration.target, 'utf8'));
-    if (!current || typeof current !== 'object' || !('pid' in current) || !('startedAt' in current)
-      || current.pid !== registration.record.pid || current.startedAt !== registration.record.startedAt) return;
+    if (
+      !current ||
+      typeof current !== 'object' ||
+      !('pid' in current) ||
+      !('startedAt' in current) ||
+      current.pid !== registration.record.pid ||
+      current.startedAt !== registration.record.startedAt
+    )
+      return;
     await fs.rm(registration.target, { force: true });
   } catch (error) {
     // A stale/corrupt registry must never prevent the Agent from shutting down.

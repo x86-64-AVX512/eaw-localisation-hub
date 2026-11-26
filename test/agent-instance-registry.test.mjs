@@ -45,20 +45,33 @@ test('Agent instance registry is discoverable and removed only by its owner', as
 });
 
 function launchAgent(state, repo, preload) {
-  const child = spawn(process.execPath, [
-    ...(preload ? ['--import', pathToFileURL(preload).href] : []),
-    'apps/agent/src/main.mjs', '--state', state, '--repo', repo,
-    '--workspace', 'test', '--server', 'ws://127.0.0.1:1',
-  ], {
-    cwd: path.resolve(import.meta.dirname, '..'),
-    env: { ...process.env, EAW_HUB_TOKEN: '' },
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-    windowsHide: true,
-  });
+  const child = spawn(
+    process.execPath,
+    [
+      ...(preload ? ['--import', pathToFileURL(preload).href] : []),
+      'apps/agent/src/main.mjs',
+      '--state',
+      state,
+      '--repo',
+      repo,
+      '--workspace',
+      'test',
+      '--server',
+      'ws://127.0.0.1:1',
+    ],
+    {
+      cwd: path.resolve(import.meta.dirname, '..'),
+      env: { ...process.env, EAW_HUB_TOKEN: '' },
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      windowsHide: true,
+    },
+  );
   child.output = '';
   for (const stream of [child.stdout, child.stderr]) {
     stream.setEncoding('utf8');
-    stream.on('data', (chunk) => { child.output += chunk; });
+    stream.on('data', (chunk) => {
+      child.output += chunk;
+    });
   }
   return child;
 }
@@ -80,7 +93,7 @@ async function killAgent(child) {
   await exited;
 }
 
-test('a blocked Agent keeps its state lock and a forced exit releases it', { timeout: 30_000 }, async t => {
+test('a blocked Agent keeps its state lock and a forced exit releases it', { timeout: 30_000 }, async (t) => {
   const temp = await fs.realpath(os.tmpdir());
   const root = await fs.mkdtemp(path.join(temp, 'eaw-agent-lock-'));
   t.after(async () => {
@@ -94,15 +107,18 @@ test('a blocked Agent keeps its state lock and a forced exit releases it', { tim
   await fs.mkdir(state);
   await fs.mkdir(repo);
   await fs.symlink(state, alias, process.platform === 'win32' ? 'junction' : 'dir');
-  await fs.writeFile(preload, `
+  await fs.writeFile(
+    preload,
+    `
     process.on('message', () => {
       process.send('blocking');
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15_000);
     });
-  `);
+  `,
+  );
 
   const files = ['agent-instance.json', 'review-endpoint.json', 'review-session.json'];
-  const readState = () => Promise.all(files.map(name => fs.readFile(path.join(state, name), 'utf8')));
+  const readState = () => Promise.all(files.map((name) => fs.readFile(path.join(state, name), 'utf8')));
   const owner = launchAgent(state, repo, preload);
   try {
     await waitForAgent(owner);

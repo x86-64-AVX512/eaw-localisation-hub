@@ -1,11 +1,36 @@
 import crypto from 'node:crypto';
 
 const ACCOUNT_COLOURS = Object.freeze([
-  '#e85d75', '#4f8cff', '#35a873', '#c779d0', '#e58b35', '#2ea6b7',
-  '#7b6ee6', '#9b8b2f', '#d45eae', '#438fca', '#ba6c42', '#5a9d55',
-  '#c34f4f', '#6279bd', '#9a63bd', '#348f82', '#c17d25', '#6f8f3d',
-  '#e06a97', '#3f9cbd', '#8b73c9', '#d07058', '#4a9b6d', '#a86f2d',
-  '#bd5684', '#567fc2', '#7e9238', '#b65cba', '#2f948f', '#ce7040',
+  '#e85d75',
+  '#4f8cff',
+  '#35a873',
+  '#c779d0',
+  '#e58b35',
+  '#2ea6b7',
+  '#7b6ee6',
+  '#9b8b2f',
+  '#d45eae',
+  '#438fca',
+  '#ba6c42',
+  '#5a9d55',
+  '#c34f4f',
+  '#6279bd',
+  '#9a63bd',
+  '#348f82',
+  '#c17d25',
+  '#6f8f3d',
+  '#e06a97',
+  '#3f9cbd',
+  '#8b73c9',
+  '#d07058',
+  '#4a9b6d',
+  '#a86f2d',
+  '#bd5684',
+  '#567fc2',
+  '#7e9238',
+  '#b65cba',
+  '#2f948f',
+  '#ce7040',
 ]);
 
 export const ACCOUNT_ROLES = Object.freeze([
@@ -38,7 +63,9 @@ export function hashSecret(secret) {
 }
 
 export function normaliseDisplayName(displayName) {
-  return String(displayName ?? '').trim().normalize('NFKC');
+  return String(displayName ?? '')
+    .trim()
+    .normalize('NFKC');
 }
 
 export function displayNameKey(displayName) {
@@ -64,10 +91,16 @@ export function validatePassword(password) {
 
 export function normaliseRoles(value, fallback = ['translator']) {
   const source = Array.isArray(value) ? value : value ? [value] : fallback;
-  const roles = [...new Set(source.map((item) => {
-    const role = String(item).trim();
-    return role === 'senior-translator' ? 'senior translator' : role;
-  }).filter(Boolean))];
+  const roles = [
+    ...new Set(
+      source
+        .map((item) => {
+          const role = String(item).trim();
+          return role === 'senior-translator' ? 'senior translator' : role;
+        })
+        .filter(Boolean),
+    ),
+  ];
   if (roles.length === 0 || roles.some((role) => !ACCOUNT_ROLES.includes(role))) {
     throw new AuthError(`Roles must be selected from: ${ACCOUNT_ROLES.join(', ')}`, 400, 'invalid_roles');
   }
@@ -82,9 +115,7 @@ export function publicUser(user) {
     enabled: user.enabled !== false,
     passwordSet: Boolean(user.passwordVerifier),
     temporaryPassword: user.temporaryPassword === true,
-    recoveryStatus: RECOVERY_STATUSES.includes(user.recoveryStatus)
-      ? user.recoveryStatus
-      : 'setup_required',
+    recoveryStatus: RECOVERY_STATUSES.includes(user.recoveryStatus) ? user.recoveryStatus : 'setup_required',
     avatarBase64: String(user.avatarBase64 ?? ''),
     trainingProgress: { ...(user.trainingProgress ?? {}) },
   };

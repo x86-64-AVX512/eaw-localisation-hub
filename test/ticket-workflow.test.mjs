@@ -37,12 +37,20 @@ test('Agent applies a ticket without writing collaborative ticket text into the 
     await fs.writeFile(absolutePath, `\uFEFF${localText}`);
     let appliedBody;
     const ticket = { id: 'ticket-id', baseBranch: branch, baseCommit: commit, files: [relativePath] };
-    const snapshot = { ticket, files: [{
-      path: relativePath, ticketHash: hash(ticketText), mainHash: hash(base),
-      ticketInitialised: true, mainInitialised: true,
-      ticketTextBase64: Buffer.from(ticketText).toString('base64'),
-      mainTextBase64: Buffer.from(base).toString('base64'),
-    }] };
+    const snapshot = {
+      ticket,
+      files: [
+        {
+          path: relativePath,
+          ticketHash: hash(ticketText),
+          mainHash: hash(base),
+          ticketInitialised: true,
+          mainInitialised: true,
+          ticketTextBase64: Buffer.from(ticketText).toString('base64'),
+          mainTextBase64: Buffer.from(base).toString('base64'),
+        },
+      ],
+    };
     const hub = {
       options: { repo: repository, workspace: branch },
       async ticketRequest(route, options) {
@@ -87,19 +95,24 @@ test('ticket diff caches immutable file pairs without freezing current ticket me
       options: { repo: repository, server: 'wss://hub.invalid' },
       diffCache: {
         async getOrCreate(_namespace, _key, create) {
-          if (!cached) { created += 1; cached = await create(); }
+          if (!cached) {
+            created += 1;
+            cached = await create();
+          }
           return cached;
         },
       },
       async ticketRequest() {
         return {
           ticket: { id: 'ticket-id', baseCommit: commit, status },
-          files: [{
-            path: relativePath,
-            ticketHash: hash(ticketText),
-            ticketInitialised: true,
-            ticketTextBase64: Buffer.from(ticketText).toString('base64'),
-          }],
+          files: [
+            {
+              path: relativePath,
+              ticketHash: hash(ticketText),
+              ticketInitialised: true,
+              ticketTextBase64: Buffer.from(ticketText).toString('base64'),
+            },
+          ],
         };
       },
     };

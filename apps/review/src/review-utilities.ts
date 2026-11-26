@@ -2,20 +2,30 @@ import { uiText } from '../../../packages/shared/src/ui-language.mts';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const COORDINATE_STEP = 4096;
-interface CoordinateCheckpoint { utf16: number; bytes: number }
+interface CoordinateCheckpoint {
+  utf16: number;
+  bytes: number;
+}
 let coordinateText: string | null = null;
 let coordinateIndex: CoordinateCheckpoint[] | null = null;
 
 function coordinatesFor(text: string): CoordinateCheckpoint[] {
   if (coordinateText === text && coordinateIndex) return coordinateIndex;
   const checkpoints = [{ utf16: 0, bytes: 0 }];
-  let utf16 = 0; let bytes = 0;
+  let utf16 = 0;
+  let bytes = 0;
   while (utf16 < text.length) {
     let next = Math.min(text.length, utf16 + COORDINATE_STEP);
     const previousCode = text.charCodeAt(next - 1);
     const nextCode = text.charCodeAt(next);
-    if (next < text.length && previousCode >= 0xd800 && previousCode <= 0xdbff
-      && nextCode >= 0xdc00 && nextCode <= 0xdfff) next -= 1;
+    if (
+      next < text.length &&
+      previousCode >= 0xd800 &&
+      previousCode <= 0xdbff &&
+      nextCode >= 0xdc00 &&
+      nextCode <= 0xdfff
+    )
+      next -= 1;
     bytes += encoder.encode(text.slice(utf16, next)).length;
     utf16 = next;
     checkpoints.push({ utf16, bytes });
@@ -25,8 +35,13 @@ function coordinatesFor(text: string): CoordinateCheckpoint[] {
   return checkpoints;
 }
 
-function checkpointFor(checkpoints: CoordinateCheckpoint[], position: number, field: keyof CoordinateCheckpoint): CoordinateCheckpoint {
-  let low = 0; let high = checkpoints.length - 1;
+function checkpointFor(
+  checkpoints: CoordinateCheckpoint[],
+  position: number,
+  field: keyof CoordinateCheckpoint,
+): CoordinateCheckpoint {
+  let low = 0;
+  let high = checkpoints.length - 1;
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
     if (checkpoints[middle][field] <= position) low = middle;
@@ -81,12 +96,16 @@ export function colorClass(prefix: string, color: unknown, rule: (color: string)
   return key;
 }
 
-export function createDialogController(): (heading: string, description: string, initial?: string) => Promise<string | null> {
+export function createDialogController(): (
+  heading: string,
+  description: string,
+  initial?: string,
+) => Promise<string | null> {
   const dialog = document.querySelector<HTMLDialogElement>('#text-dialog');
   const title = document.querySelector<HTMLElement>('#dialog-title');
   const label = document.querySelector<HTMLElement>('#dialog-label');
   const value = document.querySelector<HTMLInputElement>('#dialog-value');
-  if (!dialog || !title || !label || !value) throw new Error(uiText("Не найдены элементы текстового диалога."));
+  if (!dialog || !title || !label || !value) throw new Error(uiText('Не найдены элементы текстового диалога.'));
   return async (heading: string, description: string, initial = ''): Promise<string | null> => {
     title.textContent = heading;
     label.textContent = description;
@@ -94,8 +113,14 @@ export function createDialogController(): (heading: string, description: string,
     dialog.showModal();
     value.focus();
     value.select();
-    return new Promise<string | null>((resolve) => dialog.addEventListener('close', () => {
-      resolve(dialog.returnValue === 'default' ? value.value : null);
-    }, { once: true }));
+    return new Promise<string | null>((resolve) =>
+      dialog.addEventListener(
+        'close',
+        () => {
+          resolve(dialog.returnValue === 'default' ? value.value : null);
+        },
+        { once: true },
+      ),
+    );
   };
 }

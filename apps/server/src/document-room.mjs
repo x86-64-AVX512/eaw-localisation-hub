@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
-import { canEditDocument, requireDocumentEdit, requireDocumentControl } from '../../../packages/shared/src/document-permissions.mts';
+import {
+  canEditDocument,
+  requireDocumentEdit,
+  requireDocumentControl,
+} from '../../../packages/shared/src/document-permissions.mts';
 import { currentDocumentActor } from './document-actor.mjs';
 import path from 'node:path';
 import { WebSocket } from 'ws';
@@ -14,7 +18,8 @@ import { encodeMergeText, decodeMergeText } from '../../../packages/shared/src/m
 
 function truncateConflictText(value) {
   const bytes = Buffer.from(String(value ?? ''), 'utf8');
-  return bytes.length <= 60 * 1024 ? bytes.toString('utf8')
+  return bytes.length <= 60 * 1024
+    ? bytes.toString('utf8')
     : `${bytes.subarray(0, 60 * 1024).toString('utf8')}\n… diff truncated …`;
 }
 import {
@@ -92,7 +97,7 @@ export class DocumentRoom {
     }
     if (canonicalSource?.enabled) {
       try {
-        await room.applyCanonicalSnapshot(canonicalSnapshot ?? await canonicalSource.snapshot(documentId));
+        await room.applyCanonicalSnapshot(canonicalSnapshot ?? (await canonicalSource.snapshot(documentId)));
       } catch (error) {
         if (!room.gitBase || !room.hasStoredState) {
           room.destroy();
@@ -151,11 +156,13 @@ export class DocumentRoom {
       this.hasStoredState = true;
       this.revision += 1;
       const source = origin?.socket ?? origin;
-      const account = origin?.actor ?? (!this.authStore.required
-        ? source?.localActor ?? null
-        : source?.identity
-          ? this.authStore.findDirectoryUser(source.identity, source.identity.id) ?? source.identity
-          : null);
+      const account =
+        origin?.actor ??
+        (!this.authStore.required
+          ? (source?.localActor ?? null)
+          : source?.identity
+            ? (this.authStore.findDirectoryUser(source.identity, source.identity.id) ?? source.identity)
+            : null);
       const currentText = this.document.getText('content').toString();
       const previousText = this.eventText ?? currentText;
       this.eventText = currentText;
@@ -164,14 +171,18 @@ export class DocumentRoom {
         try {
           const ticket = this.registry.ticketStore?.mutable(ticketId);
           this.registry.eventJournal?.append('ticket-edited', account, [ticket?.creatorId], {
-            ticketId, ticketTitle: ticket?.title ?? '', documentId: this.documentId,
+            ticketId,
+            ticketTitle: ticket?.title ?? '',
+            documentId: this.documentId,
             ...textChangeSummary(previousText, currentText),
           });
-        } catch { /* ticket may have been removed concurrently */ }
+        } catch {
+          /* ticket may have been removed concurrently */
+        }
       }
-      const historyChanged = this.history.record(
-        currentText, account, origin?.historyReason ?? 'edit', { suggestion: origin?.suggestion },
-      );
+      const historyChanged = this.history.record(currentText, account, origin?.historyReason ?? 'edit', {
+        suggestion: origin?.suggestion,
+      });
       this.schedulePersist();
       for (const client of this.clients) {
         if (client !== origin && client.readyState === WebSocket.OPEN) {
@@ -226,7 +237,8 @@ export class DocumentRoom {
           blob: String(metadata.gitBase.blob ?? ''),
           checkedAt: Number(metadata.gitBase.checkedAt ?? 0),
           changedFiles: Array.isArray(metadata.gitBase.changedFiles)
-            ? metadata.gitBase.changedFiles.map(String).slice(0, 5000) : [],
+            ? metadata.gitBase.changedFiles.map(String).slice(0, 5000)
+            : [],
           text: String(metadata.gitBase.text ?? ''),
           stale: metadata.gitBase.stale === true,
           deleted: metadata.gitBase.deleted === true,
@@ -257,8 +269,10 @@ export class DocumentRoom {
   addClient(socket) {
     if (this.registry.isUnavailableBranch(this.documentId)) {
       const branch = this.documentId.split(':', 1)[0];
-      throw new ProtocolLimitError('Branch merge is in progress or complete',
-        this.registry.mergedBranches.has(branch) ? 4002 : 1013);
+      throw new ProtocolLimitError(
+        'Branch merge is in progress or complete',
+        this.registry.mergedBranches.has(branch) ? 4002 : 1013,
+      );
     }
     if (this.clients.size >= MAX_CLIENTS_PER_ROOM) {
       throw new ProtocolLimitError('This document already has too many connected clients', 1013);
@@ -267,41 +281,51 @@ export class DocumentRoom {
     socket.presenceIds = new Set();
     this.lastAccessAt = Date.now();
     const content = this.document.getText('content');
-    socket.gitWritable = !this.gitBase || (!this.gitBase.stale && !this.gitConflict
-      && Boolean(socket.localBlob && socket.localBlob === this.gitBase.blob));
-    const canSeed = canEditDocument(currentDocumentActor(this.authStore, socket.identity), this.documentId) && !this.gitBase && content.length === 0 && !this.seedClaimed;
+    socket.gitWritable =
+      !this.gitBase ||
+      (!this.gitBase.stale && !this.gitConflict && Boolean(socket.localBlob && socket.localBlob === this.gitBase.blob));
+    const canSeed =
+      canEditDocument(currentDocumentActor(this.authStore, socket.identity), this.documentId) &&
+      !this.gitBase &&
+      content.length === 0 &&
+      !this.seedClaimed;
     if (canSeed) this.seedClaimed = true;
     if (!sendWithBackpressure(socket, Y.encodeStateAsUpdate(this.document), { binary: true })) return;
     this.expirePresences();
-    sendWithBackpressure(socket, JSON.stringify({
-      type: 'synced',
-      protocol: PROTOCOL_VERSION,
-      protocolName: PROTOCOL_NAME,
-      protocolAbbreviation: PROTOCOL_ABBREVIATION,
-      version: DISPLAY_VERSION,
-      documentId: this.documentId,
-      canSeed,
-      git: this.gitBase
-        ? (this.gitConflict && this.pendingGitSnapshot
-          ? this.gitConflictStatusFor(socket)
-          : { ...this.gitStatusFor(socket), checkedAt: this.gitBase.checkedAt })
-        : null,
-      reservations: this.activeReservations(),
-      reservationUpdates: true,
-      discussionUpdates: true,
-      commentThreads: publicDiscussionItems(this.commentThreads),
-      suggestions: publicDiscussionItems(this.suggestions),
-      history: this.history.summaries(),
-      historyHeadId: this.history.headId(),
-      presences: [...this.presences.values()],
-      identity: socket.identity ? {
-        id: socket.identity.id,
-        displayName: socket.identity.displayName,
-        roles: socket.identity.roles,
-        avatarBase64: socket.identity.avatarBase64 ?? '',
-      } : null,
-      directory: this.authStore.directory(socket.identity),
-    }));
+    sendWithBackpressure(
+      socket,
+      JSON.stringify({
+        type: 'synced',
+        protocol: PROTOCOL_VERSION,
+        protocolName: PROTOCOL_NAME,
+        protocolAbbreviation: PROTOCOL_ABBREVIATION,
+        version: DISPLAY_VERSION,
+        documentId: this.documentId,
+        canSeed,
+        git: this.gitBase
+          ? this.gitConflict && this.pendingGitSnapshot
+            ? this.gitConflictStatusFor(socket)
+            : { ...this.gitStatusFor(socket), checkedAt: this.gitBase.checkedAt }
+          : null,
+        reservations: this.activeReservations(),
+        reservationUpdates: true,
+        discussionUpdates: true,
+        commentThreads: publicDiscussionItems(this.commentThreads),
+        suggestions: publicDiscussionItems(this.suggestions),
+        history: this.history.summaries(),
+        historyHeadId: this.history.headId(),
+        presences: [...this.presences.values()],
+        identity: socket.identity
+          ? {
+              id: socket.identity.id,
+              displayName: socket.identity.displayName,
+              roles: socket.identity.roles,
+              avatarBase64: socket.identity.avatarBase64 ?? '',
+            }
+          : null,
+        directory: this.authStore.directory(socket.identity),
+      }),
+    );
   }
 
   clientWritable(socket) {
@@ -309,59 +333,73 @@ export class DocumentRoom {
   }
 
   gitStatusFor(client, snapshot = this.gitBase) {
-    if (snapshot.stale) return {
-      type: 'git-status', status: snapshot.deleted ? 'branch-deleted' : 'git-unavailable',
-      branch: snapshot.branch, localHead: client.localHead ?? '', remoteHead: snapshot.commit,
-      reason: snapshot.deleted ? 'remote-branch-deleted' : 'canonical-git-unavailable',
-      message: snapshot.deleted
-        ? 'The branch was deleted without a verified merge; server data and tickets are preserved'
-        : 'Canonical Git is unavailable; editing is paused until it recovers',
-    };
+    if (snapshot.stale)
+      return {
+        type: 'git-status',
+        status: snapshot.deleted ? 'branch-deleted' : 'git-unavailable',
+        branch: snapshot.branch,
+        localHead: client.localHead ?? '',
+        remoteHead: snapshot.commit,
+        reason: snapshot.deleted ? 'remote-branch-deleted' : 'canonical-git-unavailable',
+        message: snapshot.deleted
+          ? 'The branch was deleted without a verified merge; server data and tickets are preserved'
+          : 'Canonical Git is unavailable; editing is paused until it recovers',
+      };
     const writable = Boolean(client.localBlob && client.localBlob === snapshot.blob);
-    const changedFiles = [...new Set([
-      ...(client.changedFiles ?? []), ...(snapshot.changedFiles ?? []),
-    ])].slice(0, 500);
+    const changedFiles = [...new Set([...(client.changedFiles ?? []), ...(snapshot.changedFiles ?? [])])].slice(0, 500);
     client.changedFiles = changedFiles;
     return {
       type: 'git-status',
       status: writable ? (client.localHead === snapshot.commit ? 'current' : 'branch-outdated') : 'file-outdated',
       branch: snapshot.branch,
-      localHead: client.localHead ?? '', remoteHead: snapshot.commit,
-      localBlob: client.localBlob ?? '', remoteBlob: snapshot.blob,
+      localHead: client.localHead ?? '',
+      remoteHead: snapshot.commit,
+      localBlob: client.localBlob ?? '',
+      remoteBlob: snapshot.blob,
       changedFiles,
-      reason: !client.localBlob ? 'local-file-not-in-head'
-        : writable ? 'branch-head-outdated' : 'file-blob-differs',
+      reason: !client.localBlob ? 'local-file-not-in-head' : writable ? 'branch-head-outdated' : 'file-blob-differs',
       message: writable ? 'A newer canonical branch commit is available' : 'A newer canonical commit changed this file',
     };
   }
 
   canonicalConflictRevision(snapshot = this.pendingGitSnapshot) {
-    return mergeStateRevision(this.gitBase?.text ?? '', this.document.getText('content').toString(), snapshot?.text ?? '');
+    return mergeStateRevision(
+      this.gitBase?.text ?? '',
+      this.document.getText('content').toString(),
+      snapshot?.text ?? '',
+    );
   }
 
   serialiseGitConflicts(conflicts = this.gitConflicts, snapshot = this.pendingGitSnapshot) {
     const revision = this.canonicalConflictRevision(snapshot);
     return conflicts.slice(0, 1000).map((item) => ({
-      key: item.key, label: item.label,
+      key: item.key,
+      label: item.label,
       conflictId: mergeConflictId(revision, item.key),
       baseLine: truncateConflictText(item.baseLine),
       collaborativeLine: truncateConflictText(item.collaborativeLine),
       externalLine: truncateConflictText(item.externalLine),
-      detail: item.key === '__file_structure__'
-        ? 'Комментарии или структура файла изменены с обеих сторон.'
-        : item.key === '__duplicate_keys__'
-          ? 'В файле есть повторяющиеся ключи; выбор применяется ко всему файлу.'
-          : 'Один и тот же ключ изменён в Git и в совместном документе.',
+      detail:
+        item.key === '__file_structure__'
+          ? 'Комментарии или структура файла изменены с обеих сторон.'
+          : item.key === '__duplicate_keys__'
+            ? 'В файле есть повторяющиеся ключи; выбор применяется ко всему файлу.'
+            : 'Один и тот же ключ изменён в Git и в совместном документе.',
     }));
   }
 
   gitConflictStatusFor(client, snapshot = this.pendingGitSnapshot) {
     return {
-      type: 'git-status', status: 'conflict', branch: snapshot.branch,
-      localHead: client.localHead ?? '', remoteHead: snapshot.commit,
-      localBlob: client.localBlob ?? '', remoteBlob: snapshot.blob,
+      type: 'git-status',
+      status: 'conflict',
+      branch: snapshot.branch,
+      localHead: client.localHead ?? '',
+      remoteHead: snapshot.commit,
+      localBlob: client.localBlob ?? '',
+      remoteBlob: snapshot.blob,
       changedFiles: (snapshot.changedFiles ?? []).slice(0, 500),
-      reason: 'merge-conflict', checkedAt: snapshot.checkedAt,
+      reason: 'merge-conflict',
+      checkedAt: snapshot.checkedAt,
       conflicts: this.serialiseGitConflicts(this.gitConflicts, snapshot),
       message: 'Canonical Git update conflicts with live edits',
     };
@@ -430,10 +468,13 @@ export class DocumentRoom {
       }
       return;
     }
-    const continuingConflict = this.pendingGitSnapshot?.blob === snapshot.blob
-      && this.gitConflictRevision === this.canonicalConflictRevision(snapshot);
+    const continuingConflict =
+      this.pendingGitSnapshot?.blob === snapshot.blob &&
+      this.gitConflictRevision === this.canonicalConflictRevision(snapshot);
     const merged = mergeLocalisationThreeWay(
-      this.gitBase.text, current, snapshot.text,
+      this.gitBase.text,
+      current,
+      snapshot.text,
       continuingConflict ? this.gitConflictResolutions : {},
     );
     if (merged.conflicts.length > 0) {
@@ -456,10 +497,13 @@ export class DocumentRoom {
   broadcastDirectory() {
     for (const client of this.clients) {
       if (client.readyState !== WebSocket.OPEN) continue;
-      sendWithBackpressure(client, JSON.stringify({
-        type: 'directory',
-        users: this.authStore.directory(client.identity),
-      }));
+      sendWithBackpressure(
+        client,
+        JSON.stringify({
+          type: 'directory',
+          users: this.authStore.directory(client.identity),
+        }),
+      );
     }
   }
 
@@ -500,9 +544,12 @@ export class DocumentRoom {
     if (!prepared.delta.length) return;
     const reviewItems = [...this.commentThreads, ...this.suggestions];
     captureReviewAnchors(this.document, reviewItems);
-    this.document.transact(() => {
-      this.document.getText('content').applyDelta(prepared.delta);
-    }, { actor, historyReason });
+    this.document.transact(
+      () => {
+        this.document.getText('content').applyDelta(prepared.delta);
+      },
+      { actor, historyReason },
+    );
     if (this.reservations.length) {
       repairReservationAnchors(this.document, this.reservations, { force: true });
       this.broadcastReservations();
@@ -551,10 +598,12 @@ export class DocumentRoom {
     const actor = this.authStore.required
       ? this.authStore.findDirectoryUser(socket.identity, socket.identity?.id)
       : {
-          id: `local:${String(socket.identity?.displayName ?? message.author ?? 'unknown').trim().toLowerCase()}`,
-          displayName: socket.identity?.displayName ?? controlledString(
-            message.author ?? 'Unknown', `${label} author`, 128, { required: true },
-          ),
+          id: `local:${String(socket.identity?.displayName ?? message.author ?? 'unknown')
+            .trim()
+            .toLowerCase()}`,
+          displayName:
+            socket.identity?.displayName ??
+            controlledString(message.author ?? 'Unknown', `${label} author`, 128, { required: true }),
           color: controlledString(message.color ?? '#8a8a8a', `${label} color`, 16, { required: true }),
         };
     if (!actor) throw new Error(`${label} author account is unavailable`);
@@ -568,9 +617,15 @@ export class DocumentRoom {
     try {
       const ticket = this.registry.ticketStore?.mutable(ticketId);
       this.registry.eventJournal?.append('ticket-activity', actor, [ticket?.creatorId], {
-        ticketId, ticketTitle: ticket?.title ?? '', documentId: this.documentId, action, ...details,
+        ticketId,
+        ticketTitle: ticket?.title ?? '',
+        documentId: this.documentId,
+        action,
+        ...details,
       });
-    } catch { /* ticket may have been removed concurrently */ }
+    } catch {
+      /* ticket may have been removed concurrently */
+    }
   }
 
   resolveRelativeRange(item) {
@@ -593,12 +648,12 @@ export class DocumentRoom {
   }
 
   anchorSuggestionRange(suggestion, text, start, end) {
-    suggestion.startRelative = Buffer.from(Y.encodeRelativePosition(
-      Y.createRelativePositionFromTypeIndex(text, start, 0),
-    )).toString('base64');
-    suggestion.endRelative = Buffer.from(Y.encodeRelativePosition(
-      Y.createRelativePositionFromTypeIndex(text, end, -1),
-    )).toString('base64');
+    suggestion.startRelative = Buffer.from(
+      Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, start, 0)),
+    ).toString('base64');
+    suggestion.endRelative = Buffer.from(
+      Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, end, -1)),
+    ).toString('base64');
     delete suggestion.orphaned;
     captureReviewAnchor(this.document, suggestion);
   }
@@ -625,13 +680,17 @@ export class DocumentRoom {
   // The exact bytes persistSnapshot() writes: a compact estimate let changes near the
   // limit pass here and then fail every later save, including text saves.
   metadataJson() {
-    return JSON.stringify({
-      schema: 3,
-      reservations: this.reservations,
-      commentThreads: this.commentThreads,
-      suggestions: this.suggestions,
-      gitBase: this.gitBase,
-    }, null, 2);
+    return JSON.stringify(
+      {
+        schema: 3,
+        reservations: this.reservations,
+        commentThreads: this.commentThreads,
+        suggestions: this.suggestions,
+        gitBase: this.gitBase,
+      },
+      null,
+      2,
+    );
   }
 
   assertMetadataBudget() {
@@ -644,8 +703,10 @@ export class DocumentRoom {
   receiveBinary(socket, update, authorise = () => {}) {
     if (this.registry.isUnavailableBranch(this.documentId)) {
       const branch = this.documentId.split(':', 1)[0];
-      throw new ProtocolLimitError('Branch merge is in progress or complete',
-        this.registry.mergedBranches.has(branch) ? 4002 : 1013);
+      throw new ProtocolLimitError(
+        'Branch merge is in progress or complete',
+        this.registry.mergedBranches.has(branch) ? 4002 : 1013,
+      );
     }
     const incoming = Uint8Array.from(update);
     if (incoming.byteLength === 0 || incoming.byteLength > MAX_CRDT_UPDATE_BYTES) {
@@ -674,9 +735,7 @@ export class DocumentRoom {
     // Every untrusted update is decoded in a worker before the main event loop
     // sees it. Large seeds additionally include the current state so the worker
     // can calculate the exact resulting room budget.
-    const baseUpdate = incoming.byteLength >= 256 * 1024
-      ? Y.encodeStateAsUpdate(this.document)
-      : null;
+    const baseUpdate = incoming.byteLength >= 256 * 1024 ? Y.encodeStateAsUpdate(this.document) : null;
     try {
       const validation = await crdtValidator.validate(incoming, baseUpdate);
       if (baseUpdate) projectedBytes = validation.stateBytes;
@@ -688,7 +747,8 @@ export class DocumentRoom {
     }
     if (this.destroyed || socket.readyState !== WebSocket.OPEN) return;
     authorise();
-    if (projectedBytes > MAX_ROOM_STATE_BYTES) throw new ProtocolLimitError('Document state exceeds the per-room limit');
+    if (projectedBytes > MAX_ROOM_STATE_BYTES)
+      throw new ProtocolLimitError('Document state exceeds the per-room limit');
     requireDocumentEdit(currentDocumentActor(this.authStore, socket.identity), this.documentId);
     this.registry.assertStateBudget(this, projectedBytes);
 
@@ -701,10 +761,13 @@ export class DocumentRoom {
     return this.enqueueMessage(async () => {
       if (this.registry.isUnavailableBranch(this.documentId)) {
         const branch = this.documentId.split(':', 1)[0];
-        throw new ProtocolLimitError('Branch merge is in progress or complete',
-          this.registry.mergedBranches.has(branch) ? 4002 : 1013);
+        throw new ProtocolLimitError(
+          'Branch merge is in progress or complete',
+          this.registry.mergedBranches.has(branch) ? 4002 : 1013,
+        );
       }
-      if (isDiscussionWrite(message) && message.requestId) return receiveDiscussionWrite(this, socket, message, authorise);
+      if (isDiscussionWrite(message) && message.requestId)
+        return receiveDiscussionWrite(this, socket, message, authorise);
       if (message?.type === 'reservation-update') {
         const requestId = controlledString(message.requestId, 'Reservation request id', 128, { required: true });
         const id = controlledString(message.id, 'Reservation id', 128, { required: true });
@@ -721,16 +784,24 @@ export class DocumentRoom {
           // Resource limits keep closing the socket through the shared handler.
           if (error instanceof ProtocolLimitError) throw error;
           // A failed completion audit must not report an already broadcast save as lost.
-          result = applied?.status === 'saved' ? applied
-            : { status: 'error', message: 'Не удалось изменить бронь. Проверьте права, исполнителя, примечание и выделение.' };
+          result =
+            applied?.status === 'saved'
+              ? applied
+              : {
+                  status: 'error',
+                  message: 'Не удалось изменить бронь. Проверьте права, исполнителя, примечание и выделение.',
+                };
         }
-        if (result) sendWithBackpressure(socket, JSON.stringify({ type: 'reservation-update-result',
-          requestId, id, ...result }));
+        if (result)
+          sendWithBackpressure(socket, JSON.stringify({ type: 'reservation-update-result', requestId, id, ...result }));
         return;
       }
       authorise();
       // The audit log can wait for the disk; recheck write access (e.g. ticket archived) afterwards.
-      return auditDocumentControl(this, socket, message, () => { authorise(); return this.applyJson(socket, message); });
+      return auditDocumentControl(this, socket, message, () => {
+        authorise();
+        return this.applyJson(socket, message);
+      });
     });
   }
 
@@ -753,39 +824,75 @@ export class DocumentRoom {
       const sharedText = this.document.getText('content').toString();
       const sharedHash = crypto.createHash('sha256').update(sharedText).digest('hex');
       if (sharedHash !== expectedSharedHash) {
-        sendWithBackpressure(socket, JSON.stringify({ type: 'disk-merge-result', requestId,
-          sharedHash, stale: true, conflicts: [] }));
+        sendWithBackpressure(
+          socket,
+          JSON.stringify({ type: 'disk-merge-result', requestId, sharedHash, stale: true, conflicts: [] }),
+        );
         return;
       }
       const baseText = decodeMergeText(sharedText, message.textPatches?.baseText);
       const externalText = decodeMergeText(sharedText, message.textPatches?.externalText);
       const personalText = decodeMergeText(sharedText, message.textPatches?.personalText);
       const resolutions = message.resolutions ?? {};
-      if (!resolutions || typeof resolutions !== 'object' || Array.isArray(resolutions)
-        || Object.keys(resolutions).length > 1000) throw new ProtocolLimitError('Invalid disk merge resolutions');
+      if (
+        !resolutions ||
+        typeof resolutions !== 'object' ||
+        Array.isArray(resolutions) ||
+        Object.keys(resolutions).length > 1000
+      )
+        throw new ProtocolLimitError('Invalid disk merge resolutions');
       for (const [key, choice] of Object.entries(resolutions)) {
         controlledString(key, 'Disk merge key', 4096, { required: true });
         if (!['collaborative', 'external'].includes(choice)) throw new ProtocolLimitError('Invalid disk merge choice');
       }
       const revision = mergeStateRevision(baseText, sharedText, personalText, externalText);
-      const result = evaluateDiskMerge({ baseText, externalText, personalText, sharedText,
+      const result = evaluateDiskMerge({
+        baseText,
+        externalText,
+        personalText,
+        sharedText,
         initialUnknown: message.initialUnknown === true,
-        resolutions: message.resolutionRevision === revision ? resolutions : {} });
+        resolutions: message.resolutionRevision === revision ? resolutions : {},
+      });
       // Conflict IDs use the complete snapshots, never these bounded UI previews.
-      result.conflicts = result.conflicts.map((conflict) => ({ ...conflict,
+      result.conflicts = result.conflicts.map((conflict) => ({
+        ...conflict,
         baseLine: truncateConflictText(conflict.baseLine),
         collaborativeLine: truncateConflictText(conflict.collaborativeLine),
-        externalLine: truncateConflictText(conflict.externalLine) }));
-      const wireResult = { mergeRevision: result.mergeRevision, conflicts: result.conflicts,
-        ...(!result.conflicts.length ? { textPatches: {
-          sharedText: encodeMergeText(sharedText, result.sharedText),
-          personalText: encodeMergeText(sharedText, result.personalText) } } : {}) };
-      const response = JSON.stringify({ type: 'disk-merge-result', requestId,
-        sharedHash, stale: false, ...wireResult });
+        externalLine: truncateConflictText(conflict.externalLine),
+      }));
+      const wireResult = {
+        mergeRevision: result.mergeRevision,
+        conflicts: result.conflicts,
+        ...(!result.conflicts.length
+          ? {
+              textPatches: {
+                sharedText: encodeMergeText(sharedText, result.sharedText),
+                personalText: encodeMergeText(sharedText, result.personalText),
+              },
+            }
+          : {}),
+      };
+      const response = JSON.stringify({
+        type: 'disk-merge-result',
+        requestId,
+        sharedHash,
+        stale: false,
+        ...wireResult,
+      });
       if (byteLength(response) > MAX_MESSAGE_BYTES) {
-        sendWithBackpressure(socket, JSON.stringify({ type: 'disk-merge-result', requestId,
-          sharedHash, stale: false, conflicts: [], code: 'EAW_MERGE_LIMIT',
-          error: 'Результат проверки превышает лимит протокола; уменьшите объём одновременных изменений.' }));
+        sendWithBackpressure(
+          socket,
+          JSON.stringify({
+            type: 'disk-merge-result',
+            requestId,
+            sharedHash,
+            stale: false,
+            conflicts: [],
+            code: 'EAW_MERGE_LIMIT',
+            error: 'Результат проверки превышает лимит протокола; уменьшите объём одновременных изменений.',
+          }),
+        );
       } else sendWithBackpressure(socket, response);
       return;
     }
@@ -798,10 +905,16 @@ export class DocumentRoom {
       }
       const revision = DocumentRoom.prototype.canonicalConflictRevision.call(this);
       if (this.gitConflictRevision !== revision) this.gitConflictResolutions = {};
-      if (!this.gitConflicts?.some((conflict) => conflict.key === key)
-        || message.conflictId !== mergeConflictId(revision, key)) {
-        const current = mergeLocalisationThreeWay(this.gitBase.text,
-          this.document.getText('content').toString(), this.pendingGitSnapshot.text, this.gitConflictResolutions);
+      if (
+        !this.gitConflicts?.some((conflict) => conflict.key === key) ||
+        message.conflictId !== mergeConflictId(revision, key)
+      ) {
+        const current = mergeLocalisationThreeWay(
+          this.gitBase.text,
+          this.document.getText('content').toString(),
+          this.pendingGitSnapshot.text,
+          this.gitConflictResolutions,
+        );
         this.broadcastGitConflict(this.pendingGitSnapshot, current.conflicts);
         return;
       }
@@ -832,8 +945,7 @@ export class DocumentRoom {
         socket.presenceIds?.delete(clientId);
         this.broadcastJson({ type: 'presence-left', clientId }, socket);
       } else {
-        if (!socket.presenceIds?.has(clientId)
-            && (socket.presenceIds?.size ?? 0) >= MAX_PRESENCES_PER_CONNECTION) {
+        if (!socket.presenceIds?.has(clientId) && (socket.presenceIds?.size ?? 0) >= MAX_PRESENCES_PER_CONNECTION) {
           throw new ProtocolLimitError('Connection has too many active presences');
         }
         socket.presenceIds ??= new Set();
@@ -872,9 +984,11 @@ export class DocumentRoom {
           ? this.authStore.findDirectoryUser(socket.identity, socket.identity?.id)
           : {
               id: null,
-              displayName: socket.identity?.displayName ?? controlledString(
-                message.createdBy ?? message.assignee ?? 'Unknown', 'Reservation creator', 128, { required: true },
-              ),
+              displayName:
+                socket.identity?.displayName ??
+                controlledString(message.createdBy ?? message.assignee ?? 'Unknown', 'Reservation creator', 128, {
+                  required: true,
+                }),
               color: controlledString(message.color ?? '#6aa9ff', 'Reservation color', 16, { required: true }),
             };
         if (!actor) throw new Error('Reservation creator account is unavailable');
@@ -884,12 +998,14 @@ export class DocumentRoom {
               id: message.assigneeId
                 ? controlledString(message.assigneeId, 'Reservation assignee id', 128, { required: true })
                 : null,
-              displayName: controlledString(
-                message.assignee ?? actor.displayName, 'Reservation assignee', 128, { required: true },
-              ),
+              displayName: controlledString(message.assignee ?? actor.displayName, 'Reservation assignee', 128, {
+                required: true,
+              }),
               color: controlledString(
                 message.assigneeColor ?? message.color ?? actor.color,
-                'Reservation assignee color', 16, { required: true },
+                'Reservation assignee color',
+                16,
+                { required: true },
               ),
             };
         if (!assignee) throw new Error('Reservation assignee account is unavailable');
@@ -997,12 +1113,21 @@ export class DocumentRoom {
       const actor = this.actorFor(socket, message, 'Suggestion');
       const resolved = this.resolveRelativeRange(suggestion);
       const current = resolved?.text.toString().slice(resolved.start, resolved.end);
-      const decision = { status: suggestion.status, decidedById: suggestion.decidedById, decidedBy: suggestion.decidedBy };
+      const decision = {
+        status: suggestion.status,
+        decidedById: suggestion.decidedById,
+        decidedBy: suggestion.decidedBy,
+      };
       // Check the metadata budget before anyone can see the decision, so it is never
       // broadcast and then left unsaveable.
       const decide = (status) => {
         Object.assign(suggestion, { status, decidedById: actor.id, decidedBy: actor.displayName });
-        try { this.assertMetadataBudget(); } catch (error) { Object.assign(suggestion, decision); throw error; }
+        try {
+          this.assertMetadataBudget();
+        } catch (error) {
+          Object.assign(suggestion, decision);
+          throw error;
+        }
       };
       if (!resolved || current !== suggestion.originalText) {
         decide('stale');
@@ -1011,7 +1136,10 @@ export class DocumentRoom {
         return;
       }
       const projectedBytes = projectedSuggestionStateBytes(
-        this.document, resolved.start, resolved.end, suggestion.replacementText,
+        this.document,
+        resolved.start,
+        resolved.end,
+        suggestion.replacementText,
       );
       if (projectedBytes > MAX_ROOM_STATE_BYTES) {
         throw new ProtocolLimitError('Accepted suggestion would exceed the room state limit');
@@ -1019,29 +1147,34 @@ export class DocumentRoom {
       this.registry.assertStateBudget(this, projectedBytes);
       decide('accepted');
       this.registry.eventJournal?.append('suggestion-decision', actor, [suggestion.authorId], {
-        documentId: this.documentId, suggestionId: suggestion.id, decision: 'accepted',
+        documentId: this.documentId,
+        suggestionId: suggestion.id,
+        decision: 'accepted',
       });
       this.notifyTicketOwner('suggestion-accepted', actor, { suggestionId: suggestion.id });
-      this.document.transact(() => {
-        resolved.text.delete(resolved.start, resolved.end - resolved.start);
-        if (suggestion.replacementText) resolved.text.insert(resolved.start, suggestion.replacementText);
-        this.anchorSuggestionRange(
-          suggestion,
-          resolved.text,
-          resolved.start,
-          resolved.start + suggestion.replacementText.length,
-        );
-      }, {
-        socket,
-        historyReason: 'suggestion',
-        actor,
-        suggestion: {
-          id: suggestion.id,
-          authorId: suggestion.authorId,
-          author: suggestion.author,
-          color: suggestion.color,
+      this.document.transact(
+        () => {
+          resolved.text.delete(resolved.start, resolved.end - resolved.start);
+          if (suggestion.replacementText) resolved.text.insert(resolved.start, suggestion.replacementText);
+          this.anchorSuggestionRange(
+            suggestion,
+            resolved.text,
+            resolved.start,
+            resolved.start + suggestion.replacementText.length,
+          );
         },
-      });
+        {
+          socket,
+          historyReason: 'suggestion',
+          actor,
+          suggestion: {
+            id: suggestion.id,
+            authorId: suggestion.authorId,
+            author: suggestion.author,
+            color: suggestion.color,
+          },
+        },
+      );
       this.stateBudgetBytes = projectedBytes;
       this.schedulePersist();
       this.broadcastReview();
@@ -1051,7 +1184,10 @@ export class DocumentRoom {
     if (message.type === 'suggestion-revert') {
       const id = controlledString(message.id, 'Suggestion id', 128, { required: true });
       const suggestion = this.suggestions.find((item) => item.id === id);
-      if (!suggestion || suggestion.status !== 'accepted') { this.broadcastReview(); return; }
+      if (!suggestion || suggestion.status !== 'accepted') {
+        this.broadcastReview();
+        return;
+      }
       const actor = this.actorFor(socket, message, 'Suggestion');
       const resolved = this.resolveRelativeRange(suggestion);
       const current = resolved?.text.toString().slice(resolved.start, resolved.end);
@@ -1059,7 +1195,10 @@ export class DocumentRoom {
         throw new ProtocolLimitError('Accepted suggestion can no longer be reverted because its text changed');
       }
       const projectedBytes = projectedSuggestionStateBytes(
-        this.document, resolved.start, resolved.end, suggestion.originalText,
+        this.document,
+        resolved.start,
+        resolved.end,
+        suggestion.originalText,
       );
       if (projectedBytes > MAX_ROOM_STATE_BYTES) {
         throw new ProtocolLimitError('Reverted suggestion would exceed the room state limit');
@@ -1068,16 +1207,19 @@ export class DocumentRoom {
       suggestion.status = 'open';
       suggestion.decidedById = null;
       suggestion.decidedBy = null;
-      this.document.transact(() => {
-        resolved.text.delete(resolved.start, resolved.end - resolved.start);
-        if (suggestion.originalText) resolved.text.insert(resolved.start, suggestion.originalText);
-        this.anchorSuggestionRange(
-          suggestion,
-          resolved.text,
-          resolved.start,
-          resolved.start + suggestion.originalText.length,
-        );
-      }, { socket, historyReason: 'suggestion-revert', actor });
+      this.document.transact(
+        () => {
+          resolved.text.delete(resolved.start, resolved.end - resolved.start);
+          if (suggestion.originalText) resolved.text.insert(resolved.start, suggestion.originalText);
+          this.anchorSuggestionRange(
+            suggestion,
+            resolved.text,
+            resolved.start,
+            resolved.start + suggestion.originalText.length,
+          );
+        },
+        { socket, historyReason: 'suggestion-revert', actor },
+      );
       this.stateBudgetBytes = projectedBytes;
       this.schedulePersist();
       this.broadcastReview();
@@ -1098,7 +1240,8 @@ export class DocumentRoom {
 
     if (message.type === 'personal-projection-set') {
       const actor = this.actorFor(socket, message, 'Personal projection update');
-      if (!this.clientWritable(socket)) throw new ProtocolLimitError('Refresh Git before updating the personal projection');
+      if (!this.clientWritable(socket))
+        throw new ProtocolLimitError('Refresh Git before updating the personal projection');
       const text = controlledText(message.text, 'Personal projection', MAX_ROOM_STATE_BYTES);
       const baseText = String(this.gitBase?.text ?? this.history.text(this.history.entries[0]?.id) ?? '');
       if (this.history.replacePersonalProjection(actor, text, baseText)) this.schedulePersist();
@@ -1108,36 +1251,41 @@ export class DocumentRoom {
     if (message.type === 'personal-projection-get') {
       const requestId = controlledString(message.requestId, 'Projection request id', 128, { required: true });
       const actor = this.actorFor(socket, message, 'Personal projection');
-      const subjectAuthorId = controlledString(
-        message.subjectAuthorId ?? actor.id, 'Projection author id', 256, { required: true },
-      );
+      const subjectAuthorId = controlledString(message.subjectAuthorId ?? actor.id, 'Projection author id', 256, {
+        required: true,
+      });
       const baseText = String(this.gitBase?.text ?? this.history.text(this.history.entries[0]?.id) ?? '');
       const gitBaseChanged = this.history.updateGitBase(baseText);
       const text = this.history.personalProjection(subjectAuthorId, baseText);
       if (gitBaseChanged) this.schedulePersist();
       const revision = crypto.createHash('sha256').update(text).digest('hex');
-      const baseRevision = controlledString(
-        message.baseRevision ?? '', 'Projection base revision', 128,
-      );
+      const baseRevision = controlledString(message.baseRevision ?? '', 'Projection base revision', 128);
       let cache = this.personalProjectionCache.get(socket);
-      if (!cache) { cache = new Map(); this.personalProjectionCache.set(socket, cache); }
+      if (!cache) {
+        cache = new Map();
+        this.personalProjectionCache.set(socket, cache);
+      }
       const previous = cache.get(subjectAuthorId);
       const response = {
-        type: 'personal-projection', documentId: this.documentId, requestId,
-        subjectAuthorId, revision,
+        type: 'personal-projection',
+        documentId: this.documentId,
+        requestId,
+        subjectAuthorId,
+        revision,
         contributors: this.history.contributors(),
         conflicts: this.history.conflicts(baseText, subjectAuthorId),
         gitConflicts: this.history.personalGitConflicts(subjectAuthorId),
       };
       if (baseRevision && previous?.revision === baseRevision) {
         const patch = computeSingleReplace(previous.text, text) ?? {
-          positionByte: 0, deleteBytes: 0, insertText: '',
+          positionByte: 0,
+          deleteBytes: 0,
+          insertText: '',
         };
         const insertBase64 = Buffer.from(patch.insertText, 'utf8').toString('base64');
         if (Buffer.byteLength(insertBase64, 'utf8') < Buffer.byteLength(text, 'utf8')) {
           response.baseRevision = baseRevision;
-          response.patch = { positionByte: patch.positionByte,
-            deleteBytes: patch.deleteBytes, insertBase64 };
+          response.patch = { positionByte: patch.positionByte, deleteBytes: patch.deleteBytes, insertBase64 };
         } else response.textBase64 = Buffer.from(text, 'utf8').toString('base64');
       } else response.textBase64 = Buffer.from(text, 'utf8').toString('base64');
       cache.delete(subjectAuthorId);
@@ -1156,10 +1304,15 @@ export class DocumentRoom {
       if (Math.ceil(Buffer.byteLength(text, 'utf8') / 3) * 4 + 1024 > MAX_MESSAGE_BYTES) {
         throw new Error('History version is too large to display; it can still be restored');
       }
-      sendWithBackpressure(socket, JSON.stringify({
-        type: 'history-version', documentId: this.documentId, id,
-        textBase64: Buffer.from(text, 'utf8').toString('base64'),
-      }));
+      sendWithBackpressure(
+        socket,
+        JSON.stringify({
+          type: 'history-version',
+          documentId: this.documentId,
+          id,
+          textBase64: Buffer.from(text, 'utf8').toString('base64'),
+        }),
+      );
       return;
     }
 
@@ -1169,8 +1322,7 @@ export class DocumentRoom {
       const currentText = this.document.getText('content');
       // History skips texts over its size limit, so an unchanged head id alone does
       // not prove that no newer edit exists: the head must also match the live text.
-      if (expectedHeadId !== this.history.headId()
-        || this.history.text(expectedHeadId) !== currentText.toString()) {
+      if (expectedHeadId !== this.history.headId() || this.history.text(expectedHeadId) !== currentText.toString()) {
         throw new ProtocolLimitError('Document changed after the history view was opened');
       }
       const restored = this.history.text(id);
@@ -1192,7 +1344,9 @@ export class DocumentRoom {
         suggestion.decidedById = actor.id;
         suggestion.decidedBy = actor.displayName;
         this.registry.eventJournal?.append('suggestion-decision', actor, [suggestion.authorId], {
-          documentId: this.documentId, suggestionId: suggestion.id, decision: 'rejected',
+          documentId: this.documentId,
+          suggestionId: suggestion.id,
+          decision: 'rejected',
         });
         this.notifyTicketOwner('suggestion-rejected', actor, { suggestionId: suggestion.id });
         this.schedulePersist();
@@ -1232,8 +1386,10 @@ export class DocumentRoom {
 
   broadcastHistory() {
     this.broadcastJson({
-      type: 'history', documentId: this.documentId,
-      entries: this.history.summaries(), headId: this.history.headId(),
+      type: 'history',
+      documentId: this.documentId,
+      entries: this.history.summaries(),
+      headId: this.history.headId(),
     });
   }
 
@@ -1318,17 +1474,20 @@ export class DocumentRoom {
     this.clearScheduledPersist();
     // A queued write takes its snapshot after the preceding write completes.
     if (this.queuedPersist) return this.queuedPersist;
-    const write = this.persistPromise.catch(() => {}).then(async () => {
-      this.queuedPersist = null;
-      if (!this.destroyed) await this.persistSnapshot();
-    }).catch((error) => {
-      if (!this.destroyed && this.persistPromise === write) {
-        this.clearScheduledPersist();
-        this.persistRetryTimer = setTimeout(() => this.persistInBackground(), PERSIST_RETRY_MILLISECONDS);
-        this.persistRetryTimer.unref();
-      }
-      throw error;
-    });
+    const write = this.persistPromise
+      .catch(() => {})
+      .then(async () => {
+        this.queuedPersist = null;
+        if (!this.destroyed) await this.persistSnapshot();
+      })
+      .catch((error) => {
+        if (!this.destroyed && this.persistPromise === write) {
+          this.clearScheduledPersist();
+          this.persistRetryTimer = setTimeout(() => this.persistInBackground(), PERSIST_RETRY_MILLISECONDS);
+          this.persistRetryTimer.unref();
+        }
+        throw error;
+      });
     this.queuedPersist = write;
     this.persistPromise = write;
     return write;

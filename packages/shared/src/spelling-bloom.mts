@@ -19,9 +19,7 @@ function bitIndexes(bits: Uint8Array, word: unknown): number[] {
   if (bitCount < 8 || (bitCount & (bitCount - 1)) !== 0) throw new Error('Spelling Bloom size must be a power of two');
   const mask = bitCount - 1;
   const [first, second] = hashPair(word);
-  return Array.from({ length: HASH_COUNT }, (_, index) => (
-    (first + Math.imul(index, second)) >>> 0
-  ) & mask);
+  return Array.from({ length: HASH_COUNT }, (_, index) => ((first + Math.imul(index, second)) >>> 0) & mask);
 }
 
 export function addSpellingBloom(bits: Uint8Array, word: unknown): void {

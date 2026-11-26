@@ -89,9 +89,15 @@ export function listFileHistory(repository: string, relativePath: string, option
   const limit = Math.min(MAXIMUM_PAGE_SIZE, Math.max(1, Number(options.limit) || 50));
   const needed = offset + limit + 1;
   const output = runGit(repository, [
-    'log', revision, '--follow', '--find-renames', `--max-count=${needed}`,
+    'log',
+    revision,
+    '--follow',
+    '--find-renames',
+    `--max-count=${needed}`,
     `--format=${COMMIT_PREFIX}%H${FIELD_SEPARATOR}%h${FIELD_SEPARATOR}%an${FIELD_SEPARATOR}%aI${FIELD_SEPARATOR}%s`,
-    '--name-status', '--', trackedPath,
+    '--name-status',
+    '--',
+    trackedPath,
   ]);
   const all = parseHistory(output, trackedPath);
   return {
@@ -114,7 +120,10 @@ function validatedRevision(repository: string, revision: string, label: string):
   }
   const resolved = runGit(repository, ['rev-parse', `${value}^{commit}`]).trim();
   const ancestor = runGitSync(['merge-base', '--is-ancestor', resolved, 'HEAD'], {
-    cwd: repository, encoding: 'utf8', windowsHide: true, stdio: 'ignore',
+    cwd: repository,
+    encoding: 'utf8',
+    windowsHide: true,
+    stdio: 'ignore',
   });
   if (ancestor.status !== 0) throw new Error(`Commit (${label}) не входит в историю текущей ветки.`);
   return resolved;

@@ -31,16 +31,27 @@ export interface ReviewCardMessage {
 
 function formatDate(value: string | undefined): string {
   const locale = uiLocale();
-  if (!dateFormatters.has(locale)) dateFormatters.set(locale, new Intl.DateTimeFormat(locale, {
-    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  }));
+  if (!dateFormatters.has(locale))
+    dateFormatters.set(
+      locale,
+      new Intl.DateTimeFormat(locale, {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    );
   const parsed = Date.parse(value ?? '');
-  return Number.isFinite(parsed) ? dateFormatters.get(locale)!.format(parsed) : uiText("дата неизвестна");
+  return Number.isFinite(parsed) ? dateFormatters.get(locale)!.format(parsed) : uiText('дата неизвестна');
 }
 
-export function cardButton<T extends ReviewCardItem>(label: string,
+export function cardButton<T extends ReviewCardItem>(
+  label: string,
   action: (item: T, button: HTMLButtonElement) => void,
-  item: T, className = ''): HTMLButtonElement {
+  item: T,
+  className = '',
+): HTMLButtonElement {
   const button = document.createElement('button');
   button.textContent = label;
   button.className = className;
@@ -56,7 +67,7 @@ export function cardHeader(item: ReviewCardItem): HTMLDivElement {
   identity.append(avatarElement(item.author, item.color, item.avatarBase64));
   const authorBlock = document.createElement('div');
   const author = document.createElement('strong');
-  author.textContent = item.author || uiText("Неизвестно");
+  author.textContent = item.author || uiText('Неизвестно');
   const date = document.createElement('time');
   date.dateTime = item.createdAt || '';
   date.textContent = formatDate(item.createdAt);
@@ -66,12 +77,16 @@ export function cardHeader(item: ReviewCardItem): HTMLDivElement {
   badges.className = 'card-badges';
   const badge = document.createElement('span');
   badge.className = `card-kind ${item.kind}`;
-  badge.textContent = item.kind === 'suggestion' ? uiText("Правка") : uiText("Комментарий");
+  badge.textContent = item.kind === 'suggestion' ? uiText('Правка') : uiText('Комментарий');
   const status = document.createElement('span');
   status.className = 'card-status';
   const labels: Record<string, string> = {
-    open: uiText("открыто"), resolved: uiText("закрыто"), accepted: uiText("принято"), rejected: uiText("отклонено"),
-    stale: uiText("устарело"), orphaned: uiText("без привязки"),
+    open: uiText('открыто'),
+    resolved: uiText('закрыто'),
+    accepted: uiText('принято'),
+    rejected: uiText('отклонено'),
+    stale: uiText('устарело'),
+    orphaned: uiText('без привязки'),
   };
   status.textContent = labels[item.status] ?? item.status;
   badges.append(badge, status);
@@ -79,8 +94,11 @@ export function cardHeader(item: ReviewCardItem): HTMLDivElement {
   return head;
 }
 
-function messageElement(message: ReviewCardMessage, fallback: ReviewCardItem,
-  showToast: (text: string, error?: boolean) => void): HTMLDivElement {
+function messageElement(
+  message: ReviewCardMessage,
+  fallback: ReviewCardItem,
+  showToast: (text: string, error?: boolean) => void,
+): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'thread-message';
   row.append(avatarElement(message.author, message.color, message.avatarBase64, 'avatar-small'));
@@ -88,13 +106,14 @@ function messageElement(message: ReviewCardMessage, fallback: ReviewCardItem,
   const meta = document.createElement('div');
   meta.className = 'message-meta';
   const author = document.createElement('strong');
-  author.textContent = message.author || fallback.author || uiText("Неизвестно");
+  author.textContent = message.author || fallback.author || uiText('Неизвестно');
   const date = document.createElement('time');
   date.dateTime = message.createdAt || fallback.createdAt || '';
   date.textContent = formatDate(message.createdAt || fallback.createdAt);
   meta.append(author, date);
   if (message.mergeConflict) {
-    const mark = document.createElement('span'); mark.className = 'message-edited';
+    const mark = document.createElement('span');
+    mark.className = 'message-edited';
     mark.textContent = uiText('Перенесённая версия');
     mark.title = uiText('Версия сообщения из другой ветки, сохранённая при конфликте.');
     meta.append(mark);
@@ -106,12 +125,16 @@ function messageElement(message: ReviewCardMessage, fallback: ReviewCardItem,
   const copy = document.createElement('button');
   copy.type = 'button';
   copy.className = 'message-copy';
-  copy.textContent = uiText("Копировать");
-  copy.title = uiText("Скопировать текст сообщения");
-  copy.setAttribute('aria-label', uiText("Скопировать текст сообщения"));
+  copy.textContent = uiText('Копировать');
+  copy.title = uiText('Скопировать текст сообщения');
+  copy.setAttribute('aria-label', uiText('Скопировать текст сообщения'));
   copy.addEventListener('click', async () => {
-    try { await copyTextToClipboard(body.textContent ?? ''); showToast(uiText("Текст сообщения скопирован.")); }
-    catch (error) { showToast(error instanceof Error ? error.message : String(error), true); }
+    try {
+      await copyTextToClipboard(body.textContent ?? '');
+      showToast(uiText('Текст сообщения скопирован.'));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), true);
+    }
   });
   meta.append(copy);
   content.append(meta, body);
@@ -119,17 +142,30 @@ function messageElement(message: ReviewCardMessage, fallback: ReviewCardItem,
   return row;
 }
 
-export function renderMessages(card: HTMLElement, item: ReviewCardItem,
-  messages: ReviewCardMessage[] | undefined, showToast: (text: string, error?: boolean) => void = () => {}): void {
+export function renderMessages(
+  card: HTMLElement,
+  item: ReviewCardItem,
+  messages: ReviewCardMessage[] | undefined,
+  showToast: (text: string, error?: boolean) => void = () => {},
+): void {
   const thread = document.createElement('div');
   thread.className = 'thread';
   if (messages?.length) {
     for (const message of messages) thread.append(messageElement(message, item, showToast));
   } else if (item.kind === 'comment') {
-    thread.append(messageElement({
-      author: item.author, color: item.color, avatarBase64: item.avatarBase64,
-      createdAt: item.createdAt, bodyBase64: item.summaryBase64,
-    }, item, showToast));
+    thread.append(
+      messageElement(
+        {
+          author: item.author,
+          color: item.color,
+          avatarBase64: item.avatarBase64,
+          createdAt: item.createdAt,
+          bodyBase64: item.summaryBase64,
+        },
+        item,
+        showToast,
+      ),
+    );
   }
   if (thread.childElementCount) card.append(thread);
 }

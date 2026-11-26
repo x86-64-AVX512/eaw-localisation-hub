@@ -14,28 +14,48 @@ const anchors = { startRelative: 'AA==', endRelative: 'AQ==' };
 
 test('review discussion policy keeps canonical authors and idempotent message ids', () => {
   const target = { messages: [] };
-  const first = newDiscussionMessage(target, alice, {
-    messageId: 'message-1', body: 'Комментарий', author: 'Spoofed', color: '#000000',
-  }, createdAt);
+  const first = newDiscussionMessage(
+    target,
+    alice,
+    {
+      messageId: 'message-1',
+      body: 'Комментарий',
+      author: 'Spoofed',
+      color: '#000000',
+    },
+    createdAt,
+  );
   assert.deepEqual(first, {
-    id: 'message-1', authorId: 'alice-id', author: 'Alice', color: '#abcdef',
-    body: 'Комментарий', createdAt,
+    id: 'message-1',
+    authorId: 'alice-id',
+    author: 'Alice',
+    color: '#abcdef',
+    body: 'Комментарий',
+    createdAt,
   });
   target.messages.push(first);
   assert.equal(newDiscussionMessage(target, alice, { messageId: 'message-1', body: '' }), null);
-  assert.throws(() => newDiscussionMessage(target, alice, { messageId: 'message-2', body: '   ' }),
-    /visible text/u);
-  assert.throws(() => newDiscussionMessage(target, alice, { messageId: 'message-2', body: 'x'.repeat(2049) }),
-    /protocol limit/u);
+  assert.throws(() => newDiscussionMessage(target, alice, { messageId: 'message-2', body: '   ' }), /visible text/u);
+  assert.throws(
+    () => newDiscussionMessage(target, alice, { messageId: 'message-2', body: 'x'.repeat(2049) }),
+    /protocol limit/u,
+  );
   target.messages = Array.from({ length: 100 }, (_, index) => ({ id: String(index) }));
   assert.equal(newDiscussionMessage(target, alice, { messageId: '0' }), null);
   assert.throws(() => newDiscussionMessage(target, alice, { messageId: 'new' }), /message limit/u);
 });
 
 test('review policy creates comments and validates anchors without trusting message author', () => {
-  const thread = newCommentThread('thread', alice, {
-    ...anchors, author: 'Spoofed', color: '#000000',
-  }, createdAt);
+  const thread = newCommentThread(
+    'thread',
+    alice,
+    {
+      ...anchors,
+      author: 'Spoofed',
+      color: '#000000',
+    },
+    createdAt,
+  );
   assert.equal(thread.authorId, alice.id);
   assert.equal(thread.author, alice.displayName);
   assert.equal(thread.color, alice.color);
@@ -49,21 +69,31 @@ test('suggestion drafts validate text, trace, and author before mutation', () =>
   const traceJson = JSON.stringify([[-1, 3]]);
   const draft = { ...anchors, originalText: 'old', replacementText: 'new', traceJson };
   assert.deepEqual(suggestionDraft(draft), {
-    originalText: 'old', replacementText: 'new', traceJson,
+    originalText: 'old',
+    replacementText: 'new',
+    traceJson,
   });
-  const suggestion = newSuggestion('suggestion', alice, {
-    ...draft, author: 'Spoofed', color: '#000000',
-  }, createdAt);
+  const suggestion = newSuggestion(
+    'suggestion',
+    alice,
+    {
+      ...draft,
+      author: 'Spoofed',
+      color: '#000000',
+    },
+    createdAt,
+  );
   assert.equal(suggestion.authorId, alice.id);
   assert.equal(suggestion.color, alice.color);
   assert.equal(suggestion.status, 'open');
   assert.equal(suggestion.createdAt, createdAt);
   assert.deepEqual(editableSuggestionDraft(suggestion, alice, draft), draft);
-  assert.throws(() => editableSuggestionDraft(suggestion,
-    { id: 'bob-id', displayName: 'Alice' }, draft), /Only the suggestion author/u);
+  assert.throws(
+    () => editableSuggestionDraft(suggestion, { id: 'bob-id', displayName: 'Alice' }, draft),
+    /Only the suggestion author/u,
+  );
   assert.throws(() => suggestionDraft({ originalText: '', replacementText: '' }), /insert or delete/u);
   assert.throws(() => suggestionDraft({ ...draft, traceJson: JSON.stringify([[-1, 4]]) }), /trace/iu);
-  assert.throws(() => suggestionDraft({ ...draft, replacementText: 'x'.repeat(16 * 1024 + 1) }),
-    /protocol limit/u);
+  assert.throws(() => suggestionDraft({ ...draft, replacementText: 'x'.repeat(16 * 1024 + 1) }), /protocol limit/u);
   assert.equal(editableSuggestionDraft({ authorId: null, author: 'Alice' }, alice, draft).originalText, 'old');
 });

@@ -2,9 +2,7 @@ import { uiText } from '../../../packages/shared/src/ui-language.mts';
 import { byteToUtf16, decodeBase64, encodeBase64, utf16ToByte } from './review-utilities.ts';
 import { canEditDocument, canDecideSuggestions } from '../../../packages/shared/src/document-permissions.mts';
 import { createSuggestionHistory } from './suggestion-history.ts';
-import {
-  createSuggestionTrace, suggestionTraceOrigins,
-} from '../../../packages/shared/src/suggestion-trace.mts';
+import { createSuggestionTrace, suggestionTraceOrigins } from '../../../packages/shared/src/suggestion-trace.mts';
 import type * as Monaco from 'monaco-editor';
 import type { ReviewTextEdit, ReviewDocumentMessage } from './review-document.ts';
 import type { ReviewSuggestion } from './review-card-types.ts';
@@ -26,7 +24,10 @@ export interface SuggestionProjection {
   traceJson?: string;
 }
 
-export interface ActiveProjection extends SuggestionProjection { color: string; author: string }
+export interface ActiveProjection extends SuggestionProjection {
+  color: string;
+  author: string;
+}
 
 interface SuggestionDraftAction {
   type: 'suggestionCreate' | 'suggestionUpdate';
@@ -78,8 +79,12 @@ function identityOrigins(length: number): Int32Array {
   return Int32Array.from({ length }, (_, index) => index);
 }
 
-function replaceOrigins(origins: Int32Array, start: number, removed: number,
-  inserted: number | OriginSequence): Int32Array {
+function replaceOrigins(
+  origins: Int32Array,
+  start: number,
+  removed: number,
+  inserted: number | OriginSequence,
+): Int32Array {
   const replacement = isOriginSequence(inserted) ? inserted : Int32Array.from({ length: inserted }, () => -1);
   const next = new Int32Array(origins.length - removed + replacement.length);
   next.set(origins.slice(0, start), 0);
@@ -90,8 +95,9 @@ function replaceOrigins(origins: Int32Array, start: number, removed: number,
 
 function codePointBefore(text: string, index: number): string {
   if (index <= 0) return '';
-  const point = text.codePointAt(text.charCodeAt(index - 1) >= 0xDC00
-    && text.charCodeAt(index - 1) <= 0xDFFF ? index - 2 : index - 1);
+  const point = text.codePointAt(
+    text.charCodeAt(index - 1) >= 0xdc00 && text.charCodeAt(index - 1) <= 0xdfff ? index - 2 : index - 1,
+  );
   return point === undefined ? '' : String.fromCodePoint(point);
 }
 
@@ -105,10 +111,10 @@ function isWordPoint(value: string): boolean {
 }
 
 export function isLineBreakBoundary(text: string, start: number, end = start): boolean {
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)
-    || start < 0 || end < start || end > text.length) return false;
-  const boundary = (offset: number) => !(isWordPoint(codePointBefore(text, offset))
-    && isWordPoint(codePointAt(text, offset)));
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end > text.length)
+    return false;
+  const boundary = (offset: number) =>
+    !(isWordPoint(codePointBefore(text, offset)) && isWordPoint(codePointAt(text, offset)));
   return boundary(start) && boundary(end);
 }
 
@@ -119,14 +125,22 @@ export function singleReplacement(previous: string, next: string): Replacement |
   while (start < shortest && previous.codePointAt(start) === next.codePointAt(start)) {
     start += previous.codePointAt(start)! > 0xffff ? 2 : 1;
   }
-  let previousEnd = previous.length; let nextEnd = next.length;
+  let previousEnd = previous.length;
+  let nextEnd = next.length;
   while (previousEnd > start && nextEnd > start) {
-    const previousStart = previousEnd > 1 && /[\uDC00-\uDFFF]/u.test(previous[previousEnd - 1])
-      && /[\uD800-\uDBFF]/u.test(previous[previousEnd - 2]) ? previousEnd - 2 : previousEnd - 1;
-    const nextStart = nextEnd > 1 && /[\uDC00-\uDFFF]/u.test(next[nextEnd - 1])
-      && /[\uD800-\uDBFF]/u.test(next[nextEnd - 2]) ? nextEnd - 2 : nextEnd - 1;
+    const previousStart =
+      previousEnd > 1 &&
+      /[\uDC00-\uDFFF]/u.test(previous[previousEnd - 1]) &&
+      /[\uD800-\uDBFF]/u.test(previous[previousEnd - 2])
+        ? previousEnd - 2
+        : previousEnd - 1;
+    const nextStart =
+      nextEnd > 1 && /[\uDC00-\uDFFF]/u.test(next[nextEnd - 1]) && /[\uD800-\uDBFF]/u.test(next[nextEnd - 2])
+        ? nextEnd - 2
+        : nextEnd - 1;
     if (previous.codePointAt(previousStart) !== next.codePointAt(nextStart)) break;
-    previousEnd = previousStart; nextEnd = nextStart;
+    previousEnd = previousStart;
+    nextEnd = nextStart;
   }
   return { start, previousEnd, replacement: next.slice(start, nextEnd) };
 }
@@ -134,13 +148,16 @@ export function singleReplacement(previous: string, next: string): Replacement |
 export function replacementFromOrigins(previous: string, next: string, origins: unknown): Replacement | null {
   if (!isOriginSequence(origins) || origins.length !== next.length) return singleReplacement(previous, next);
   let start = 0;
-  while (start < next.length && start < previous.length
-    && origins[start] === start && next[start] === previous[start]) start += 1;
+  while (start < next.length && start < previous.length && origins[start] === start && next[start] === previous[start])
+    start += 1;
   let previousEnd = previous.length;
   let nextEnd = next.length;
-  while (previousEnd > start && nextEnd > start
-    && origins[nextEnd - 1] === previousEnd - 1
-    && next[nextEnd - 1] === previous[previousEnd - 1]) {
+  while (
+    previousEnd > start &&
+    nextEnd > start &&
+    origins[nextEnd - 1] === previousEnd - 1 &&
+    next[nextEnd - 1] === previous[previousEnd - 1]
+  ) {
     previousEnd -= 1;
     nextEnd -= 1;
   }
@@ -148,8 +165,13 @@ export function replacementFromOrigins(previous: string, next: string, origins: 
   return { start, previousEnd, replacement: next.slice(start, nextEnd) };
 }
 
-export function suggestionAction(draftBase: string, current: string, suggestionId: string,
-  updating = false, origins: OriginSequence | null = null): SuggestionDraftAction | null {
+export function suggestionAction(
+  draftBase: string,
+  current: string,
+  suggestionId: string,
+  updating = false,
+  origins: OriginSequence | null = null,
+): SuggestionDraftAction | null {
   const hasOrigins = isOriginSequence(origins) && origins.length === current.length;
   const replacement = hasOrigins
     ? replacementFromOrigins(draftBase, current, origins)
@@ -173,8 +195,11 @@ export function suggestionAction(draftBase: string, current: string, suggestionI
   return action;
 }
 
-export function suggestionProjection(baseText: string, projectedText: string,
-  origins: OriginSequence | null = null): SuggestionProjection | null {
+export function suggestionProjection(
+  baseText: string,
+  projectedText: string,
+  origins: OriginSequence | null = null,
+): SuggestionProjection | null {
   const hasOrigins = isOriginSequence(origins) && origins.length === projectedText.length;
   const replacement = hasOrigins
     ? replacementFromOrigins(baseText, projectedText, origins)
@@ -186,7 +211,8 @@ export function suggestionProjection(baseText: string, projectedText: string,
     previousEnd: replacement.previousEnd,
     replacementLength: replacement.replacement.length,
   };
-  if (hasOrigins) projection.traceJson = createSuggestionTrace(
+  if (hasOrigins)
+    projection.traceJson = createSuggestionTrace(
       baseText.slice(replacement.start, replacement.previousEnd),
       replacement.replacement,
       origins.slice(replacement.start, replacement.start + replacement.replacement.length),
@@ -195,8 +221,11 @@ export function suggestionProjection(baseText: string, projectedText: string,
   return projection;
 }
 
-export function batchSuggestionActions(baseText: string, changes: readonly ReviewTextEdit[] | null | undefined,
-  idFactory = () => crypto.randomUUID()): SuggestionDraftAction[] {
+export function batchSuggestionActions(
+  baseText: string,
+  changes: readonly ReviewTextEdit[] | null | undefined,
+  idFactory = () => crypto.randomUUID(),
+): SuggestionDraftAction[] {
   if (!Array.isArray(changes) || changes.length < 2) return [];
   const ordered = [...changes].sort((left, right) => left.rangeOffset - right.rangeOffset);
   let previousEnd = -1;
@@ -204,26 +233,39 @@ export function batchSuggestionActions(baseText: string, changes: readonly Revie
   for (const change of ordered) {
     const start = Number(change.rangeOffset);
     const end = start + Number(change.rangeLength);
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < previousEnd
-      || start < 0 || end > baseText.length) return [];
+    if (
+      !Number.isSafeInteger(start) ||
+      !Number.isSafeInteger(end) ||
+      start < previousEnd ||
+      start < 0 ||
+      end > baseText.length
+    )
+      return [];
     previousEnd = end;
     if (baseText.slice(start, end) === String(change.text)) continue;
     const replacement = String(change.text);
     result.push({
-      type: 'suggestionCreate', suggestionId: idFactory(),
-      startByte: utf16ToByte(baseText, start), endByte: utf16ToByte(baseText, end),
+      type: 'suggestionCreate',
+      suggestionId: idFactory(),
+      startByte: utf16ToByte(baseText, start),
+      endByte: utf16ToByte(baseText, end),
       replacementBase64: encodeBase64(replacement),
       traceJson: createSuggestionTrace(
-        baseText.slice(start, end), replacement,
-        Array.from({ length: replacement.length }, () => -1), start,
+        baseText.slice(start, end),
+        replacement,
+        Array.from({ length: replacement.length }, () => -1),
+        start,
       ),
     });
   }
   return result;
 }
 
-export function baseToProjectedOffset(projection: SuggestionProjection | null, offset: number,
-  affinity: 'before' | 'after' = 'before'): number {
+export function baseToProjectedOffset(
+  projection: SuggestionProjection | null,
+  offset: number,
+  affinity: 'before' | 'after' = 'before',
+): number {
   if (!projection) return offset;
   const { start, previousEnd, replacementLength } = projection;
   if (offset < start) return offset;
@@ -259,18 +301,22 @@ function projectedEditingBounds(projection: SuggestionProjection): { start: numb
 }
 
 export function createEditingModeController({
-  state, editor, send, showToast, onDraftStateChange = () => {},
+  state,
+  editor,
+  send,
+  showToast,
+  onDraftStateChange = () => {},
 }: EditingOptions) {
   const editButton = requiredButton('#mode-edit');
   const suggestButton = requiredButton('#mode-suggest');
   function requireModel(): Monaco.editor.ITextModel {
     const model = editor.getModel();
-    if (!model) throw new Error(uiText("Редактор не содержит документа."));
+    if (!model) throw new Error(uiText('Редактор не содержит документа.'));
     return model;
   }
   function requirePosition(): Monaco.Position {
     const position = editor.getPosition();
-    if (!position) throw new Error(uiText("В редакторе нет активного курсора."));
+    if (!position) throw new Error(uiText('В редакторе нет активного курсора.'));
     return position;
   }
   let mode: 'edit' | 'suggest' = 'edit';
@@ -293,8 +339,10 @@ export function createEditingModeController({
     originVersions.delete(version);
     originVersions.set(version, draftOrigins);
     originHistoryBytes += draftOrigins.byteLength;
-    while (originVersions.size > 1
-      && (originVersions.size > ORIGIN_HISTORY_VERSIONS || originHistoryBytes > ORIGIN_HISTORY_BYTES)) {
+    while (
+      originVersions.size > 1 &&
+      (originVersions.size > ORIGIN_HISTORY_VERSIONS || originHistoryBytes > ORIGIN_HISTORY_BYTES)
+    ) {
       const oldest = originVersions.keys().next().value;
       if (oldest === undefined) break;
       const removed = originVersions.get(oldest);
@@ -326,11 +374,13 @@ export function createEditingModeController({
 
   function updateProjection() {
     const projection = suggestionProjection(draftBase, editor.getValue(), draftOrigins);
-    state.suggestionProjection = projection ? {
-      ...projection,
-      color: activeSuggestion?.color ?? state.color,
-      author: state.user,
-    } : null;
+    state.suggestionProjection = projection
+      ? {
+          ...projection,
+          color: activeSuggestion?.color ?? state.color,
+          author: state.user,
+        }
+      : null;
   }
 
   function restoreDraftBase(projectedCaretIndex: number): void {
@@ -376,12 +426,16 @@ export function createEditingModeController({
     const action = activeSuggestion;
     if (!action) return false;
     restoreDraftBase(projectedCaretIndex);
-    if (action.dirty !== false) suggestionHistory.record({
-      type: 'suggestionCreate', path: action.path,
-      startByte: action.startByte, endByte: action.endByte,
-      suggestionId: action.suggestionId, replacementBase64: action.replacementBase64,
-      traceJson: action.traceJson ?? '',
-    });
+    if (action.dirty !== false)
+      suggestionHistory.record({
+        type: 'suggestionCreate',
+        path: action.path,
+        startByte: action.startByte,
+        endByte: action.endByte,
+        suggestionId: action.suggestionId,
+        replacementBase64: action.replacementBase64,
+        traceJson: action.traceJson ?? '',
+      });
     activeSuggestion = null;
     state.editingSuggestionId = '';
     localRedoAvailable = false;
@@ -405,18 +459,18 @@ export function createEditingModeController({
     draftBase = editor.getValue();
     resetDraftOrigins();
     renderMode();
-    showToast(mode === 'suggest'
-      ? uiText("Режим правок: изменения создают предложения и не меняют документ напрямую.")
-      : uiText("Обычный режим редактирования."));
+    showToast(
+      mode === 'suggest'
+        ? uiText('Режим правок: изменения создают предложения и не меняют документ напрямую.')
+        : uiText('Обычный режим редактирования.'),
+    );
     editor.focus();
   }
 
   function editSuggestion(item: ReviewSuggestion): boolean {
     if (!canEditDocument(state, state.relativePath ?? '')) return false;
     if (!item || item.status !== 'open') return false;
-    const ownSuggestion = item.authorId
-      ? item.authorId === state.userId
-      : item.author === state.user;
+    const ownSuggestion = item.authorId ? item.authorId === state.userId : item.author === state.user;
     if (!ownSuggestion) return false;
     if (mode === 'suggest' && activeSuggestion?.suggestionId === item.id) {
       editor.focus();
@@ -433,46 +487,59 @@ export function createEditingModeController({
       start = byteToUtf16(baseText, Number(item.startByte));
       end = byteToUtf16(baseText, Number(item.endByte));
     } catch {
-      showToast(uiText("Правка устарела: её позиция больше не совпадает с документом."), true);
+      showToast(uiText('Правка устарела: её позиция больше не совпадает с документом.'), true);
       return false;
     }
     const original = decodeBase64(item.originalBase64);
     if (baseText.slice(start, end) !== original) {
-      showToast(uiText("Правка устарела: исходный текст уже изменился."), true);
+      showToast(uiText('Правка устарела: исходный текст уже изменился.'), true);
       return false;
     }
 
     draftBase = baseText;
     const replacement = decodeBase64(item.replacementBase64);
-    const replacementOrigins = suggestionTraceOrigins(
-      original, replacement, item.traceJson ?? '', start,
-    );
+    const replacementOrigins = suggestionTraceOrigins(original, replacement, item.traceJson ?? '', start);
     state.applyingRemote = true;
-    model.pushEditOperations([], [{
-      range: {
-        startLineNumber: model.getPositionAt(start).lineNumber,
-        startColumn: model.getPositionAt(start).column,
-        endLineNumber: model.getPositionAt(end).lineNumber,
-        endColumn: model.getPositionAt(end).column,
-      },
-      text: replacement,
-    }], () => null);
+    model.pushEditOperations(
+      [],
+      [
+        {
+          range: {
+            startLineNumber: model.getPositionAt(start).lineNumber,
+            startColumn: model.getPositionAt(start).column,
+            endLineNumber: model.getPositionAt(end).lineNumber,
+            endColumn: model.getPositionAt(end).column,
+          },
+          text: replacement,
+        },
+      ],
+      () => null,
+    );
     activeSuggestion = {
-      type: 'suggestionUpdate', path: state.path,
-      startByte: item.startByte, endByte: item.endByte,
-      suggestionId: item.id, replacementBase64: item.replacementBase64,
-      color: item.color ?? state.color, dirty: false, projectedText: model.getValue(),
+      type: 'suggestionUpdate',
+      path: state.path,
+      startByte: item.startByte,
+      endByte: item.endByte,
+      suggestionId: item.id,
+      replacementBase64: item.replacementBase64,
+      color: item.color ?? state.color,
+      dirty: false,
+      projectedText: model.getValue(),
       traceJson: item.traceJson ?? '',
     };
-    draftOrigins = replaceOrigins(identityOrigins(baseText.length), start, end - start,
-      Int32Array.from(replacementOrigins));
+    draftOrigins = replaceOrigins(
+      identityOrigins(baseText.length),
+      start,
+      end - start,
+      Int32Array.from(replacementOrigins),
+    );
     rememberDraftOrigins();
     state.editingSuggestionId = item.id;
     updateProjection();
     editor.setPosition(model.getPositionAt(start + replacement.length));
     state.applyingRemote = false;
     onDraftStateChange();
-    showToast(uiText("Правка открыта для редактирования."));
+    showToast(uiText('Правка открыта для редактирования.'));
     editor.focus();
     return true;
   }
@@ -490,8 +557,8 @@ export function createEditingModeController({
     } else {
       const changes = Array.isArray(event?.changes) ? [...event.changes] : [];
       const version = requireModel().getAlternativeVersionId();
-      const historicalOrigins = (event?.isUndoing || event?.isRedoing)
-        && Number.isSafeInteger(version) ? originVersions.get(version) : null;
+      const historicalOrigins =
+        (event?.isUndoing || event?.isRedoing) && Number.isSafeInteger(version) ? originVersions.get(version) : null;
       if (historicalOrigins?.length === editor.getValue().length) {
         draftOrigins = Int32Array.from(historicalOrigins);
       } else if ((event?.isUndoing || event?.isRedoing) && editor.getValue() === draftBase) {
@@ -501,9 +568,15 @@ export function createEditingModeController({
           const start = Number(change.rangeOffset);
           const removed = Number(change.rangeLength);
           const inserted = String(change.text ?? '');
-          if (!Number.isSafeInteger(start) || !Number.isSafeInteger(removed)
-            || start < 0 || removed < 0 || start + removed > draftOrigins.length) {
-            draftOrigins = new Int32Array(editor.getValue().length); draftOrigins.fill(-1);
+          if (
+            !Number.isSafeInteger(start) ||
+            !Number.isSafeInteger(removed) ||
+            start < 0 ||
+            removed < 0 ||
+            start + removed > draftOrigins.length
+          ) {
+            draftOrigins = new Int32Array(editor.getValue().length);
+            draftOrigins.fill(-1);
             break;
           }
           draftOrigins = replaceOrigins(draftOrigins, start, removed, inserted.length);
@@ -525,7 +598,7 @@ export function createEditingModeController({
         state.applyingRemote = false;
         localRedoAvailable = false;
         onDraftStateChange();
-        showToast(uiText("Создано правок: {0}.", actions.length));
+        showToast(uiText('Создано правок: {0}.', actions.length));
         return;
       }
       if (editor.getValue() !== draftBase) localRedoAvailable = false;
@@ -551,7 +624,8 @@ export function createEditingModeController({
 
   return {
     isSuggesting: () => mode === 'suggest',
-    hasDraft: () => Boolean(snapshotTimer || activeSuggestion || (mode === 'suggest' && editor.getValue() !== draftBase)),
+    hasDraft: () =>
+      Boolean(snapshotTimer || activeSuggestion || (mode === 'suggest' && editor.getValue() !== draftBase)),
     editSuggestion,
     flushSuggestion,
     finishSuggestionAt(position: Monaco.IPosition): boolean {
@@ -569,7 +643,7 @@ export function createEditingModeController({
       const start = model.getOffsetAt(selection.getStartPosition());
       const end = model.getOffsetAt(selection.getEndPosition());
       if (!isLineBreakBoundary(model.getValue(), start, end)) {
-        showToast(uiText("Перенос строки разрешён только перед словом или после него."), true);
+        showToast(uiText('Перенос строки разрешён только перед словом или после него.'), true);
         return false;
       }
       if (mode === 'suggest' && activeSuggestion && state.suggestionProjection) {
@@ -599,7 +673,9 @@ export function createEditingModeController({
       if (index >= 0) acceptedUndo.splice(index, 1);
       acceptedRedo.push(item.id);
     },
-    beforeRemoteChange() { if (mode === 'suggest') flushSuggestion(); },
+    beforeRemoteChange() {
+      if (mode === 'suggest') flushSuggestion();
+    },
     afterRemoteChange() {
       if (mode === 'suggest') {
         activeSuggestion = null;
@@ -617,7 +693,7 @@ export function createEditingModeController({
         if (!id) return;
         acceptedRedo.push(id);
         send({ type: 'suggestionRevert', path: state.path, id });
-        showToast(uiText("Принятие правки отменено."));
+        showToast(uiText('Принятие правки отменено.'));
         return;
       }
       if (mode !== 'suggest') {
@@ -630,7 +706,7 @@ export function createEditingModeController({
         return;
       }
       if (suggestionHistory.undo(state.path)) {
-        showToast(uiText("Последняя предложенная правка отменена."));
+        showToast(uiText('Последняя предложенная правка отменена.'));
       }
     },
     redo() {
@@ -640,7 +716,7 @@ export function createEditingModeController({
         if (!id) return;
         acceptedUndo.push(id);
         send({ type: 'suggestionAccept', path: state.path, id });
-        showToast(uiText("Правка принята повторно."));
+        showToast(uiText('Правка принята повторно.'));
         return;
       }
       if (mode !== 'suggest') {
@@ -657,7 +733,7 @@ export function createEditingModeController({
         localRedoAvailable = false;
       }
       if (suggestionHistory.redo()) {
-        showToast(uiText("Предложенная правка восстановлена."));
+        showToast(uiText('Предложенная правка восстановлена.'));
       }
     },
     dispose() {

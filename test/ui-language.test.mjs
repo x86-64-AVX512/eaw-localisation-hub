@@ -8,7 +8,8 @@ import { readUiLanguage, saveUiLanguage } from '../apps/agent/src/ui-language.mj
 
 test('UI defaults follow Windows UI language, not region, with explicit overrides', () => {
   for (const culture of ['ru', 'ru-RU', 'RU-ru']) assert.equal(resolveUiLanguage('auto', culture), 'ru');
-  for (const culture of ['en-US', 'uk-UA', 'de-DE', '', undefined]) assert.equal(resolveUiLanguage('auto', culture), 'en');
+  for (const culture of ['en-US', 'uk-UA', 'de-DE', '', undefined])
+    assert.equal(resolveUiLanguage('auto', culture), 'en');
   assert.equal(resolveUiLanguage('en', 'ru-RU'), 'en');
   assert.equal(resolveUiLanguage('ru', 'en-US'), 'ru');
 });
@@ -24,7 +25,9 @@ test('translations never interpret parameters as messages, markup, or other plac
     setUiLanguage('ru');
     assert.equal(uiText('Закрыть'), 'Закрыть');
     assert.equal(uiText('Роли: {0}', value), `Роли: ${value}`);
-  } finally { setUiLanguage('ru'); }
+  } finally {
+    setUiLanguage('ru');
+  }
 });
 
 test('English catalog preserves every placeholder and does not contain broken recovery quotes', async () => {
@@ -35,7 +38,10 @@ test('English catalog preserves every placeholder and does not contain broken re
     assert.deepEqual(tokens(translated), tokens(source), source);
   }
   assert.ok(Object.keys(catalog).length > 800);
-  assert.equal(Object.keys(catalog).some((key) => key.startsWith('"\nEaW Localisation Hub')), false);
+  assert.equal(
+    Object.keys(catalog).some((key) => key.startsWith('"\nEaW Localisation Hub')),
+    false,
+  );
 });
 
 test('both UI languages use en dashes and guillemets without altering quoted parameters or YAML examples', async () => {
@@ -51,11 +57,15 @@ test('both UI languages use en dashes and guillemets without altering quoted par
       const prefix = language === 'en' ? 'ticket' : 'тикет';
       assert.equal(uiText('тикет «{0}»', opaque), `${prefix} «${opaque}»`);
       assert.equal(uiMessage(`тикет «${opaque}»`), `${prefix} «${opaque}»`);
-      assert.equal(uiText('EaW Hub – обновление до {0}', '0.8.8F8'),
-        language === 'en' ? 'EaW Hub – update to 0.8.8F8' : 'EaW Hub – обновление до 0.8.8F8');
+      assert.equal(
+        uiText('EaW Hub – обновление до {0}', '0.8.8F8'),
+        language === 'en' ? 'EaW Hub – update to 0.8.8F8' : 'EaW Hub – обновление до 0.8.8F8',
+      );
       assert.equal(uiText('key:0 "текст"'), language === 'en' ? 'key:0 "text"' : 'key:0 "текст"');
     }
-  } finally { setUiLanguage('ru'); }
+  } finally {
+    setUiLanguage('ru');
+  }
 });
 
 test('saved manual language preference persists and auto uses current Windows UI language', async () => {
@@ -74,5 +84,7 @@ test('saved manual language preference persists and auto uses current Windows UI
     assert.equal((await readUiLanguage(directory, english)).preference, 'auto');
     await fs.writeFile(path.join(directory, 'ui-language.json'), '{invalid');
     assert.equal((await readUiLanguage(directory, english)).language, 'en');
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });

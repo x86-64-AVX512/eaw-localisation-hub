@@ -5,7 +5,8 @@ export function reportReadOnlyOpen(token: string, launch: string | null, result:
   if (!launch) return;
   const query = new URLSearchParams({ launch, result });
   void fetch(`/api/review-open-result?${query}`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
   }).catch(() => {});
 }
 
@@ -26,8 +27,11 @@ export function configureReadOnlyReview({ data, editor, requestedLine, setStatus
   requiredElement<HTMLElement>('#collaboration-lane').hidden = true;
   requiredElement<HTMLElement>('#review-lane').hidden = true;
   requiredElement<HTMLElement>('.ticket-switcher').hidden = true;
-  for (const control of document.querySelectorAll<HTMLElement>('.actions, .actions > button, .mode-switch, .undo-group, .pane-switches')) control.hidden = true;
-  requiredElement<HTMLElement>('#document-name').textContent = uiText("{0} · английский оригинал", data.relativePath);
-  setStatus(uiText("Только чтение"));
+  for (const control of document.querySelectorAll<HTMLElement>(
+    '.actions, .actions > button, .mode-switch, .undo-group, .pane-switches',
+  ))
+    control.hidden = true;
+  requiredElement<HTMLElement>('#document-name').textContent = uiText('{0} · английский оригинал', data.relativePath);
+  setStatus(uiText('Только чтение'));
   if (requestedLine > 0) editor.revealLineInCenter(requestedLine);
 }

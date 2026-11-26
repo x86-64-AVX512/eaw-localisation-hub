@@ -13,17 +13,22 @@ function fixture(timeout) {
       return child;
     },
   });
-  const opening = launcher.open('EaWReview.exe', 'http://127.0.0.1:12345',
-    new URLSearchParams({ path: 'fixture.yml', readOnly: 'english' }));
+  const opening = launcher.open(
+    'EaWReview.exe',
+    'http://127.0.0.1:12345',
+    new URLSearchParams({ path: 'fixture.yml', readOnly: 'english' }),
+  );
   return { child, id, launcher, opening };
 }
 
 test('delegating the English original waits for the window to load the file', async () => {
   const { child, id, launcher, opening } = fixture();
   let done = false;
-  void opening.then(() => { done = true; });
+  void opening.then(() => {
+    done = true;
+  });
   child.emit('exit', 0);
-  await new Promise(resolve => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(done, false);
   assert.equal(launcher.report('unrelated launch', true), false);
   assert.equal(launcher.report(id, true), true);

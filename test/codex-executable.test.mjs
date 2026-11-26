@@ -18,7 +18,7 @@ async function createNpmPrefix(t) {
   return npmPrefix;
 }
 
-test('Windows Codex discovery finds native binaries in supported npm layouts', async t => {
+test('Windows Codex discovery finds native binaries in supported npm layouts', async (t) => {
   for (const [architecture, target] of [
     ['x64', 'x86_64-pc-windows-msvc'],
     ['arm64', 'aarch64-pc-windows-msvc'],
@@ -32,11 +32,17 @@ test('Windows Codex discovery finds native binaries in supported npm layouts', a
 
     for (const [layout, packageParts] of layouts) {
       for (const executableDirectory of ['bin', 'codex']) {
-        await t.test(`${architecture}, ${layout}, ${executableDirectory}/codex.exe`, async t => {
+        await t.test(`${architecture}, ${layout}, ${executableDirectory}/codex.exe`, async (t) => {
           const npmPrefix = await createNpmPrefix(t);
           const executable = path.join(
-            npmPrefix, 'node_modules', '@openai', ...packageParts, 'vendor', target,
-            executableDirectory, 'codex.exe',
+            npmPrefix,
+            'node_modules',
+            '@openai',
+            ...packageParts,
+            'vendor',
+            target,
+            executableDirectory,
+            'codex.exe',
           );
           await fs.mkdir(path.dirname(executable), { recursive: true });
           await fs.writeFile(executable, '');
@@ -48,11 +54,8 @@ test('Windows Codex discovery finds native binaries in supported npm layouts', a
   }
 });
 
-test('Windows Codex discovery reports a missing binary when only the npm shim exists', async t => {
+test('Windows Codex discovery reports a missing binary when only the npm shim exists', async (t) => {
   const npmPrefix = await createNpmPrefix(t);
 
-  assert.throws(
-    () => codexExecutable({ Path: npmPrefix }, 'win32', 'x64'),
-    { message: /^Codex CLI не найден\./u },
-  );
+  assert.throws(() => codexExecutable({ Path: npmPrefix }, 'win32', 'x64'), { message: /^Codex CLI не найден\./u });
 });

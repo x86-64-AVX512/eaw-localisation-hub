@@ -4,8 +4,14 @@ import { AuthStore } from '../apps/server/src/auth.mjs';
 
 function user(id, roles, enabled = true) {
   return {
-    id, displayName: id, roles, enabled, passwordVerifier: {}, temporaryPassword: false,
-    recoveryStatus: 'setup_required', avatarBase64: '',
+    id,
+    displayName: id,
+    roles,
+    enabled,
+    passwordVerifier: {},
+    temporaryPassword: false,
+    recoveryStatus: 'setup_required',
+    avatarBase64: '',
   };
 }
 
@@ -14,7 +20,12 @@ test('accounts can be disabled, re-enabled, and deleted as separate operations',
   const admin = user('admin', ['admin']);
   const translator = user('translator', ['translator']);
   store.state.users.push(admin, translator);
-  store.state.sessions.push({ id: 'session', userId: translator.id, tokenHash: 'x', expiresAt: '2999-01-01T00:00:00.000Z' });
+  store.state.sessions.push({
+    id: 'session',
+    userId: translator.id,
+    tokenHash: 'x',
+    expiresAt: '2999-01-01T00:00:00.000Z',
+  });
 
   const disabled = await store.setUserEnabled(admin, translator.id, false);
   assert.equal(disabled.enabled, false);
@@ -22,7 +33,10 @@ test('accounts can be disabled, re-enabled, and deleted as separate operations',
   assert.equal(store.state.sessions.length, 0);
   assert.equal((await store.setUserEnabled(admin, translator.id, true)).enabled, true);
   await store.deleteUser(admin, translator.id);
-  assert.equal(store.state.users.some(({ id }) => id === translator.id), false);
+  assert.equal(
+    store.state.users.some(({ id }) => id === translator.id),
+    false,
+  );
 });
 
 test('senior translators can manage peers and senior invitations but not administrators or themselves', async () => {
@@ -40,7 +54,9 @@ test('senior translators can manage peers and senior invitations but not adminis
   await assert.rejects(store.createInvite(senior, { roles: ['admin'] }), { code: 'administrator_role_forbidden' });
 
   const created = await store.createInvite(senior, {
-    roles: ['senior translator', 'translator'], maxUses: 3, expiresInHours: 1,
+    roles: ['senior translator', 'translator'],
+    maxUses: 3,
+    expiresInHours: 1,
   });
   assert.deepEqual(created.invite.roles, ['senior translator', 'translator']);
   assert.equal(created.invite.remainingUses, 3);
@@ -61,7 +77,10 @@ test('senior translators can issue and manage mod-contributor invitations, inclu
   for (const roles of [['mod-contributor'], ['mod-contributor', 'translator']]) {
     const { invite } = await store.createInvite(senior, { roles, maxUses: 2, expiresInHours: 72 });
     assert.deepEqual([...invite.roles].sort(), [...roles].sort());
-    assert.equal(store.listInvites(senior).some((item) => item.id === invite.id), true);
+    assert.equal(
+      store.listInvites(senior).some((item) => item.id === invite.id),
+      true,
+    );
     assert.equal((await store.revokeInvite(senior, invite.id)).status, 'revoked');
   }
   await assert.rejects(store.createInvite(senior, { roles: ['mod-contributor', 'admin'] }), {

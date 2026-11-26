@@ -23,9 +23,10 @@ function buildPayload() {
 }
 
 export function russianDictionaryPayload() {
-  if (!payloadPromise) payloadPromise = buildPayload().catch((error) => {
-    payloadPromise = null;
-    throw error;
-  });
+  if (!payloadPromise)
+    payloadPromise = buildPayload().catch((error) => {
+      payloadPromise = null;
+      throw error;
+    });
   return payloadPromise;
 }

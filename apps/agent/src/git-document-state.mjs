@@ -18,8 +18,7 @@ export function appendGitHead(binding, url) {
 
 export function applySyncedGit(binding, message) {
   binding.gitState = message.git ?? null;
-  binding.gitWritable = !binding.gitState
-    || ['current', 'branch-outdated'].includes(binding.gitState.status);
+  binding.gitWritable = !binding.gitState || ['current', 'branch-outdated'].includes(binding.gitState.status);
   return binding.gitWritable;
 }
 
@@ -53,19 +52,26 @@ export function applySyncedMessage(binding, message) {
   seedAttachedDocument(binding);
   if (binding.gitWritable) {
     const update = documentUpdateForServer(binding.document, binding.serverStateVector, binding.localUpdatePending);
-    if (update) { binding.socket.send(update); binding.pendingUpdateSent = true; }
+    if (update) {
+      binding.socket.send(update);
+      binding.pendingUpdateSent = true;
+    }
   }
   binding.requestPersonalDocument();
   binding.localPresences.replay();
   if (binding.gitWritable) binding.initialiseAttachedClients();
   binding.scheduleRefresh();
   binding.emitDocumentStatus(documentStatus(binding.gitState));
-  preserveChangedFile(binding, binding.gitState).then((savedPath) => {
-    if (!savedPath) return;
-    for (const client of binding.clients) client.send({
-      type: 'notice', message: `Сохранена копия локальных изменений: ${savedPath}`,
-    });
-  }).catch(() => {});
+  preserveChangedFile(binding, binding.gitState)
+    .then((savedPath) => {
+      if (!savedPath) return;
+      for (const client of binding.clients)
+        client.send({
+          type: 'notice',
+          message: `Сохранена копия локальных изменений: ${savedPath}`,
+        });
+    })
+    .catch(() => {});
 }
 
 export function applyGitStatus(binding, message) {
@@ -75,13 +81,16 @@ export function applyGitStatus(binding, message) {
   if (binding.gitWritable) binding.initialiseAttachedClients();
   binding.emitDocumentStatus(documentStatus(binding.gitState));
   emitCanonicalConflicts(binding, message);
-  preserveChangedFile(binding, message).then((savedPath) => {
-    if (!savedPath) return;
-    for (const client of binding.clients) client.send({
-      type: 'notice',
-      message: `Перед блокировкой сохранена копия локальных изменений: ${savedPath}`,
-    });
-  }).catch(() => {});
+  preserveChangedFile(binding, message)
+    .then((savedPath) => {
+      if (!savedPath) return;
+      for (const client of binding.clients)
+        client.send({
+          type: 'notice',
+          message: `Перед блокировкой сохранена копия локальных изменений: ${savedPath}`,
+        });
+    })
+    .catch(() => {});
 }
 
 function emitCanonicalConflicts(binding, message) {
@@ -90,15 +99,19 @@ function emitCanonicalConflicts(binding, message) {
       if (state.binding !== binding) continue;
       client.send({ type: 'externalConflictReset', path: absolutePath, source: 'canonical' });
       if (message?.status !== 'conflict') continue;
-      for (const conflict of message.conflicts ?? []) client.send({
-        type: 'externalConflict', path: absolutePath,
-        source: 'canonical',
-        conflictId: conflict.conflictId,
-        key: conflict.key, label: conflict.label, detail: conflict.detail,
-        baseLine: conflict.baseLine ?? '',
-        collaborativeLine: conflict.collaborativeLine ?? '',
-        externalLine: conflict.externalLine ?? '',
-      });
+      for (const conflict of message.conflicts ?? [])
+        client.send({
+          type: 'externalConflict',
+          path: absolutePath,
+          source: 'canonical',
+          conflictId: conflict.conflictId,
+          key: conflict.key,
+          label: conflict.label,
+          detail: conflict.detail,
+          baseLine: conflict.baseLine ?? '',
+          collaborativeLine: conflict.collaborativeLine ?? '',
+          externalLine: conflict.externalLine ?? '',
+        });
     }
   }
 }
@@ -117,9 +130,13 @@ export function reconnectForGitHead(binding) {
 export function resolveCanonicalConflict(binding, message) {
   if (binding.gitState?.status !== 'conflict') return false;
   if (message.source && message.source !== 'canonical') return false;
-  binding.socket?.send(JSON.stringify({
-    type: 'git-conflict-resolve', key: String(message.key ?? ''), choice: String(message.choice ?? ''),
-    conflictId: String(message.conflictId ?? ''),
-  }));
+  binding.socket?.send(
+    JSON.stringify({
+      type: 'git-conflict-resolve',
+      key: String(message.key ?? ''),
+      choice: String(message.choice ?? ''),
+      conflictId: String(message.conflictId ?? ''),
+    }),
+  );
   return true;
 }

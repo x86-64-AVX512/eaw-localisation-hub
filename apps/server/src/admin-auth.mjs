@@ -1,7 +1,5 @@
 import crypto from 'node:crypto';
-import {
-  AuthError, displayNameKey, hashSecret, publicUser,
-} from './auth-model.mjs';
+import { AuthError, displayNameKey, hashSecret, publicUser } from './auth-model.mjs';
 
 const MAX_TRANSIENT_FAILED_LOGIN_KEYS = 1000;
 
@@ -18,12 +16,12 @@ export async function verifyAdminPassword(store, actor, password, source = '') {
   const valid = await store.verifyPassword(password, user?.passwordVerifier);
   if (!user || !valid) {
     const failures = Math.min(8, (delay?.failures ?? 0) + 1);
-    if (!store.failedLogins.has(transientKey)
-      && store.failedLogins.size >= MAX_TRANSIENT_FAILED_LOGIN_KEYS) {
+    if (!store.failedLogins.has(transientKey) && store.failedLogins.size >= MAX_TRANSIENT_FAILED_LOGIN_KEYS) {
       store.failedLogins.delete(store.failedLogins.keys().next().value);
     }
     store.failedLogins.set(transientKey, {
-      failures, until: Date.now() + Math.min(5000, 250 * 2 ** failures),
+      failures,
+      until: Date.now() + Math.min(5000, 250 * 2 ** failures),
     });
     throw new AuthError('Invalid display name or password', 401, 'invalid_credentials');
   }
@@ -37,7 +35,9 @@ export async function issueBackupToken(store, actor) {
   const token = `eaw_backup_${crypto.randomBytes(32).toString('base64url')}`;
   store.state.backupTokens = store.state.backupTokens.filter(({ userId }) => userId !== actor.id);
   store.state.backupTokens.push({
-    id: crypto.randomUUID(), tokenHash: hashSecret(token), userId: actor.id,
+    id: crypto.randomUUID(),
+    tokenHash: hashSecret(token),
+    userId: actor.id,
   });
   await store.persist();
   return { token };

@@ -3,10 +3,7 @@ import assert from 'node:assert/strict';
 import { serverHttpUrl } from '../apps/agent/src/server-http-url.mts';
 
 test('Agent keeps ticket query parameters separate from the request pathname', () => {
-  const endpoint = serverHttpUrl(
-    'wss://eawhub.mooo.com:10443',
-    '/api/tickets?archived=1',
-  );
+  const endpoint = serverHttpUrl('wss://eawhub.mooo.com:10443', '/api/tickets?archived=1');
   assert.equal(endpoint.href, 'https://eawhub.mooo.com:10443/api/tickets?archived=1');
   assert.equal(endpoint.pathname, '/api/tickets');
   assert.equal(endpoint.search, '?archived=1');

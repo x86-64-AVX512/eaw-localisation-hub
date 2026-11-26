@@ -16,8 +16,10 @@ export function cursor(binding, client, absolutePath, message) {
   let anchor;
   try {
     caret = utf8ByteOffsetToUtf16Index(state.mirror, pendingCursor.positionByte);
-    anchor = pendingCursor.anchorByte === pendingCursor.positionByte ? caret
-      : utf8ByteOffsetToUtf16Index(state.mirror, pendingCursor.anchorByte);
+    anchor =
+      pendingCursor.anchorByte === pendingCursor.positionByte
+        ? caret
+        : utf8ByteOffsetToUtf16Index(state.mirror, pendingCursor.anchorByte);
   } catch (error) {
     if (error instanceof RangeError) return false;
     throw error;

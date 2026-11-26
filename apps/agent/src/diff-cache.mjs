@@ -39,12 +39,18 @@ export class DiffCache {
     const target = this.target(namespace, key);
     try {
       const compressed = await fs.readFile(target);
-      const envelope = JSON.parse((await decompress(compressed, {
-        maxOutputLength: this.maximumEntryBytes,
-      })).toString('utf8'));
-      if (envelope.schema !== CACHE_SCHEMA
-          || envelope.namespace !== String(namespace)
-          || envelope.key !== String(key)) {
+      const envelope = JSON.parse(
+        (
+          await decompress(compressed, {
+            maxOutputLength: this.maximumEntryBytes,
+          })
+        ).toString('utf8'),
+      );
+      if (
+        envelope.schema !== CACHE_SCHEMA ||
+        envelope.namespace !== String(namespace) ||
+        envelope.key !== String(key)
+      ) {
         throw new Error('Diff cache identity mismatch');
       }
       const now = new Date();
@@ -57,12 +63,15 @@ export class DiffCache {
   }
 
   async set(namespace, key, value) {
-    const source = Buffer.from(JSON.stringify({
-      schema: CACHE_SCHEMA,
-      namespace: String(namespace),
-      key: String(key),
-      value,
-    }), 'utf8');
+    const source = Buffer.from(
+      JSON.stringify({
+        schema: CACHE_SCHEMA,
+        namespace: String(namespace),
+        key: String(key),
+        value,
+      }),
+      'utf8',
+    );
     if (source.length > this.maximumEntryBytes) return false;
     const compressed = await compress(source, { level: 6 });
     const operation = this.maintenance.then(async () => {
@@ -91,7 +100,10 @@ export class DiffCache {
       await this.prune();
       return true;
     });
-    this.maintenance = operation.then(() => undefined, () => undefined);
+    this.maintenance = operation.then(
+      () => undefined,
+      () => undefined,
+    );
     return operation;
   }
 
@@ -106,13 +118,19 @@ export class DiffCache {
   async files() {
     await this.initialise();
     const names = await fs.readdir(this.directory);
-    const entries = await Promise.all(names.filter((name) => CACHE_FILE.test(name)).map(async (name) => {
-      const target = path.join(this.directory, name);
-      try {
-        const stat = await fs.stat(target);
-        return { target, bytes: stat.size, accessedAt: stat.mtimeMs };
-      } catch { return null; }
-    }));
+    const entries = await Promise.all(
+      names
+        .filter((name) => CACHE_FILE.test(name))
+        .map(async (name) => {
+          const target = path.join(this.directory, name);
+          try {
+            const stat = await fs.stat(target);
+            return { target, bytes: stat.size, accessedAt: stat.mtimeMs };
+          } catch {
+            return null;
+          }
+        }),
+    );
     return entries.filter(Boolean);
   }
 
@@ -145,7 +163,10 @@ export class DiffCache {
       await fs.mkdir(this.directory, { recursive: true });
       return before;
     });
-    this.maintenance = operation.then(() => undefined, () => undefined);
+    this.maintenance = operation.then(
+      () => undefined,
+      () => undefined,
+    );
     return operation;
   }
 }

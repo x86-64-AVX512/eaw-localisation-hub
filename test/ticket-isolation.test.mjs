@@ -50,17 +50,29 @@ test('ticket bootstrap uses the current server snapshot and Git only for an unse
     const hub = {
       options: { repo: repository },
       async ticketRequest() {
-        return { ticket, files: [{
-          path: relativePath,
-          ticketInitialised: true,
-          ticketTextBase64: Buffer.from('l_russian:\n key:0 "Ticket"\n').toString('base64'),
-        }] };
+        return {
+          ticket,
+          files: [
+            {
+              path: relativePath,
+              ticketInitialised: true,
+              ticketTextBase64: Buffer.from('l_russian:\n key:0 "Ticket"\n').toString('base64'),
+            },
+          ],
+        };
       },
     };
     assert.match((await ticketBootstrap(hub, ticket.id, relativePath)).text, /"Ticket"/u);
-    hub.ticketRequest = async () => ({ ticket, files: [{
-      path: relativePath, ticketInitialised: false, ticketTextBase64: '',
-    }] });
+    hub.ticketRequest = async () => ({
+      ticket,
+      files: [
+        {
+          path: relativePath,
+          ticketInitialised: false,
+          ticketTextBase64: '',
+        },
+      ],
+    });
     const unseeded = (await ticketBootstrap(hub, ticket.id, relativePath)).text;
     assert.equal(unseeded.startsWith('\uFEFF'), false);
     assert.match(unseeded, /"Base"/u);

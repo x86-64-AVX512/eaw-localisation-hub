@@ -37,9 +37,9 @@ export async function decryptBackup(data: Uint8Array, passphrase: unknown): Prom
   const headerBytes = MAGIC.length + SALT_BYTES + IV_BYTES + TAG_BYTES;
   if (buffer.length <= headerBytes) throw new Error('Encrypted backup is truncated');
   let offset = MAGIC.length;
-  const salt = buffer.subarray(offset, offset += SALT_BYTES);
-  const iv = buffer.subarray(offset, offset += IV_BYTES);
-  const tag = buffer.subarray(offset, offset += TAG_BYTES);
+  const salt = buffer.subarray(offset, (offset += SALT_BYTES));
+  const iv = buffer.subarray(offset, (offset += IV_BYTES));
+  const tag = buffer.subarray(offset, (offset += TAG_BYTES));
   const ciphertext = buffer.subarray(offset);
   const key = await deriveKey(passphrase, salt);
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);

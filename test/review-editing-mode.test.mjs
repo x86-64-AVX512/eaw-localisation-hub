@@ -2,8 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { validateClientMessage } from '../packages/shared/src/protocol-schema.mts';
 import {
-  baseToProjectedOffset, batchSuggestionActions, createEditingModeController, projectedToBaseOffset,
-  isLineBreakBoundary, singleReplacement, suggestionAction, suggestionProjection,
+  baseToProjectedOffset,
+  batchSuggestionActions,
+  createEditingModeController,
+  projectedToBaseOffset,
+  isLineBreakBoundary,
+  singleReplacement,
+  suggestionAction,
+  suggestionProjection,
 } from '../apps/review/src/editing-mode.ts';
 import { suggestionTraceParts } from '../packages/shared/src/suggestion-trace.mts';
 import { createReviewNavigation } from '../apps/review/src/review-navigation.ts';
@@ -12,54 +18,104 @@ test('one outside click finishes multiline deletion editing without reopening it
   const base = 'header\n first:0 "First"\n last:0 "Last"\n next:0 "Next"\n';
   const start = base.indexOf('first:');
   const end = base.indexOf('\n next:');
-  const item = { id: 'existing-delete', authorId: 'user-1', status: 'open',
-    startByte: start, endByte: end, originalBase64: Buffer.from(base.slice(start, end)).toString('base64'), replacementBase64: '' };
+  const item = {
+    id: 'existing-delete',
+    authorId: 'user-1',
+    status: 'open',
+    startByte: start,
+    endByte: end,
+    originalBase64: Buffer.from(base.slice(start, end)).toString('base64'),
+    replacementBase64: '',
+  };
   const h = controllerHarness(base);
-  h.state.suggestions = new Map([[item.id, item]]); h.state.comments = new Map();
-  let mouseDown; let mouseUp; let reopenCount = 0;
-  const navigation = createReviewNavigation({ state: h.state,
+  h.state.suggestions = new Map([[item.id, item]]);
+  h.state.comments = new Map();
+  let mouseDown;
+  let mouseUp;
+  let reopenCount = 0;
+  const navigation = createReviewNavigation({
+    state: h.state,
     editor: {
-      getDomNode: () => ({ addEventListener(type, listener, capture) {
-        assert.equal(type, 'mousedown'); assert.equal(capture, true); mouseDown = listener;
-      }, removeEventListener() {} }),
-      onMouseUp(listener) { mouseUp = listener; return { dispose() {} }; },
+      getDomNode: () => ({
+        addEventListener(type, listener, capture) {
+          assert.equal(type, 'mousedown');
+          assert.equal(capture, true);
+          mouseDown = listener;
+        },
+        removeEventListener() {},
+      }),
+      onMouseUp(listener) {
+        mouseUp = listener;
+        return { dispose() {} };
+      },
     },
     // The mouse target was computed on the projected model, but the cursor
     // listener has already restored canonical text before mouse-up arrives.
-    positionByteAt: () => start + 2, focusCard: () => true,
-    onSuggestion: () => { reopenCount++; h.controller.editSuggestion(item); } });
+    positionByteAt: () => start + 2,
+    focusCard: () => true,
+    onSuggestion: () => {
+      reopenCount++;
+      h.controller.editSuggestion(item);
+    },
+  });
   assert.equal(h.controller.editSuggestion(item), true);
   assert.equal(h.editor.getValue(), base.slice(0, start) + base.slice(end));
   mouseDown();
   h.editor.moveTo(h.editor.getValue().length);
-  mouseUp({ event: { leftButton: true, browserEvent: { detail: 1 } }, target: { position: { lineNumber: 1, column: 4 } } });
+  mouseUp({
+    event: { leftButton: true, browserEvent: { detail: 1 } },
+    target: { position: { lineNumber: 1, column: 4 } },
+  });
   assert.equal(reopenCount, 0);
   assert.equal(h.state.editingSuggestionId, '');
   assert.equal(h.editor.getValue(), base);
-  assert.deepEqual(h.messages.filter(m => /suggestion(?:Update|Create)/u.test(m.type)), []);
-  navigation.dispose(); h.controller.dispose();
+  assert.deepEqual(
+    h.messages.filter((m) => /suggestion(?:Update|Create)/u.test(m.type)),
+    [],
+  );
+  navigation.dispose();
+  h.controller.dispose();
 });
 
 test('outside mouse-down can flush an unchanged deletion without changing its saved proposal', () => {
-  const base = 'header\n first\n last\n next\n'; const start = base.indexOf('first'); const end = base.indexOf('\n next');
-  const item = { id: 'outside-flush', authorId: 'user-1', status: 'open', startByte: start, endByte: end,
-    originalBase64: Buffer.from(base.slice(start, end)).toString('base64'), replacementBase64: '' };
+  const base = 'header\n first\n last\n next\n';
+  const start = base.indexOf('first');
+  const end = base.indexOf('\n next');
+  const item = {
+    id: 'outside-flush',
+    authorId: 'user-1',
+    status: 'open',
+    startByte: start,
+    endByte: end,
+    originalBase64: Buffer.from(base.slice(start, end)).toString('base64'),
+    replacementBase64: '',
+  };
   const h = controllerHarness(base);
   try {
     assert.equal(h.controller.editSuggestion(item), true);
     assert.equal(h.controller.finishSuggestionAt({ lineNumber: 1, column: start + 1 }), false);
     assert.equal(h.controller.finishSuggestionAt({ lineNumber: 1, column: h.editor.getValue().length + 1 }), true);
-    assert.equal(h.state.editingSuggestionId, ''); assert.equal(h.editor.getValue(), base);
-    assert.deepEqual(h.messages.filter(message => /suggestion(?:Update|Create)/u.test(message.type)), []);
-  } finally { h.controller.dispose(); }
+    assert.equal(h.state.editingSuggestionId, '');
+    assert.equal(h.editor.getValue(), base);
+    assert.deepEqual(
+      h.messages.filter((message) => /suggestion(?:Update|Create)/u.test(message.type)),
+      [],
+    );
+  } finally {
+    h.controller.dispose();
+  }
 });
 
 function controllerHarness(initial = 'abc') {
   const buttons = new Map();
-  for (const id of ['#mode-edit', '#mode-suggest']) buttons.set(id, {
-    classList: { toggle() {} }, setAttribute() {},
-    addEventListener(type, listener) { if (type === 'click') this.click = listener; },
-  });
+  for (const id of ['#mode-edit', '#mode-suggest'])
+    buttons.set(id, {
+      classList: { toggle() {} },
+      setAttribute() {},
+      addEventListener(type, listener) {
+        if (type === 'click') this.click = listener;
+      },
+    });
   globalThis.document = { querySelector: (selector) => buttons.get(selector) };
   const contentListeners = [];
   const cursorListeners = [];
@@ -75,8 +131,12 @@ function controllerHarness(initial = 'abc') {
   };
   const positionAt = (offset) => ({ lineNumber: 1, column: offset + 1, offset });
   const selectionAt = (offset) => ({
-    startLineNumber: 1, startColumn: offset + 1, endLineNumber: 1, endColumn: offset + 1,
-    getStartPosition: () => positionAt(offset), getEndPosition: () => positionAt(offset),
+    startLineNumber: 1,
+    startColumn: offset + 1,
+    endLineNumber: 1,
+    endColumn: offset + 1,
+    getStartPosition: () => positionAt(offset),
+    getEndPosition: () => positionAt(offset),
   });
   const model = {
     getValue: () => value,
@@ -106,9 +166,10 @@ function controllerHarness(initial = 'abc') {
       saveUndoState();
       value = next;
       position = 0;
-      for (const listener of contentListeners) listener({
-        changes: [{ rangeOffset: 0, rangeLength: previousLength, text: next }],
-      });
+      for (const listener of contentListeners)
+        listener({
+          changes: [{ rangeOffset: 0, rangeLength: previousLength, text: next }],
+        });
     },
     setPosition(next) {
       position = next.offset ?? next.column - 1;
@@ -148,10 +209,12 @@ function controllerHarness(initial = 'abc') {
       value = historical.value;
       position = historical.position;
       alternativeVersion = historical.alternativeVersion;
-      for (const listener of contentListeners) listener({
-        changes: [{ rangeOffset: 0, rangeLength: previousLength, text: value }],
-        isUndoing: command === 'undo', isRedoing: command === 'redo',
-      });
+      for (const listener of contentListeners)
+        listener({
+          changes: [{ rangeOffset: 0, rangeLength: previousLength, text: value }],
+          isUndoing: command === 'undo',
+          isRedoing: command === 'redo',
+        });
     },
     type(text, cursorFirst = false) {
       const start = position;
@@ -160,9 +223,10 @@ function controllerHarness(initial = 'abc') {
       position += text.length;
       const selection = { getPosition: () => positionAt(position) };
       if (cursorFirst) for (const listener of cursorListeners) listener({ selection });
-      for (const listener of contentListeners) listener({
-        changes: [{ rangeOffset: start, rangeLength: 0, text }],
-      });
+      for (const listener of contentListeners)
+        listener({
+          changes: [{ rangeOffset: start, rangeLength: 0, text }],
+        });
       if (!cursorFirst) for (const listener of cursorListeners) listener({ selection });
     },
     replace(start, end, text, cursorFirst = false) {
@@ -171,9 +235,10 @@ function controllerHarness(initial = 'abc') {
       position = start + text.length;
       const selection = { getPosition: () => positionAt(position) };
       if (cursorFirst) for (const listener of cursorListeners) listener({ selection });
-      for (const listener of contentListeners) listener({
-        changes: [{ rangeOffset: start, rangeLength: end - start, text }],
-      });
+      for (const listener of contentListeners)
+        listener({
+          changes: [{ rangeOffset: start, rangeLength: end - start, text }],
+        });
       if (!cursorFirst) for (const listener of cursorListeners) listener({ selection });
     },
     moveTo(offset) {
@@ -184,45 +249,71 @@ function controllerHarness(initial = 'abc') {
   };
   const messages = [];
   const state = {
-    ready: true, applyingRemote: false, path: 'file.yml', user: 'Tester', userId: 'user-1',
-    editingSuggestionId: '', suggestionProjection: null,
+    ready: true,
+    applyingRemote: false,
+    path: 'file.yml',
+    user: 'Tester',
+    userId: 'user-1',
+    editingSuggestionId: '',
+    suggestionProjection: null,
   };
   const controller = createEditingModeController({
-    state, editor, send: (message) => messages.push(message), showToast() {},
+    state,
+    editor,
+    send: (message) => messages.push(message),
+    showToast() {},
   });
   return { buttons, controller, editor, messages, state };
 }
 
 test('suggesting mode identifies insertions, deletions, and replacements', () => {
   assert.deepEqual(singleReplacement('abc', 'abXc'), {
-    start: 2, previousEnd: 2, replacement: 'X',
+    start: 2,
+    previousEnd: 2,
+    replacement: 'X',
   });
   assert.deepEqual(singleReplacement('abc', 'ac'), {
-    start: 1, previousEnd: 2, replacement: '',
+    start: 1,
+    previousEnd: 2,
+    replacement: '',
   });
   assert.deepEqual(singleReplacement('Она выпала.', 'Она далась.'), {
-    start: 4, previousEnd: 10, replacement: 'далась',
+    start: 4,
+    previousEnd: 10,
+    replacement: 'далась',
   });
 });
 
 test('plain text comparison keeps unchanged prefixes and suffixes outside the replacement', () => {
   assert.deepEqual(singleReplacement('кот', 'код'), {
-    start: 2, previousEnd: 3, replacement: 'д',
+    start: 2,
+    previousEnd: 3,
+    replacement: 'д',
   });
   assert.deepEqual(singleReplacement('отряд бандитов', 'отряд пингвинов'), {
-    start: 6, previousEnd: 12, replacement: 'пингвин',
+    start: 6,
+    previousEnd: 12,
+    replacement: 'пингвин',
   });
   assert.deepEqual(singleReplacement('key:0 "бандитов"', 'key:0 "пингвинов"'), {
-    start: 7, previousEnd: 13, replacement: 'пингвин',
+    start: 7,
+    previousEnd: 13,
+    replacement: 'пингвин',
   });
   assert.deepEqual(singleReplacement('key:0 "столицу"', 'key:0 "сталь"'), {
-    start: 9, previousEnd: 14, replacement: 'аль',
+    start: 9,
+    previousEnd: 14,
+    replacement: 'аль',
   });
   assert.deepEqual(singleReplacement('prefix Столица suffix', 'prefix Сталь suffix'), {
-    start: 9, previousEnd: 14, replacement: 'аль',
+    start: 9,
+    previousEnd: 14,
+    replacement: 'аль',
   });
   assert.deepEqual(singleReplacement('prefix столица suffix', 'prefix ста suffix'), {
-    start: 9, previousEnd: 13, replacement: '',
+    start: 9,
+    previousEnd: 13,
+    replacement: '',
   });
 });
 
@@ -232,7 +323,9 @@ test('suggesting mode ignores unchanged text', () => {
 
 test('suggesting mode never splits an astral Unicode code point', () => {
   assert.deepEqual(singleReplacement('a😀b', 'a😎b'), {
-    start: 1, previousEnd: 3, replacement: '😎',
+    start: 1,
+    previousEnd: 3,
+    replacement: '😎',
   });
 });
 
@@ -273,13 +366,18 @@ test('a line break at an edited word edge stays in the same whole-word suggestio
   const original = 'машина';
   const replacement = 'малина';
   const harness = controllerHarness(initial);
-  assert.equal(harness.controller.editSuggestion({
-    id: 'existing-word', status: 'open', authorId: 'user-1',
-    startByte: Buffer.byteLength(initial.slice(0, wordStart)),
-    endByte: Buffer.byteLength(initial.slice(0, wordStart + original.length)),
-    originalBase64: Buffer.from(original).toString('base64'),
-    replacementBase64: Buffer.from(replacement).toString('base64'),
-  }), true);
+  assert.equal(
+    harness.controller.editSuggestion({
+      id: 'existing-word',
+      status: 'open',
+      authorId: 'user-1',
+      startByte: Buffer.byteLength(initial.slice(0, wordStart)),
+      endByte: Buffer.byteLength(initial.slice(0, wordStart + original.length)),
+      originalBase64: Buffer.from(original).toString('base64'),
+      replacementBase64: Buffer.from(replacement).toString('base64'),
+    }),
+    true,
+  );
 
   harness.editor.moveTo(wordStart);
   assert.equal(harness.controller.insertLineBreak(), true);
@@ -299,16 +397,25 @@ test('a line break at an edited word edge stays in the same whole-word suggestio
 
 test('Replace All changes become independent suggestions', () => {
   let sequence = 0;
-  const actions = batchSuggestionActions('one old and old', [
-    { rangeOffset: 4, rangeLength: 3, text: 'new' },
-    { rangeOffset: 12, rangeLength: 3, text: 'new' },
-  ], () => `id-${sequence += 1}`);
-  assert.deepEqual(actions.map((item) => ({
-    id: item.suggestionId, startByte: item.startByte, endByte: item.endByte,
-  })), [
-    { id: 'id-1', startByte: 4, endByte: 7 },
-    { id: 'id-2', startByte: 12, endByte: 15 },
-  ]);
+  const actions = batchSuggestionActions(
+    'one old and old',
+    [
+      { rangeOffset: 4, rangeLength: 3, text: 'new' },
+      { rangeOffset: 12, rangeLength: 3, text: 'new' },
+    ],
+    () => `id-${(sequence += 1)}`,
+  );
+  assert.deepEqual(
+    actions.map((item) => ({
+      id: item.suggestionId,
+      startByte: item.startByte,
+      endByte: item.endByte,
+    })),
+    [
+      { id: 'id-1', startByte: 4, endByte: 7 },
+      { id: 'id-2', startByte: 12, endByte: 15 },
+    ],
+  );
 });
 
 test('a live insertion is created immediately and subsequent typing updates the same suggestion', () => {
@@ -329,12 +436,21 @@ test('a live insertion is created immediately and subsequent typing updates the 
 test('a live insertion remains a stable local projection across a typing pause', () => {
   const projection = suggestionProjection('abc', 'abXYZc');
   assert.deepEqual(projection, {
-    baseText: 'abc', start: 2, previousEnd: 2, replacementLength: 3,
+    baseText: 'abc',
+    start: 2,
+    previousEnd: 2,
+    replacementLength: 3,
   });
-  assert.equal(projectedToBaseOffset(projection, 5), 2,
-    'the caret after a proposed insertion maps back to its canonical anchor');
-  assert.equal(baseToProjectedOffset(projection, 3), 6,
-    'canonical content after a proposed insertion maps after the projected text');
+  assert.equal(
+    projectedToBaseOffset(projection, 5),
+    2,
+    'the caret after a proposed insertion maps back to its canonical anchor',
+  );
+  assert.equal(
+    baseToProjectedOffset(projection, 3),
+    6,
+    'canonical content after a proposed insertion maps after the projected text',
+  );
 });
 
 test('replacement projection maps both sides without consuming neighbouring YAML', () => {
@@ -354,7 +470,13 @@ test('controller keeps continuous insertion visible and updates one server sugge
   const suggestionId = harness.messages.at(-1).suggestionId;
   assert.equal(harness.messages.at(-1).type, 'suggestionCreate');
   assert.deepEqual(Object.keys(harness.messages.at(-1)).sort(), [
-    'endByte', 'path', 'replacementBase64', 'startByte', 'suggestionId', 'traceJson', 'type',
+    'endByte',
+    'path',
+    'replacementBase64',
+    'startByte',
+    'suggestionId',
+    'traceJson',
+    'type',
   ]);
   assert.doesNotThrow(() => validateClientMessage(harness.messages.at(-1)));
   harness.editor.type('YZ');
@@ -390,14 +512,11 @@ test('manual typing keeps surviving letters out of the inserted text', () => {
   assert.equal(suggestionMessages.at(-1).suggestionId, suggestionId);
   assert.equal(suggestionMessages.at(-1).type, 'suggestionUpdate');
   assert.equal(Buffer.from(suggestionMessages.at(-1).replacementBase64, 'base64').toString(), 'ал');
-  assert.deepEqual(
-    suggestionTraceParts('олица', 'ал', suggestionMessages.at(-1).traceJson),
-    [
-      { kind: 'delete', text: 'олиц' },
-      { kind: 'equal', text: 'а' },
-      { kind: 'insert', text: 'л' },
-    ],
-  );
+  assert.deepEqual(suggestionTraceParts('олица', 'ал', suggestionMessages.at(-1).traceJson), [
+    { kind: 'delete', text: 'олиц' },
+    { kind: 'equal', text: 'а' },
+    { kind: 'insert', text: 'л' },
+  ]);
 
   harness.editor.type('ь');
 
@@ -461,12 +580,19 @@ const overlappingWordCases = [
 for (const [originalWord, replacementWord] of overlappingWordCases) {
   test(`manual ${originalWord} -> ${replacementWord} replacement stays whole after every letter`, () => {
     let sharedStart = 0;
-    while (sharedStart < originalWord.length && sharedStart < replacementWord.length
-      && originalWord[sharedStart] === replacementWord[sharedStart]) sharedStart += 1;
+    while (
+      sharedStart < originalWord.length &&
+      sharedStart < replacementWord.length &&
+      originalWord[sharedStart] === replacementWord[sharedStart]
+    )
+      sharedStart += 1;
     let originalEnd = originalWord.length;
     let replacementEnd = replacementWord.length;
-    while (originalEnd > sharedStart && replacementEnd > sharedStart
-      && originalWord[originalEnd - 1] === replacementWord[replacementEnd - 1]) {
+    while (
+      originalEnd > sharedStart &&
+      replacementEnd > sharedStart &&
+      originalWord[originalEnd - 1] === replacementWord[replacementEnd - 1]
+    ) {
       originalEnd -= 1;
       replacementEnd -= 1;
     }
@@ -486,10 +612,7 @@ for (const [originalWord, replacementWord] of overlappingWordCases) {
       const latest = harness.messages.at(-1);
       assert.equal(latest.type, 'suggestionUpdate');
       assert.equal(latest.suggestionId, suggestionId);
-      assert.equal(
-        Buffer.from(latest.replacementBase64, 'base64').toString(),
-        inserted.slice(0, index + 1),
-      );
+      assert.equal(Buffer.from(latest.replacementBase64, 'base64').toString(), inserted.slice(0, index + 1));
       assert.deepEqual(
         { startByte: latest.startByte, endByte: latest.endByte },
         {
@@ -519,8 +642,11 @@ for (const [originalWord, replacementWord] of overlappingWordCases) {
 test('controller reopens an exact existing insertion for inline editing', () => {
   const harness = controllerHarness();
   const opened = harness.controller.editSuggestion({
-    id: 'existing-1', status: 'open', authorId: 'user-1',
-    startByte: 2, endByte: 2,
+    id: 'existing-1',
+    status: 'open',
+    authorId: 'user-1',
+    startByte: 2,
+    endByte: 2,
     originalBase64: Buffer.from('').toString('base64'),
     replacementBase64: Buffer.from('XYZ').toString('base64'),
   });
@@ -542,7 +668,9 @@ test('editing an existing multiline suggestion survives Monaco cursor-first typi
   const start = initial.indexOf(original);
   const end = start + original.length;
   const opened = harness.controller.editSuggestion({
-    id: 'existing-multiline', status: 'open', authorId: 'user-1',
+    id: 'existing-multiline',
+    status: 'open',
+    authorId: 'user-1',
     startByte: Buffer.byteLength(initial.slice(0, start)),
     endByte: Buffer.byteLength(initial.slice(0, end)),
     originalBase64: Buffer.from(original).toString('base64'),

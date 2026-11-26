@@ -24,16 +24,22 @@ async function freePort() {
 }
 
 function spawnServer(port, dataDirectory) {
-  const server = spawn(process.execPath, [
-    'apps/server/src/main.mjs', '--port', String(port), '--data', dataDirectory, '--auth', 'disabled',
-  ], {
-    cwd: projectRoot,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
+  const server = spawn(
+    process.execPath,
+    ['apps/server/src/main.mjs', '--port', String(port), '--data', dataDirectory, '--auth', 'disabled'],
+    {
+      cwd: projectRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    },
+  );
   server.output = '';
-  server.stdout.on('data', (chunk) => { server.output += chunk.toString('utf8'); });
-  server.stderr.on('data', (chunk) => { server.output += chunk.toString('utf8'); });
+  server.stdout.on('data', (chunk) => {
+    server.output += chunk.toString('utf8');
+  });
+  server.stderr.on('data', (chunk) => {
+    server.output += chunk.toString('utf8');
+  });
   return server;
 }
 
@@ -45,7 +51,9 @@ async function waitForHealth(port) {
         const request = http.get(`http://127.0.0.1:${port}/health`, (response) => {
           let data = '';
           response.setEncoding('utf8');
-          response.on('data', (chunk) => { data += chunk; });
+          response.on('data', (chunk) => {
+            data += chunk;
+          });
           response.on('end', () => resolve(data));
         });
         request.on('error', reject);
@@ -118,10 +126,12 @@ function encodedRelative(position) {
 function resolvedReservation(document, reservation) {
   const text = document.getText('content');
   const start = Y.createAbsolutePositionFromRelativePosition(
-    Y.decodeRelativePosition(Buffer.from(reservation.startRelative, 'base64')), document,
+    Y.decodeRelativePosition(Buffer.from(reservation.startRelative, 'base64')),
+    document,
   );
   const end = Y.createAbsolutePositionFromRelativePosition(
-    Y.decodeRelativePosition(Buffer.from(reservation.endRelative, 'base64')), document,
+    Y.decodeRelativePosition(Buffer.from(reservation.endRelative, 'base64')),
+    document,
   );
   assert.equal(start?.type, text);
   assert.equal(end?.type, text);
@@ -152,346 +162,537 @@ function waitForJson(socket, predicate, timeout = 10000) {
   });
 }
 
-test('reservation update is broadcast, rejects stale/deleted edits, and survives a real server restart', { timeout: 30000 }, async () => {
-  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-reservation-update-'));
-  const dataDirectory = path.join(temporary, 'data'); const port = await freePort();
-  const documentId = 'branch:localisation/russian/reservation_l_russian.yml';
-  let server, first, second, restarted;
-  try {
-    server = spawnServer(port, dataDirectory); await waitForHealth(port);
-    first = await connectDocument(port, documentId); assert.equal(first.synced.reservationUpdates, true);
-    const text = first.document.getText('content'); const source = 'l_russian:\n first:0 "Один"\n second:0 "Два"\n';
-    text.insert(0, source); first.socket.send(Y.encodeStateAsUpdate(first.document));
-    let snapshot = waitForJson(first.socket, (m) => m.type === 'reservations');
-    first.socket.send(JSON.stringify({ type: 'reservation-create', id: 'stable', assignee: 'Alice', createdBy: 'Alice',
-      color: '#112233', comment: 'Original', initialKeys: ['first'],
-      startRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(text, source.indexOf(' first'), -1)),
-      endRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(text, source.indexOf(' second'), 0)) }));
-    const initial = (await snapshot).reservations[0]; assert.equal(initial.revision, 1);
-    second = await connectDocument(port, documentId);
-    snapshot = waitForJson(second.socket, (m) => m.type === 'reservations' && m.reservations[0]?.revision === 2);
-    let result = waitForJson(first.socket, (m) => m.type === 'reservation-update-result' && m.requestId === 'edit');
-    first.socket.send(JSON.stringify({ type: 'reservation-update', id: 'stable', requestId: 'edit', expectedRevision: 1,
-      assigneeId: 'bob', assignee: 'Bob', assigneeColor: '#abcdef', comment: 'Changed' }));
-    assert.equal((await result).status, 'saved'); const updated = (await snapshot).reservations[0];
-    assert.equal(updated.id, 'stable'); assert.equal(updated.createdBy, 'Alice'); assert.equal(updated.assignee, 'Bob');
-    assert.equal(updated.startRelative, initial.startRelative); assert.equal(updated.endRelative, initial.endRelative);
-    result = waitForJson(second.socket, (m) => m.type === 'reservation-update-result' && m.requestId === 'stale');
-    second.socket.send(JSON.stringify({ type: 'reservation-update', id: 'stable', requestId: 'stale', expectedRevision: 1, comment: 'Overwrite' }));
-    assert.equal((await result).status, 'stale');
-    await waitForValue(async () => {
-      try {
-        for (const name of await fs.readdir(path.join(dataDirectory, 'documents'))) {
-          if (!/^[0-9a-f]{64}\.json$/u.test(name)) continue;
-          const metadata = JSON.parse(await fs.readFile(path.join(dataDirectory, 'documents', name), 'utf8'));
-          if (metadata.reservations?.[0]?.revision === 2) return true;
-        }
-      } catch {}
-      return false;
-    }, 'reservation revision persistence');
-    const closed = [once(first.socket, 'close'), once(second.socket, 'close')];
-    first.socket.close(); second.socket.close(); await Promise.all(closed); await stopServer(server);
-    server = spawnServer(port, dataDirectory); await waitForHealth(port); restarted = await connectDocument(port, documentId);
-    assert.equal(restarted.synced.reservations[0].revision, 2); assert.equal(restarted.synced.reservations[0].comment, 'Changed');
-    assert.equal(restarted.synced.reservations[0].createdBy, 'Alice');
-    snapshot = waitForJson(restarted.socket, (m) => m.type === 'reservations' && m.reservations.length === 0);
-    restarted.socket.send(JSON.stringify({ type: 'reservation-delete', id: 'stable' })); await snapshot;
-    result = waitForJson(restarted.socket, (m) => m.type === 'reservation-update-result' && m.requestId === 'deleted');
-    restarted.socket.send(JSON.stringify({ type: 'reservation-update', id: 'stable', requestId: 'deleted', expectedRevision: 2, comment: 'Revive' }));
-    assert.equal((await result).status, 'deleted');
-  } finally {
-    first?.socket.terminate(); second?.socket.terminate(); restarted?.socket.terminate();
-    await stopServer(server); first?.document.destroy(); second?.document.destroy(); restarted?.document.destroy();
-    await fs.rm(temporary, { recursive: true, force: true });
-  }
-});
-
-test('server restores CRDT text, reservations, comments, and suggestions after restart', { timeout: 30000 }, async () => {
-  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-persist-'));
-  const dataDirectory = path.join(temporary, 'data');
-  const documentId = 'country-branch:localisation/russian/prototype_l_russian.yml';
-  const port = await freePort();
-  let server;
-  let first;
-  let second;
-  try {
-    server = spawnServer(port, dataDirectory);
-    await waitForHealth(port);
-    first = await connectDocument(port, documentId);
-    const text = first.document.getText('content');
-    const expected = 'l_russian:\r\n prototype_key:0 "Сохранено"\r\n';
-    text.insert(0, expected);
-    first.socket.send(Y.encodeStateAsUpdate(first.document));
-    const start = Y.createRelativePositionFromTypeIndex(text, expected.indexOf('prototype_key'), 0);
-    const end = Y.createRelativePositionFromTypeIndex(text, expected.length - 2, 0);
-    first.socket.send(JSON.stringify({
-      type: 'reservation-create',
-      id: 'persistent-reservation',
-      assignee: 'Alice',
-      createdBy: 'Alice',
-      color: '#ff6677',
-      startRelative: encodedRelative(start),
-      endRelative: encodedRelative(end),
-      initialKeys: ['prototype_key'],
-    }));
-    const valueStartIndex = expected.indexOf('"Сохранено"');
-    const valueEndIndex = valueStartIndex + '"Сохранено"'.length;
-    const valueStart = encodedRelative(Y.createRelativePositionFromTypeIndex(text, valueStartIndex, -1));
-    const valueEnd = encodedRelative(Y.createRelativePositionFromTypeIndex(text, valueEndIndex, 0));
-    const commentReview = waitForJson(first.socket, (message) => message.type === 'review'
-      && message.commentThreads?.some((item) => item.id === 'persistent-comment'));
-    first.socket.send(JSON.stringify({
-      type: 'comment-create', id: 'persistent-comment', messageId: 'persistent-comment-message',
-      author: 'Alice', color: '#ff6677', body: 'Постоянный комментарий', startRelative: valueStart, endRelative: valueEnd,
-    }));
-    await commentReview;
-    const createdReplacement = '"Предложено"';
-    const createdTrace = JSON.stringify([[-1, createdReplacement.length]]);
-    const suggestionReview = waitForJson(first.socket, (message) => message.type === 'review'
-      && message.suggestions?.some((item) => item.id === 'persistent-suggestion'));
-    first.socket.send(JSON.stringify({
-      type: 'suggestion-create', id: 'persistent-suggestion', author: 'Alice', color: '#ff6677',
-      startRelative: valueStart, endRelative: valueEnd,
-      originalText: '"Сохранено"', replacementText: createdReplacement, traceJson: createdTrace,
-    }));
-    const createdSuggestion = (await suggestionReview).suggestions
-      .find((item) => item.id === 'persistent-suggestion');
-    assert.equal(createdSuggestion.traceJson, createdTrace);
-    const liveDraftReview = waitForJson(first.socket, (message) => message.type === 'review'
-      && message.suggestions?.some((item) => item.id === 'persistent-suggestion'));
-    first.socket.send(JSON.stringify({
-      type: 'suggestion-update', id: 'persistent-suggestion', author: 'Alice', color: '#ff6677',
-      startRelative: valueStart, endRelative: valueEnd,
-      originalText: createdSuggestion.originalText, replacementText: '"Live draft"',
-      traceJson: JSON.stringify([[-1, '"Live draft"'.length]]),
-    }));
-    const liveDraft = await liveDraftReview;
-    assert.equal(liveDraft.suggestions.find((item) => item.id === 'persistent-suggestion').replacementText, '"Live draft"');
-    const restoredDraftReview = waitForJson(first.socket, (message) => message.type === 'review'
-      && message.suggestions?.some((item) => item.id === 'persistent-suggestion'));
-    first.socket.send(JSON.stringify({
-      type: 'suggestion-update', id: 'persistent-suggestion', author: 'Alice', color: '#ff6677',
-      startRelative: valueStart, endRelative: valueEnd,
-      originalText: createdSuggestion.originalText, replacementText: createdSuggestion.replacementText,
-      traceJson: createdTrace,
-    }));
-    await restoredDraftReview;
-    const acceptedReview = waitForJson(first.socket, (message) => message.type === 'review'
-      && message.suggestions?.some((item) => item.id === 'persistent-suggestion' && item.status === 'accepted'));
-    first.socket.send(JSON.stringify({ type: 'suggestion-accept', id: 'persistent-suggestion', author: 'Bob' }));
-    await acceptedReview;
-    assert.equal(text.toString(), expected.replace('"Сохранено"', '"Предложено"'));
-    const projectionRequestId = 'rollback-projection';
-    const personalProjection = waitForJson(first.socket, (message) => (
-      message.type === 'personal-projection' && message.requestId === projectionRequestId
-    ));
-    first.socket.send(JSON.stringify({
-      type: 'personal-projection-set', text: expected,
-      author: 'Bob', color: '#6699ff',
-    }));
-    first.socket.send(JSON.stringify({
-      type: 'personal-projection-get', requestId: projectionRequestId,
-      author: 'Bob', color: '#6699ff',
-    }));
-    const initialProjection = await personalProjection;
-    assert.equal(Buffer.from(initialProjection.textBase64, 'base64').toString('utf8'), expected);
-    const patchRequestId = 'rollback-projection-patch';
-    const personalPatch = waitForJson(first.socket, (message) => (
-      message.type === 'personal-projection' && message.requestId === patchRequestId
-    ));
-    first.socket.send(JSON.stringify({
-      type: 'personal-projection-get', requestId: patchRequestId, baseRevision: initialProjection.revision,
-      author: 'Bob', color: '#6699ff',
-    }));
-    const patchedProjection = await personalPatch;
-    assert.equal(patchedProjection.textBase64, undefined);
-    assert.equal(applyUtf8ByteEdit(
-      expected,
-      patchedProjection.patch.positionByte,
-      patchedProjection.patch.deleteBytes,
-      Buffer.from(patchedProjection.patch.insertBase64, 'base64').toString('utf8'),
-    ), expected);
-    assert.equal(text.toString(), expected.replace('"Сохранено"', '"Предложено"'),
-      'replacing a personal projection must not modify shared text');
-    const metadataFile = await waitForValue(async () => {
-      try {
-        const names = await fs.readdir(path.join(dataDirectory, 'documents'));
-        for (const name of names) {
-          if (!/^[0-9a-f]{64}\.json$/u.test(name)) continue;
-          const metadata = JSON.parse(await fs.readFile(path.join(dataDirectory, 'documents', name), 'utf8'));
-          if (metadata.suggestions?.some(({ id, status }) => (
-            id === 'persistent-suggestion' && status === 'accepted'
-          ))) return name;
-        }
-      } catch {}
-      return null;
-    }, 'accepted suggestion persistence');
-    const firstClosed = once(first.socket, 'close');
-    first.socket.close();
-    await firstClosed;
-    await stopServer(server);
-
-    const metadataPath = path.join(dataDirectory, 'documents', metadataFile);
-    const legacyMetadata = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
-    legacyMetadata.documentId = documentId;
-    legacyMetadata.savedAt = '2025-01-01T00:00:00.000Z';
-    legacyMetadata.reservations[0].createdBy = 'Alice';
-    legacyMetadata.reservations[0].createdAt = '2025-01-01T00:00:00.000Z';
-    const detached = new Y.Doc();
-    const detachedText = detached.getText('content');
-    detachedText.insert(0, expected);
-    legacyMetadata.reservations[0].startRelative = encodedRelative(
-      Y.createRelativePositionFromTypeIndex(detachedText, expected.indexOf('prototype_key'), -1),
-    );
-    legacyMetadata.reservations[0].endRelative = encodedRelative(
-      Y.createRelativePositionFromTypeIndex(detachedText, expected.length - 2, 0),
-    );
-    detached.destroy();
-    await fs.writeFile(metadataPath, JSON.stringify(legacyMetadata));
-
-    server = spawnServer(port, dataDirectory);
-    await waitForHealth(port);
-    const minimisedMetadata = await fs.readFile(metadataPath, 'utf8');
-    for (const forbidden of ['documentId', 'savedAt']) {
-      assert.equal(minimisedMetadata.includes(forbidden), false, `metadata retained ${forbidden}`);
+test(
+  'reservation update is broadcast, rejects stale/deleted edits, and survives a real server restart',
+  { timeout: 30000 },
+  async () => {
+    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-reservation-update-'));
+    const dataDirectory = path.join(temporary, 'data');
+    const port = await freePort();
+    const documentId = 'branch:localisation/russian/reservation_l_russian.yml';
+    let server, first, second, restarted;
+    try {
+      server = spawnServer(port, dataDirectory);
+      await waitForHealth(port);
+      first = await connectDocument(port, documentId);
+      assert.equal(first.synced.reservationUpdates, true);
+      const text = first.document.getText('content');
+      const source = 'l_russian:\n first:0 "Один"\n second:0 "Два"\n';
+      text.insert(0, source);
+      first.socket.send(Y.encodeStateAsUpdate(first.document));
+      let snapshot = waitForJson(first.socket, (m) => m.type === 'reservations');
+      first.socket.send(
+        JSON.stringify({
+          type: 'reservation-create',
+          id: 'stable',
+          assignee: 'Alice',
+          createdBy: 'Alice',
+          color: '#112233',
+          comment: 'Original',
+          initialKeys: ['first'],
+          startRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(text, source.indexOf(' first'), -1)),
+          endRelative: encodedRelative(Y.createRelativePositionFromTypeIndex(text, source.indexOf(' second'), 0)),
+        }),
+      );
+      const initial = (await snapshot).reservations[0];
+      assert.equal(initial.revision, 1);
+      second = await connectDocument(port, documentId);
+      snapshot = waitForJson(second.socket, (m) => m.type === 'reservations' && m.reservations[0]?.revision === 2);
+      let result = waitForJson(first.socket, (m) => m.type === 'reservation-update-result' && m.requestId === 'edit');
+      first.socket.send(
+        JSON.stringify({
+          type: 'reservation-update',
+          id: 'stable',
+          requestId: 'edit',
+          expectedRevision: 1,
+          assigneeId: 'bob',
+          assignee: 'Bob',
+          assigneeColor: '#abcdef',
+          comment: 'Changed',
+        }),
+      );
+      assert.equal((await result).status, 'saved');
+      const updated = (await snapshot).reservations[0];
+      assert.equal(updated.id, 'stable');
+      assert.equal(updated.createdBy, 'Alice');
+      assert.equal(updated.assignee, 'Bob');
+      assert.equal(updated.startRelative, initial.startRelative);
+      assert.equal(updated.endRelative, initial.endRelative);
+      result = waitForJson(second.socket, (m) => m.type === 'reservation-update-result' && m.requestId === 'stale');
+      second.socket.send(
+        JSON.stringify({
+          type: 'reservation-update',
+          id: 'stable',
+          requestId: 'stale',
+          expectedRevision: 1,
+          comment: 'Overwrite',
+        }),
+      );
+      assert.equal((await result).status, 'stale');
+      await waitForValue(async () => {
+        try {
+          for (const name of await fs.readdir(path.join(dataDirectory, 'documents'))) {
+            if (!/^[0-9a-f]{64}\.json$/u.test(name)) continue;
+            const metadata = JSON.parse(await fs.readFile(path.join(dataDirectory, 'documents', name), 'utf8'));
+            if (metadata.reservations?.[0]?.revision === 2) return true;
+          }
+        } catch {}
+        return false;
+      }, 'reservation revision persistence');
+      const closed = [once(first.socket, 'close'), once(second.socket, 'close')];
+      first.socket.close();
+      second.socket.close();
+      await Promise.all(closed);
+      await stopServer(server);
+      server = spawnServer(port, dataDirectory);
+      await waitForHealth(port);
+      restarted = await connectDocument(port, documentId);
+      assert.equal(restarted.synced.reservations[0].revision, 2);
+      assert.equal(restarted.synced.reservations[0].comment, 'Changed');
+      assert.equal(restarted.synced.reservations[0].createdBy, 'Alice');
+      snapshot = waitForJson(restarted.socket, (m) => m.type === 'reservations' && m.reservations.length === 0);
+      restarted.socket.send(JSON.stringify({ type: 'reservation-delete', id: 'stable' }));
+      await snapshot;
+      result = waitForJson(
+        restarted.socket,
+        (m) => m.type === 'reservation-update-result' && m.requestId === 'deleted',
+      );
+      restarted.socket.send(
+        JSON.stringify({
+          type: 'reservation-update',
+          id: 'stable',
+          requestId: 'deleted',
+          expectedRevision: 2,
+          comment: 'Revive',
+        }),
+      );
+      assert.equal((await result).status, 'deleted');
+    } finally {
+      first?.socket.terminate();
+      second?.socket.terminate();
+      restarted?.socket.terminate();
+      await stopServer(server);
+      first?.document.destroy();
+      second?.document.destroy();
+      restarted?.document.destroy();
+      await fs.rm(temporary, { recursive: true, force: true });
     }
-    assert.equal(Object.hasOwn(JSON.parse(minimisedMetadata).reservations[0], 'createdAt'), false,
-      'reservation retained legacy createdAt');
-    second = await connectDocument(port, documentId);
-    assert.equal(second.document.getText('content').toString(), expected.replace('"Сохранено"', '"Предложено"'));
-    assert.equal(second.synced.reservations.length, 1);
-    assert.equal(second.synced.reservations[0].id, 'persistent-reservation');
-    assert.equal(second.synced.reservations[0].assignee, 'Alice');
-    assert.equal(second.synced.reservations[0].createdBy, 'Alice');
-    const repairedAtLoad = resolvedReservation(second.document, second.synced.reservations[0]);
-    assert.match(second.document.getText('content').toString().slice(
-      repairedAtLoad.start, repairedAtLoad.end,
-    ), /prototype_key/u, 'loading should repair a reservation whose old CRDT anchors no longer resolve');
-    assert.equal(second.synced.commentThreads.length, 1);
-    assert.equal(second.synced.commentThreads[0].messages[0].body, 'Постоянный комментарий');
-    assert.equal(second.synced.commentThreads[0].color, '#ff6677');
-    assert.equal(second.synced.commentThreads[0].messages[0].color, '#ff6677');
-    assert.equal(second.synced.suggestions.length, 1);
-    assert.equal(second.synced.suggestions[0].status, 'accepted');
-    assert.equal(second.synced.suggestions[0].decidedBy, 'Bob');
-    assert.equal(second.synced.suggestions[0].color, '#ff6677');
-    assert.equal(second.synced.suggestions[0].traceJson, createdTrace);
-    assert.ok(second.synced.history.length >= 2);
-    const acceptedHistory = second.synced.history.find((entry) => entry.reason === 'suggestion');
-    assert.equal(acceptedHistory.author, 'Bob');
-    assert.equal(acceptedHistory.suggestionAuthor, 'Alice');
-    const baseline = second.synced.history.find((entry) => entry.reason === 'baseline');
-    const historicalVersion = waitForJson(second.socket, (message) => message.type === 'history-version'
-      && message.id === baseline.id);
-    second.socket.send(JSON.stringify({ type: 'history-get', id: baseline.id }));
-    assert.equal(Buffer.from((await historicalVersion).textBase64, 'base64').toString('utf8'), expected);
-    const restoredHistory = waitForJson(second.socket, (message) => message.type === 'history'
-      && message.entries[0]?.reason === 'restore');
-    const restoredReservations = waitForJson(second.socket, (message) => message.type === 'reservations'
-      && message.reservations?.some((item) => item.id === 'persistent-reservation'));
-    second.socket.send(JSON.stringify({
-      type: 'history-restore', id: baseline.id, headId: second.synced.historyHeadId,
-      author: 'Bob', color: '#6699ff',
-    }));
-    const restored = await restoredHistory;
-    const restoredReservation = (await restoredReservations).reservations
-      .find((item) => item.id === 'persistent-reservation');
-    assert.equal(restored.entries[0].author, 'Bob');
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.equal(second.document.getText('content').toString(), expected);
-    const repairedAfterRestore = resolvedReservation(second.document, restoredReservation);
-    assert.match(second.document.getText('content').toString().slice(
-      repairedAfterRestore.start, repairedAfterRestore.end,
-    ), /prototype_key/u, 'history restoration should re-anchor reservations to their keys');
-    assert.equal(second.synced.commentThreads.length, 1, 'text restoration does not remove comments');
-  } finally {
-    first?.socket.close();
-    second?.socket.close();
-    await stopServer(server);
-    await fs.rm(temporary, { recursive: true, force: true });
-  }
-});
+  },
+);
 
-test('server rejects invalid room identifiers and oversized Yjs updates without exiting', { timeout: 30000 }, async () => {
-  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-limits-'));
-  const port = await freePort();
-  let server;
-  let valid;
-  try {
-    server = spawnServer(port, path.join(temporary, 'data'));
-    await waitForHealth(port);
+test(
+  'server restores CRDT text, reservations, comments, and suggestions after restart',
+  { timeout: 30000 },
+  async () => {
+    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-persist-'));
+    const dataDirectory = path.join(temporary, 'data');
+    const documentId = 'country-branch:localisation/russian/prototype_l_russian.yml';
+    const port = await freePort();
+    let server;
+    let first;
+    let second;
+    try {
+      server = spawnServer(port, dataDirectory);
+      await waitForHealth(port);
+      first = await connectDocument(port, documentId);
+      const text = first.document.getText('content');
+      const expected = 'l_russian:\r\n prototype_key:0 "Сохранено"\r\n';
+      text.insert(0, expected);
+      first.socket.send(Y.encodeStateAsUpdate(first.document));
+      const start = Y.createRelativePositionFromTypeIndex(text, expected.indexOf('prototype_key'), 0);
+      const end = Y.createRelativePositionFromTypeIndex(text, expected.length - 2, 0);
+      first.socket.send(
+        JSON.stringify({
+          type: 'reservation-create',
+          id: 'persistent-reservation',
+          assignee: 'Alice',
+          createdBy: 'Alice',
+          color: '#ff6677',
+          startRelative: encodedRelative(start),
+          endRelative: encodedRelative(end),
+          initialKeys: ['prototype_key'],
+        }),
+      );
+      const valueStartIndex = expected.indexOf('"Сохранено"');
+      const valueEndIndex = valueStartIndex + '"Сохранено"'.length;
+      const valueStart = encodedRelative(Y.createRelativePositionFromTypeIndex(text, valueStartIndex, -1));
+      const valueEnd = encodedRelative(Y.createRelativePositionFromTypeIndex(text, valueEndIndex, 0));
+      const commentReview = waitForJson(
+        first.socket,
+        (message) =>
+          message.type === 'review' && message.commentThreads?.some((item) => item.id === 'persistent-comment'),
+      );
+      first.socket.send(
+        JSON.stringify({
+          type: 'comment-create',
+          id: 'persistent-comment',
+          messageId: 'persistent-comment-message',
+          author: 'Alice',
+          color: '#ff6677',
+          body: 'Постоянный комментарий',
+          startRelative: valueStart,
+          endRelative: valueEnd,
+        }),
+      );
+      await commentReview;
+      const createdReplacement = '"Предложено"';
+      const createdTrace = JSON.stringify([[-1, createdReplacement.length]]);
+      const suggestionReview = waitForJson(
+        first.socket,
+        (message) =>
+          message.type === 'review' && message.suggestions?.some((item) => item.id === 'persistent-suggestion'),
+      );
+      first.socket.send(
+        JSON.stringify({
+          type: 'suggestion-create',
+          id: 'persistent-suggestion',
+          author: 'Alice',
+          color: '#ff6677',
+          startRelative: valueStart,
+          endRelative: valueEnd,
+          originalText: '"Сохранено"',
+          replacementText: createdReplacement,
+          traceJson: createdTrace,
+        }),
+      );
+      const createdSuggestion = (await suggestionReview).suggestions.find(
+        (item) => item.id === 'persistent-suggestion',
+      );
+      assert.equal(createdSuggestion.traceJson, createdTrace);
+      const liveDraftReview = waitForJson(
+        first.socket,
+        (message) =>
+          message.type === 'review' && message.suggestions?.some((item) => item.id === 'persistent-suggestion'),
+      );
+      first.socket.send(
+        JSON.stringify({
+          type: 'suggestion-update',
+          id: 'persistent-suggestion',
+          author: 'Alice',
+          color: '#ff6677',
+          startRelative: valueStart,
+          endRelative: valueEnd,
+          originalText: createdSuggestion.originalText,
+          replacementText: '"Live draft"',
+          traceJson: JSON.stringify([[-1, '"Live draft"'.length]]),
+        }),
+      );
+      const liveDraft = await liveDraftReview;
+      assert.equal(
+        liveDraft.suggestions.find((item) => item.id === 'persistent-suggestion').replacementText,
+        '"Live draft"',
+      );
+      const restoredDraftReview = waitForJson(
+        first.socket,
+        (message) =>
+          message.type === 'review' && message.suggestions?.some((item) => item.id === 'persistent-suggestion'),
+      );
+      first.socket.send(
+        JSON.stringify({
+          type: 'suggestion-update',
+          id: 'persistent-suggestion',
+          author: 'Alice',
+          color: '#ff6677',
+          startRelative: valueStart,
+          endRelative: valueEnd,
+          originalText: createdSuggestion.originalText,
+          replacementText: createdSuggestion.replacementText,
+          traceJson: createdTrace,
+        }),
+      );
+      await restoredDraftReview;
+      const acceptedReview = waitForJson(
+        first.socket,
+        (message) =>
+          message.type === 'review' &&
+          message.suggestions?.some((item) => item.id === 'persistent-suggestion' && item.status === 'accepted'),
+      );
+      first.socket.send(JSON.stringify({ type: 'suggestion-accept', id: 'persistent-suggestion', author: 'Bob' }));
+      await acceptedReview;
+      assert.equal(text.toString(), expected.replace('"Сохранено"', '"Предложено"'));
+      const projectionRequestId = 'rollback-projection';
+      const personalProjection = waitForJson(
+        first.socket,
+        (message) => message.type === 'personal-projection' && message.requestId === projectionRequestId,
+      );
+      first.socket.send(
+        JSON.stringify({
+          type: 'personal-projection-set',
+          text: expected,
+          author: 'Bob',
+          color: '#6699ff',
+        }),
+      );
+      first.socket.send(
+        JSON.stringify({
+          type: 'personal-projection-get',
+          requestId: projectionRequestId,
+          author: 'Bob',
+          color: '#6699ff',
+        }),
+      );
+      const initialProjection = await personalProjection;
+      assert.equal(Buffer.from(initialProjection.textBase64, 'base64').toString('utf8'), expected);
+      const patchRequestId = 'rollback-projection-patch';
+      const personalPatch = waitForJson(
+        first.socket,
+        (message) => message.type === 'personal-projection' && message.requestId === patchRequestId,
+      );
+      first.socket.send(
+        JSON.stringify({
+          type: 'personal-projection-get',
+          requestId: patchRequestId,
+          baseRevision: initialProjection.revision,
+          author: 'Bob',
+          color: '#6699ff',
+        }),
+      );
+      const patchedProjection = await personalPatch;
+      assert.equal(patchedProjection.textBase64, undefined);
+      assert.equal(
+        applyUtf8ByteEdit(
+          expected,
+          patchedProjection.patch.positionByte,
+          patchedProjection.patch.deleteBytes,
+          Buffer.from(patchedProjection.patch.insertBase64, 'base64').toString('utf8'),
+        ),
+        expected,
+      );
+      assert.equal(
+        text.toString(),
+        expected.replace('"Сохранено"', '"Предложено"'),
+        'replacing a personal projection must not modify shared text',
+      );
+      const metadataFile = await waitForValue(async () => {
+        try {
+          const names = await fs.readdir(path.join(dataDirectory, 'documents'));
+          for (const name of names) {
+            if (!/^[0-9a-f]{64}\.json$/u.test(name)) continue;
+            const metadata = JSON.parse(await fs.readFile(path.join(dataDirectory, 'documents', name), 'utf8'));
+            if (metadata.suggestions?.some(({ id, status }) => id === 'persistent-suggestion' && status === 'accepted'))
+              return name;
+          }
+        } catch {}
+        return null;
+      }, 'accepted suggestion persistence');
+      const firstClosed = once(first.socket, 'close');
+      first.socket.close();
+      await firstClosed;
+      await stopServer(server);
 
-    const invalid = new WebSocket(
-      `ws://127.0.0.1:${port}/?document=${encodeURIComponent('branch:localisation/russian/../escape.yml')}`,
-    );
-    const [invalidCode] = await once(invalid, 'close');
-    assert.equal(invalidCode, 1008);
+      const metadataPath = path.join(dataDirectory, 'documents', metadataFile);
+      const legacyMetadata = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
+      legacyMetadata.documentId = documentId;
+      legacyMetadata.savedAt = '2025-01-01T00:00:00.000Z';
+      legacyMetadata.reservations[0].createdBy = 'Alice';
+      legacyMetadata.reservations[0].createdAt = '2025-01-01T00:00:00.000Z';
+      const detached = new Y.Doc();
+      const detachedText = detached.getText('content');
+      detachedText.insert(0, expected);
+      legacyMetadata.reservations[0].startRelative = encodedRelative(
+        Y.createRelativePositionFromTypeIndex(detachedText, expected.indexOf('prototype_key'), -1),
+      );
+      legacyMetadata.reservations[0].endRelative = encodedRelative(
+        Y.createRelativePositionFromTypeIndex(detachedText, expected.length - 2, 0),
+      );
+      detached.destroy();
+      await fs.writeFile(metadataPath, JSON.stringify(legacyMetadata));
 
-    valid = await connectDocument(port, 'branch:localisation/russian/limits_l_russian.yml');
-    const closed = once(valid.socket, 'close');
-    valid.socket.send(Buffer.alloc(MAX_CRDT_UPDATE_BYTES + 1));
-    const [limitCode] = await closed;
-    assert.equal(limitCode, 1008);
-    await waitForHealth(port);
-    assert.equal(server.exitCode, null);
-  } finally {
-    valid?.socket.close();
-    await stopServer(server);
-    await fs.rm(temporary, { recursive: true, force: true });
-  }
-});
+      server = spawnServer(port, dataDirectory);
+      await waitForHealth(port);
+      const minimisedMetadata = await fs.readFile(metadataPath, 'utf8');
+      for (const forbidden of ['documentId', 'savedAt']) {
+        assert.equal(minimisedMetadata.includes(forbidden), false, `metadata retained ${forbidden}`);
+      }
+      assert.equal(
+        Object.hasOwn(JSON.parse(minimisedMetadata).reservations[0], 'createdAt'),
+        false,
+        'reservation retained legacy createdAt',
+      );
+      second = await connectDocument(port, documentId);
+      assert.equal(second.document.getText('content').toString(), expected.replace('"Сохранено"', '"Предложено"'));
+      assert.equal(second.synced.reservations.length, 1);
+      assert.equal(second.synced.reservations[0].id, 'persistent-reservation');
+      assert.equal(second.synced.reservations[0].assignee, 'Alice');
+      assert.equal(second.synced.reservations[0].createdBy, 'Alice');
+      const repairedAtLoad = resolvedReservation(second.document, second.synced.reservations[0]);
+      assert.match(
+        second.document.getText('content').toString().slice(repairedAtLoad.start, repairedAtLoad.end),
+        /prototype_key/u,
+        'loading should repair a reservation whose old CRDT anchors no longer resolve',
+      );
+      assert.equal(second.synced.commentThreads.length, 1);
+      assert.equal(second.synced.commentThreads[0].messages[0].body, 'Постоянный комментарий');
+      assert.equal(second.synced.commentThreads[0].color, '#ff6677');
+      assert.equal(second.synced.commentThreads[0].messages[0].color, '#ff6677');
+      assert.equal(second.synced.suggestions.length, 1);
+      assert.equal(second.synced.suggestions[0].status, 'accepted');
+      assert.equal(second.synced.suggestions[0].decidedBy, 'Bob');
+      assert.equal(second.synced.suggestions[0].color, '#ff6677');
+      assert.equal(second.synced.suggestions[0].traceJson, createdTrace);
+      assert.ok(second.synced.history.length >= 2);
+      const acceptedHistory = second.synced.history.find((entry) => entry.reason === 'suggestion');
+      assert.equal(acceptedHistory.author, 'Bob');
+      assert.equal(acceptedHistory.suggestionAuthor, 'Alice');
+      const baseline = second.synced.history.find((entry) => entry.reason === 'baseline');
+      const historicalVersion = waitForJson(
+        second.socket,
+        (message) => message.type === 'history-version' && message.id === baseline.id,
+      );
+      second.socket.send(JSON.stringify({ type: 'history-get', id: baseline.id }));
+      assert.equal(Buffer.from((await historicalVersion).textBase64, 'base64').toString('utf8'), expected);
+      const restoredHistory = waitForJson(
+        second.socket,
+        (message) => message.type === 'history' && message.entries[0]?.reason === 'restore',
+      );
+      const restoredReservations = waitForJson(
+        second.socket,
+        (message) =>
+          message.type === 'reservations' && message.reservations?.some((item) => item.id === 'persistent-reservation'),
+      );
+      second.socket.send(
+        JSON.stringify({
+          type: 'history-restore',
+          id: baseline.id,
+          headId: second.synced.historyHeadId,
+          author: 'Bob',
+          color: '#6699ff',
+        }),
+      );
+      const restored = await restoredHistory;
+      const restoredReservation = (await restoredReservations).reservations.find(
+        (item) => item.id === 'persistent-reservation',
+      );
+      assert.equal(restored.entries[0].author, 'Bob');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(second.document.getText('content').toString(), expected);
+      const repairedAfterRestore = resolvedReservation(second.document, restoredReservation);
+      assert.match(
+        second.document.getText('content').toString().slice(repairedAfterRestore.start, repairedAfterRestore.end),
+        /prototype_key/u,
+        'history restoration should re-anchor reservations to their keys',
+      );
+      assert.equal(second.synced.commentThreads.length, 1, 'text restoration does not remove comments');
+    } finally {
+      first?.socket.close();
+      second?.socket.close();
+      await stopServer(server);
+      await fs.rm(temporary, { recursive: true, force: true });
+    }
+  },
+);
 
-test('one Agent connection keeps several Review presences and removes all on disconnect', { timeout: 30000 }, async () => {
-  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-multi-presence-'));
-  const port = await freePort();
-  const documentId = 'branch:localisation/russian/presence_l_russian.yml';
-  let server;
-  let producer;
-  let observer;
-  let snapshot;
-  let afterOffline;
-  try {
-    server = spawnServer(port, path.join(temporary, 'data'));
-    await waitForHealth(port);
-    producer = await connectDocument(port, documentId);
-    observer = await connectDocument(port, documentId);
-    const firstSeen = waitForJson(observer.socket, (message) => message.type === 'presence'
-      && message.clientId === 'review-window-one');
-    producer.socket.send(JSON.stringify({
-      type: 'presence', clientId: 'review-window-one', user: 'Alice', color: '#ff6677',
-      caretRelative: 'AA==', anchorRelative: 'AA==',
-    }));
-    await firstSeen;
-    const secondSeen = waitForJson(observer.socket, (message) => message.type === 'presence'
-      && message.clientId === 'review-window-two');
-    producer.socket.send(JSON.stringify({
-      type: 'presence', clientId: 'review-window-two', user: 'Alice', color: '#ff6677',
-      caretRelative: 'AA==', anchorRelative: 'AA==',
-    }));
-    await secondSeen;
+test(
+  'server rejects invalid room identifiers and oversized Yjs updates without exiting',
+  { timeout: 30000 },
+  async () => {
+    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-limits-'));
+    const port = await freePort();
+    let server;
+    let valid;
+    try {
+      server = spawnServer(port, path.join(temporary, 'data'));
+      await waitForHealth(port);
 
-    snapshot = await connectDocument(port, documentId);
-    assert.deepEqual(
-      snapshot.synced.presences.map(({ clientId }) => clientId).sort(),
-      ['review-window-one', 'review-window-two'],
-    );
-    const firstWindowLeft = waitForJson(observer.socket, (message) => message.type === 'presence-left'
-      && message.clientId === 'review-window-one');
-    producer.socket.send(JSON.stringify({ type: 'presence', clientId: 'review-window-one', offline: true }));
-    await firstWindowLeft;
-    afterOffline = await connectDocument(port, documentId);
-    assert.deepEqual(afterOffline.synced.presences.map(({ clientId }) => clientId), ['review-window-two']);
+      const invalid = new WebSocket(
+        `ws://127.0.0.1:${port}/?document=${encodeURIComponent('branch:localisation/russian/../escape.yml')}`,
+      );
+      const [invalidCode] = await once(invalid, 'close');
+      assert.equal(invalidCode, 1008);
 
-    const reviewLeft = waitForJson(observer.socket, (message) => message.type === 'presence-left'
-      && message.clientId === 'review-window-two');
-    producer.socket.close();
-    await reviewLeft;
-  } finally {
-    producer?.socket.close();
-    observer?.socket.close();
-    snapshot?.socket.close();
-    afterOffline?.socket.close();
-    await stopServer(server);
-    await fs.rm(temporary, { recursive: true, force: true });
-  }
-});
+      valid = await connectDocument(port, 'branch:localisation/russian/limits_l_russian.yml');
+      const closed = once(valid.socket, 'close');
+      valid.socket.send(Buffer.alloc(MAX_CRDT_UPDATE_BYTES + 1));
+      const [limitCode] = await closed;
+      assert.equal(limitCode, 1008);
+      await waitForHealth(port);
+      assert.equal(server.exitCode, null);
+    } finally {
+      valid?.socket.close();
+      await stopServer(server);
+      await fs.rm(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'one Agent connection keeps several Review presences and removes all on disconnect',
+  { timeout: 30000 },
+  async () => {
+    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-multi-presence-'));
+    const port = await freePort();
+    const documentId = 'branch:localisation/russian/presence_l_russian.yml';
+    let server;
+    let producer;
+    let observer;
+    let snapshot;
+    let afterOffline;
+    try {
+      server = spawnServer(port, path.join(temporary, 'data'));
+      await waitForHealth(port);
+      producer = await connectDocument(port, documentId);
+      observer = await connectDocument(port, documentId);
+      const firstSeen = waitForJson(
+        observer.socket,
+        (message) => message.type === 'presence' && message.clientId === 'review-window-one',
+      );
+      producer.socket.send(
+        JSON.stringify({
+          type: 'presence',
+          clientId: 'review-window-one',
+          user: 'Alice',
+          color: '#ff6677',
+          caretRelative: 'AA==',
+          anchorRelative: 'AA==',
+        }),
+      );
+      await firstSeen;
+      const secondSeen = waitForJson(
+        observer.socket,
+        (message) => message.type === 'presence' && message.clientId === 'review-window-two',
+      );
+      producer.socket.send(
+        JSON.stringify({
+          type: 'presence',
+          clientId: 'review-window-two',
+          user: 'Alice',
+          color: '#ff6677',
+          caretRelative: 'AA==',
+          anchorRelative: 'AA==',
+        }),
+      );
+      await secondSeen;
+
+      snapshot = await connectDocument(port, documentId);
+      assert.deepEqual(snapshot.synced.presences.map(({ clientId }) => clientId).sort(), [
+        'review-window-one',
+        'review-window-two',
+      ]);
+      const firstWindowLeft = waitForJson(
+        observer.socket,
+        (message) => message.type === 'presence-left' && message.clientId === 'review-window-one',
+      );
+      producer.socket.send(JSON.stringify({ type: 'presence', clientId: 'review-window-one', offline: true }));
+      await firstWindowLeft;
+      afterOffline = await connectDocument(port, documentId);
+      assert.deepEqual(
+        afterOffline.synced.presences.map(({ clientId }) => clientId),
+        ['review-window-two'],
+      );
+
+      const reviewLeft = waitForJson(
+        observer.socket,
+        (message) => message.type === 'presence-left' && message.clientId === 'review-window-two',
+      );
+      producer.socket.close();
+      await reviewLeft;
+    } finally {
+      producer?.socket.close();
+      observer?.socket.close();
+      snapshot?.socket.close();
+      afterOffline?.socket.close();
+      await stopServer(server);
+      await fs.rm(temporary, { recursive: true, force: true });
+    }
+  },
+);

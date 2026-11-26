@@ -53,27 +53,32 @@ test('canonical cache clones sparse localisation trees and refreshes branch head
     assert.equal(unchanged.blob, replacement.blob);
     assert.equal(unchanged.commit, second.commit);
 
-    await fs.writeFile(path.join(source, 'localisation', 'replace', 'russian', 'b.yml'),
-      'l_russian:\n b:0 "updated"\n');
+    await fs.writeFile(
+      path.join(source, 'localisation', 'replace', 'russian', 'b.yml'),
+      'l_russian:\n b:0 "updated"\n',
+    );
     git(source, 'add', '.');
     git(source, 'commit', '-m', 'update replacement');
     git(source, 'push', origin, 'general-dev');
     const third = await cache.snapshot('general-dev:localisation/replace/russian/b.yml', { force: true });
-    assert.deepEqual(await cache.changedFilesSince(
-      'general-dev:localisation/russian/a.yml', first.commit, { remoteHead: second.commit },
-    ), ['localisation/russian/a.yml'], 'a delayed startup summary stays pinned to its validated commit');
-    assert.deepEqual(await cache.changedFilesSince(
-      'general-dev:localisation/russian/a.yml', first.commit,
-    ), ['localisation/replace/russian/b.yml', 'localisation/russian/a.yml']);
+    assert.deepEqual(
+      await cache.changedFilesSince('general-dev:localisation/russian/a.yml', first.commit, {
+        remoteHead: second.commit,
+      }),
+      ['localisation/russian/a.yml'],
+      'a delayed startup summary stays pinned to its validated commit',
+    );
+    assert.deepEqual(await cache.changedFilesSince('general-dev:localisation/russian/a.yml', first.commit), [
+      'localisation/replace/russian/b.yml',
+      'localisation/russian/a.yml',
+    ]);
 
     await fs.writeFile(path.join(source, 'unrelated', 'large.txt'), 'changed outside localisation');
     git(source, 'add', '.');
     git(source, 'commit', '-m', 'unrelated update');
     git(source, 'push', origin, 'general-dev');
     await cache.snapshot('general-dev:localisation/russian/a.yml', { force: true });
-    assert.deepEqual(await cache.changedFilesSince(
-      'general-dev:localisation/russian/a.yml', third.commit,
-    ), []);
+    assert.deepEqual(await cache.changedFilesSince('general-dev:localisation/russian/a.yml', third.commit), []);
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
@@ -97,7 +102,10 @@ test('barrad uses its fork even when a stale main-repository cache and branch ex
     const fork = path.join(root, 'fork');
     const mainOrigin = path.join(root, 'main.git');
     const forkOrigin = path.join(root, 'fork.git');
-    for (const [directory, text] of [[main, 'main'], [fork, 'fork']]) {
+    for (const [directory, text] of [
+      [main, 'main'],
+      [fork, 'fork'],
+    ]) {
       const loc = path.join(directory, 'localisation', 'russian');
       await fs.mkdir(loc, { recursive: true });
       await fs.writeFile(path.join(loc, 'barrad.yml'), `l_russian:\n a:0 "${text}"\n`);
@@ -139,9 +147,10 @@ test('merge detection looks for pull requests from the fork owner', async () => 
     branchRepositories: { barrad: 'MiszczTheMaste/equestria_dev' },
     fetchImplementation: async (url) => {
       urls.push(url);
-      return { ok: true, json: async () => url.includes('/compare/')
-        ? { status: 'behind', base_commit: { sha: 'a'.repeat(40) } }
-        : [] };
+      return {
+        ok: true,
+        json: async () => (url.includes('/compare/') ? { status: 'behind', base_commit: { sha: 'a'.repeat(40) } } : []),
+      };
     },
   });
   assert.equal(await cache.mergedInto('barrad', 'general-dev', 'a'.repeat(40), 'b'.repeat(40)), false);

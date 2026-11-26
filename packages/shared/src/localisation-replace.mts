@@ -2,7 +2,8 @@ import { replacementLanguageProfile, russianReviewSection } from './key-replacem
 import type { IgnoredReplacementEntry } from './key-replacement-language.mts';
 
 const LOCALISATION_PREFIX = /^(\s*)([^#\s][^:]*?)(:(?:\d+)?)(\s+")/u;
-export const AMBIGUOUS_QUOTE_MESSAGE = 'Неоднозначные кавычки перед комментарием. Экранируйте внутренние кавычки или уберите кавычки из комментария.';
+export const AMBIGUOUS_QUOTE_MESSAGE =
+  'Неоднозначные кавычки перед комментарием. Экранируйте внутренние кавычки или уберите кавычки из комментария.';
 
 export interface LocalisationEntry {
   key: string;
@@ -23,7 +24,10 @@ export interface KeyReplacementEntry {
 function localisationValueEnd(content: string, valueStart: number) {
   let closing = -1;
   for (let index = valueStart; index < content.length; index += 1) {
-    if (content[index] === '\\') { index += 1; continue; }
+    if (content[index] === '\\') {
+      index += 1;
+      continue;
+    }
     if (content[index] !== '"') continue;
     if (!/^\s*(?:#.*)?$/u.test(content.slice(index + 1))) continue;
     if (closing >= 0) return { closing, ambiguous: true };
@@ -38,8 +42,13 @@ function parseLocalisationSourceLine(content: string) {
   const valueStart = prefix[0].length;
   const { closing, ambiguous } = localisationValueEnd(content, valueStart);
   if (closing < 0) return null;
-  return { key: prefix[2].trim(), text: ambiguous ? '' : content.slice(valueStart, closing),
-    valueStart, valueEnd: closing, ambiguous };
+  return {
+    key: prefix[2].trim(),
+    text: ambiguous ? '' : content.slice(valueStart, closing),
+    valueStart,
+    valueEnd: closing,
+    ambiguous,
+  };
 }
 
 const ASCII_DOUBLE_QUOTE = '\u0022';
@@ -72,18 +81,27 @@ function parseReplacementLine(raw: unknown, allowComments = false) {
   const version = /^\d+/u.exec(remainder)?.[0] ?? '';
   if (version) remainder = remainder.slice(version.length).trimStart();
   if (remainder.length < 2 || !remainder.startsWith('"')) return null;
-  if (!allowComments) return remainder.endsWith('"') ? { key, value: remainder.slice(1, -1), comment: false, ambiguous: false } : null;
+  if (!allowComments)
+    return remainder.endsWith('"') ? { key, value: remainder.slice(1, -1), comment: false, ambiguous: false } : null;
   const { closing, ambiguous } = localisationValueEnd(remainder, 1);
   if (ambiguous) return { key, value: '', comment: false, ambiguous: true };
-  return closing < 0 ? null : { key, value: remainder.slice(1, closing),
-    comment: remainder.slice(closing + 1).includes('#'), ambiguous: false };
+  return closing < 0
+    ? null
+    : {
+        key,
+        value: remainder.slice(1, closing),
+        comment: remainder.slice(closing + 1).includes('#'),
+        ambiguous: false,
+      };
 }
 
-export function parseKeyReplacementBatch(source: unknown, {
-  mode = 'classic', language = 'russian',
-}: { mode?: unknown; language?: unknown } = {}) {
+export function parseKeyReplacementBatch(
+  source: unknown,
+  { mode = 'classic', language = 'russian' }: { mode?: unknown; language?: unknown } = {},
+) {
   if (mode !== 'classic' && mode !== 'language-filtered') throw new Error('Неизвестный режим замены по ключам.');
-  if (language !== 'russian' && language !== 'english') throw new Error('Выберите русские или английские файлы локализации.');
+  if (language !== 'russian' && language !== 'english')
+    throw new Error('Выберите русские или английские файлы локализации.');
   const entries: KeyReplacementEntry[] = [];
   const errors: Array<{ line: number; message: string }> = [];
   const duplicateKeys = new Set<string>();
@@ -148,7 +166,10 @@ export function scanLocalisationEntries(text: unknown) {
     } else if (parsed) {
       const valueStart = offset + parsed.valueStart;
       entries.push({
-        key: parsed.key, text: parsed.text, line: lineNumber, start: valueStart,
+        key: parsed.key,
+        text: parsed.text,
+        line: lineNumber,
+        start: valueStart,
         end: offset + parsed.valueEnd,
       });
     }
@@ -164,8 +185,9 @@ export function localisationEntries(text: unknown): LocalisationEntry[] {
 export function replaceLocalisationValues(text: unknown, replacements: Iterable<[string, string]>) {
   const wanted = replacements instanceof Map ? replacements : new Map(replacements);
   const scanned = scanLocalisationEntries(text);
-  const ambiguous = scanned.ambiguousEntries.find(entry => wanted.has(entry.key));
-  if (ambiguous) throw new Error(`Неоднозначные кавычки в целевом значении ключа ${ambiguous.key}, строка ${ambiguous.line}.`);
+  const ambiguous = scanned.ambiguousEntries.find((entry) => wanted.has(entry.key));
+  if (ambiguous)
+    throw new Error(`Неоднозначные кавычки в целевом значении ключа ${ambiguous.key}, строка ${ambiguous.line}.`);
   const matches = scanned.entries.filter((entry) => wanted.has(entry.key));
   const seen = new Set<string>();
   for (const match of matches) {

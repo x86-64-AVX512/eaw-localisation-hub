@@ -29,9 +29,13 @@ export class GitCommitVerifier {
     try {
       response = await this.fetch(
         `https://api.github.com/repos/${repository}/compare/${encodeURIComponent(commit)}...${encodeURIComponent(branch)}`,
-        { signal: controller.signal, headers: {
-          Accept: 'application/vnd.github+json', 'User-Agent': 'EaW-Localisation-Hub',
-        } },
+        {
+          signal: controller.signal,
+          headers: {
+            Accept: 'application/vnd.github+json',
+            'User-Agent': 'EaW-Localisation-Hub',
+          },
+        },
       );
     } catch {
       throw new AuthError('GitHub commit verification is unavailable', 503, 'git_verification_unavailable');
@@ -45,8 +49,11 @@ export class GitCommitVerifier {
       throw new AuthError('GitHub commit verification is unavailable', 503, 'git_verification_unavailable');
     }
     const payload = await response.json().catch(() => null);
-    if (!payload || !['ahead', 'identical'].includes(payload.status)
-      || String(payload.base_commit?.sha ?? '').toLowerCase() !== commit) {
+    if (
+      !payload ||
+      !['ahead', 'identical'].includes(payload.status) ||
+      String(payload.base_commit?.sha ?? '').toLowerCase() !== commit
+    ) {
       throw new AuthError('Base commit does not belong to the selected GitHub branch', 409, 'invalid_ticket_base');
     }
     this.cache.set(key, Date.now() + 60 * 60 * 1000);

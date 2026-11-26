@@ -16,9 +16,15 @@ interface DictionaryPayload {
   supplementalBloomBase64: string;
 }
 
-interface WordsPayload { words: string[] }
+interface WordsPayload {
+  words: string[];
+}
 
-interface WorkerReply { id: number; error?: string; result?: unknown }
+interface WorkerReply {
+  id: number;
+  error?: string;
+  result?: unknown;
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -29,37 +35,55 @@ const VIEWPORT_MARGIN = 40;
 const MAX_CHECKED_LINES = 240;
 
 function loadEnabled(): boolean {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').enabled !== false; }
-  catch { return true; }
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').enabled !== false;
+  } catch {
+    return true;
+  }
 }
 
-export function spellingIssueAtPosition(values: Iterable<SpellingIssue>,
-  position: Monaco.IPosition | null): SpellingIssue | null {
+export function spellingIssueAtPosition(
+  values: Iterable<SpellingIssue>,
+  position: Monaco.IPosition | null,
+): SpellingIssue | null {
   if (!position) return null;
-  return [...values].find((item) => item.lineNumber === position.lineNumber
-    && position.column >= item.startColumn && position.column < item.endColumn) ?? null;
+  return (
+    [...values].find(
+      (item) =>
+        item.lineNumber === position.lineNumber &&
+        position.column >= item.startColumn &&
+        position.column < item.endColumn,
+    ) ?? null
+  );
 }
 
 export function createSpellcheck({ monaco, editor, token, showToast }: SpellcheckOptions) {
-  const enabled = requiredInput('#spellcheck-enabled'); enabled.checked = loadEnabled();
+  const enabled = requiredInput('#spellcheck-enabled');
+  enabled.checked = loadEnabled();
   const worker = new Worker('/spellcheck-worker.js', { type: 'module' });
   const decorations = editor.createDecorationsCollection();
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
-  let workerSequence = 0; let initialisePromise: Promise<unknown> | null = null;
+  let workerSequence = 0;
+  let initialisePromise: Promise<unknown> | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let checkId = 0; let issues = new Map<string, SpellingIssue>(); let lastError = '';
+  let checkId = 0;
+  let issues = new Map<string, SpellingIssue>();
+  let lastError = '';
   let started = false;
   let contextIssue: SpellingIssue | null = null;
   let quickFixPanel: HTMLDivElement | null = null;
 
   async function request<T>(route: string, method = 'GET', body?: object): Promise<T> {
     const response = await fetch(route, {
-      method, cache: 'no-store', headers: {
+      method,
+      cache: 'no-store',
+      headers: {
         Authorization: `Bearer ${token}`,
         ...(body ? { 'Content-Type': 'application/json' } : {}),
-      }, body: body ? JSON.stringify(body) : undefined,
+      },
+      body: body ? JSON.stringify(body) : undefined,
     });
-    const payload = await response.json().catch(() => ({})) as T & { error?: string };
+    const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
     return payload;
   }
@@ -76,25 +100,39 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
     const operation = pending.get(data.id);
     if (!operation) return;
     pending.delete(data.id);
-    if (data.error) operation.reject(new Error(data.error)); else operation.resolve(data.result);
+    if (data.error) operation.reject(new Error(data.error));
+    else operation.resolve(data.result);
   };
   worker.onerror = () => {
-    for (const operation of pending.values()) operation.reject(new Error(uiText("Фоновая проверка завершилась с ошибкой")));
+    for (const operation of pending.values())
+      operation.reject(new Error(uiText('Фоновая проверка завершилась с ошибкой')));
     pending.clear();
   };
 
   function initialise(): Promise<unknown> {
-    if (!initialisePromise) initialisePromise = Promise.all([
-      request<DictionaryPayload>('/api/spelling/dictionary'), request<WordsPayload>('/api/spelling/words'),
-    ]).then(([dictionary, shared]) => askWorker<{ ready: true }>('initialise', {
-      affBase64: dictionary.affBase64, dicBase64: dictionary.dicBase64,
-      supplementalBloomBase64: dictionary.supplementalBloomBase64, words: shared.words,
-    })).catch((error) => { initialisePromise = null; throw error; });
+    if (!initialisePromise)
+      initialisePromise = Promise.all([
+        request<DictionaryPayload>('/api/spelling/dictionary'),
+        request<WordsPayload>('/api/spelling/words'),
+      ])
+        .then(([dictionary, shared]) =>
+          askWorker<{ ready: true }>('initialise', {
+            affBase64: dictionary.affBase64,
+            dicBase64: dictionary.dicBase64,
+            supplementalBloomBase64: dictionary.supplementalBloomBase64,
+            words: shared.words,
+          }),
+        )
+        .catch((error) => {
+          initialisePromise = null;
+          throw error;
+        });
     return initialisePromise;
   }
 
   function clear() {
-    issues = new Map(); decorations.clear();
+    issues = new Map();
+    decorations.clear();
   }
   function reportError(prefix: string, error: unknown): void {
     const message = errorMessage(error);
@@ -104,68 +142,88 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
   }
   async function checkVisibleArea() {
     if (!isWorkspaceVisible()) return;
-    const id = checkId; const model = editor.getModel();
-    if (!model || !enabled.checked) { clear(); return; }
+    const id = checkId;
+    const model = editor.getModel();
+    if (!model || !enabled.checked) {
+      clear();
+      return;
+    }
     try {
       await initialise();
       if (id !== checkId || model !== editor.getModel()) return;
       const visibleRanges = editor.getVisibleRanges();
       const anchor = visibleRanges.length
         ? Math.min(...visibleRanges.map(({ startLineNumber }) => startLineNumber))
-        : editor.getPosition()?.lineNumber ?? 1;
+        : (editor.getPosition()?.lineNumber ?? 1);
       const startLineNumber = Math.max(1, anchor - VIEWPORT_MARGIN);
       const visibleEnd = visibleRanges.length
-        ? Math.max(...visibleRanges.map(({ endLineNumber }) => endLineNumber)) : anchor;
+        ? Math.max(...visibleRanges.map(({ endLineNumber }) => endLineNumber))
+        : anchor;
       const endLineNumber = Math.min(
-        model.getLineCount(), visibleEnd + VIEWPORT_MARGIN, startLineNumber + MAX_CHECKED_LINES - 1,
+        model.getLineCount(),
+        visibleEnd + VIEWPORT_MARGIN,
+        startLineNumber + MAX_CHECKED_LINES - 1,
       );
       const version = model.getVersionId();
       const payload = await askWorker<{ issues: SpellingIssue[] }>('check', {
         lineOffset: startLineNumber - 1,
         text: model.getValueInRange({
-          startLineNumber, startColumn: 1,
-          endLineNumber, endColumn: model.getLineMaxColumn(endLineNumber),
+          startLineNumber,
+          startColumn: 1,
+          endLineNumber,
+          endColumn: model.getLineMaxColumn(endLineNumber),
         }),
       });
       if (id !== checkId || version !== model.getVersionId() || model !== editor.getModel()) return;
       lastError = '';
-      issues = new Map(payload.issues.map((item) => [
-        `${item.lineNumber}:${item.startColumn}:${item.endColumn}`, item,
-      ]));
-      decorations.set(payload.issues.map((item) => ({
-        range: new monaco.Range(
-          item.lineNumber, item.startColumn, item.lineNumber, item.endColumn,
-        ),
-        options: {
-          inlineClassName: 'spelling-error',
-          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-        },
-      })));
+      issues = new Map(
+        payload.issues.map((item) => [`${item.lineNumber}:${item.startColumn}:${item.endColumn}`, item]),
+      );
+      decorations.set(
+        payload.issues.map((item) => ({
+          range: new monaco.Range(item.lineNumber, item.startColumn, item.lineNumber, item.endColumn),
+          options: {
+            inlineClassName: 'spelling-error',
+            stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+          },
+        })),
+      );
     } catch (error) {
       if (id === checkId) clear();
-      reportError(uiText("Проверка орфографии недоступна"), error);
+      reportError(uiText('Проверка орфографии недоступна'), error);
     }
   }
   const schedule = () => {
     if (!started || !isWorkspaceVisible()) return;
-    clearTimeout(timer); checkId += 1;
+    clearTimeout(timer);
+    checkId += 1;
     timer = setTimeout(checkVisibleArea, 200);
   };
   const content = editor.onDidChangeModelContent(schedule);
-  window.addEventListener('workspacevisibilitychange',schedule);
+  window.addEventListener('workspacevisibilitychange', schedule);
   const scrolling = editor.onDidScrollChange((event) => {
     if (!event.scrollTopChanged && !event.scrollHeightChanged) return;
     schedule();
   });
-  const runQuickFix = () => editor.trigger('eaw-spelling', 'editor.action.codeAction', { kind: 'quickfix', apply: 'never' });
+  const runQuickFix = () =>
+    editor.trigger('eaw-spelling', 'editor.action.codeAction', { kind: 'quickfix', apply: 'never' });
   const quickFixKey = editor.addAction({
-    id: 'eaw.spelling.quickFix', label: uiText("Открыть быстрые исправления"),
-    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period], run: runQuickFix,
+    id: 'eaw.spelling.quickFix',
+    label: uiText('Открыть быстрые исправления'),
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period],
+    run: runQuickFix,
   });
   const editorNode = editor.getDomNode();
   const quickFixByCharacter = (event: KeyboardEvent) => {
-    if (event.key !== '.' || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey
-      || event.isComposing || !editor.hasTextFocus()) return;
+    if (
+      event.key !== '.' ||
+      !(event.ctrlKey || event.metaKey) ||
+      event.altKey ||
+      event.shiftKey ||
+      event.isComposing ||
+      !editor.hasTextFocus()
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     if (!event.repeat) runQuickFix();
@@ -181,23 +239,43 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
         if (issue.lineNumber === range.startLineNumber && issue.endColumn < range.startColumn) continue;
         if (issue.lineNumber === range.endLineNumber && issue.startColumn > range.endColumn) continue;
         let payload: { suggestions: string[] } = { suggestions: [] };
-        try { await initialise(); payload = await askWorker<{ suggestions: string[] }>('suggest', { word: issue.word }); }
-        catch (error) { reportError(uiText("Варианты исправления недоступны"), error); }
-        for (const suggestion of payload.suggestions ?? []) actions.push({
-          title: uiText("Заменить на «{0}»", suggestion), kind: 'quickfix', isPreferred: actions.length === 0,
-          edit: { edits: [{ resource: model.uri, versionId: model.getVersionId(), textEdit: {
-            range: new monaco.Range(issue.lineNumber, issue.startColumn, issue.lineNumber, issue.endColumn), text: suggestion,
-          } }] },
+        try {
+          await initialise();
+          payload = await askWorker<{ suggestions: string[] }>('suggest', { word: issue.word });
+        } catch (error) {
+          reportError(uiText('Варианты исправления недоступны'), error);
+        }
+        for (const suggestion of payload.suggestions ?? [])
+          actions.push({
+            title: uiText('Заменить на «{0}»', suggestion),
+            kind: 'quickfix',
+            isPreferred: actions.length === 0,
+            edit: {
+              edits: [
+                {
+                  resource: model.uri,
+                  versionId: model.getVersionId(),
+                  textEdit: {
+                    range: new monaco.Range(issue.lineNumber, issue.startColumn, issue.lineNumber, issue.endColumn),
+                    text: suggestion,
+                  },
+                },
+              ],
+            },
+          });
+        actions.push({
+          title: uiText('Добавить «{0}» в общий словарь сервера', issue.word),
+          kind: 'quickfix',
+          command: { id: 'eaw.spelling.addWord', title: uiText('Добавить в словарь'), arguments: [issue.word] },
         });
-        actions.push({ title: uiText("Добавить «{0}» в общий словарь сервера", issue.word), kind: 'quickfix',
-          command: { id: 'eaw.spelling.addWord', title: uiText("Добавить в словарь"), arguments: [issue.word] } });
       }
       return { actions, dispose() {} };
     },
   };
   let provider = monaco.languages.registerCodeActionProvider('eaw-yaml', codeActions);
-  const writableChanged = editor.onDidChangeConfiguration(event => {
-    if (!event.hasChanged(monaco.editor.EditorOption.readOnly) || editor.getOption(monaco.editor.EditorOption.readOnly)) return;
+  const writableChanged = editor.onDidChangeConfiguration((event) => {
+    if (!event.hasChanged(monaco.editor.EditorOption.readOnly) || editor.getOption(monaco.editor.EditorOption.readOnly))
+      return;
     // Monaco can initialise its code-action model while Review is still read-only.
     // Notify the registry when the shared document becomes writable.
     provider.dispose();
@@ -206,13 +284,15 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
   async function addWord(word: string): Promise<void> {
     try {
       const payload = await request<WordsPayload>('/api/spelling/words', 'PUT', { word });
-      await initialise(); await askWorker<{ ready: true }>('words', { words: payload.words }); schedule();
-      showToast(uiText("«{0}» добавлено в общий словарь сервера.", word));
-    } catch (error) { showToast(uiText("Не удалось добавить слово: {0}", errorMessage(error)), true); }
+      await initialise();
+      await askWorker<{ ready: true }>('words', { words: payload.words });
+      schedule();
+      showToast(uiText('«{0}» добавлено в общий словарь сервера.', word));
+    } catch (error) {
+      showToast(uiText('Не удалось добавить слово: {0}', errorMessage(error)), true);
+    }
   }
-  const command = monaco.editor.registerCommand(
-    'eaw.spelling.addWord', async (_accessor, word) => addWord(word),
-  );
+  const command = monaco.editor.registerCommand('eaw.spelling.addWord', async (_accessor, word) => addWord(word));
   function closeQuickFixPanel() {
     if (!quickFixPanel) return;
     quickFixPanel.remove();
@@ -230,11 +310,11 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
   function replaceIssue(issue: SpellingIssue, suggestion: string): void {
     const model = editor.getModel();
     if (!model) return;
-    const range = new monaco.Range(
-      issue.lineNumber, issue.startColumn, issue.lineNumber, issue.endColumn,
-    );
+    const range = new monaco.Range(issue.lineNumber, issue.startColumn, issue.lineNumber, issue.endColumn);
     if (model.getValueInRange(range) !== issue.word) {
-      closeQuickFixPanel(); schedule(); return;
+      closeQuickFixPanel();
+      schedule();
+      return;
     }
     editor.pushUndoStop();
     editor.executeEdits('eaw-spelling-quick-fix', [{ range, text: suggestion }]);
@@ -247,54 +327,67 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
     const model = editor.getModel();
     if (!model) return;
     let payload: { suggestions: string[] } = { suggestions: [] };
-    try { await initialise(); payload = await askWorker<{ suggestions: string[] }>('suggest', { word: issue.word }); }
-    catch (error) { reportError(uiText("Варианты исправления недоступны"), error); }
-    const range = new monaco.Range(
-      issue.lineNumber, issue.startColumn, issue.lineNumber, issue.endColumn,
-    );
+    try {
+      await initialise();
+      payload = await askWorker<{ suggestions: string[] }>('suggest', { word: issue.word });
+    } catch (error) {
+      reportError(uiText('Варианты исправления недоступны'), error);
+    }
+    const range = new monaco.Range(issue.lineNumber, issue.startColumn, issue.lineNumber, issue.endColumn);
     if (model !== editor.getModel() || model.getValueInRange(range) !== issue.word) return;
 
     const panel = document.createElement('div');
     panel.className = 'spelling-quick-fix-panel';
     panel.setAttribute('role', 'menu');
-    panel.setAttribute('aria-label', uiText("Быстрые исправления для {0}", issue.word));
+    panel.setAttribute('aria-label', uiText('Быстрые исправления для {0}', issue.word));
     const heading = document.createElement('strong');
-    heading.textContent = uiText("Исправить «{0}»", issue.word);
+    heading.textContent = uiText('Исправить «{0}»', issue.word);
     panel.append(heading);
     const suggestions = [...new Set(payload.suggestions ?? [])].slice(0, 8);
     if (suggestions.length) {
       for (const suggestion of suggestions) {
         const button = document.createElement('button');
-        button.type = 'button'; button.textContent = suggestion; button.setAttribute('role', 'menuitem');
+        button.type = 'button';
+        button.textContent = suggestion;
+        button.setAttribute('role', 'menuitem');
         button.addEventListener('click', () => replaceIssue(issue, suggestion));
         panel.append(button);
       }
     } else {
       const empty = document.createElement('span');
       empty.className = 'spelling-quick-fix-empty';
-      empty.textContent = uiText("Подходящих вариантов замены нет.");
+      empty.textContent = uiText('Подходящих вариантов замены нет.');
       panel.append(empty);
     }
     const add = document.createElement('button');
-    add.type = 'button'; add.className = 'spelling-quick-fix-add';
-    add.textContent = uiText("Добавить в общий словарь"); add.setAttribute('role', 'menuitem');
-    add.addEventListener('click', () => { closeQuickFixPanel(); addWord(issue.word); });
+    add.type = 'button';
+    add.className = 'spelling-quick-fix-add';
+    add.textContent = uiText('Добавить в общий словарь');
+    add.setAttribute('role', 'menuitem');
+    add.addEventListener('click', () => {
+      closeQuickFixPanel();
+      addWord(issue.word);
+    });
     panel.append(add);
     document.body.append(panel);
     quickFixPanel = panel;
 
     const editorRect = editor.getDomNode()?.getBoundingClientRect();
     const position = editor.getScrolledVisiblePosition({
-      lineNumber: issue.lineNumber, column: issue.startColumn,
+      lineNumber: issue.lineNumber,
+      column: issue.startColumn,
     });
-    if (!editorRect || !position) { closeQuickFixPanel(); return; }
-    const left = Math.max(8, Math.min(
-      editorRect.left + position.left, window.innerWidth - panel.offsetWidth - 8,
-    ));
-    const top = Math.max(8, Math.min(
-      editorRect.top + position.top + position.height, window.innerHeight - panel.offsetHeight - 8,
-    ));
-    panel.style.left = `${left}px`; panel.style.top = `${top}px`;
+    if (!editorRect || !position) {
+      closeQuickFixPanel();
+      return;
+    }
+    const left = Math.max(8, Math.min(editorRect.left + position.left, window.innerWidth - panel.offsetWidth - 8));
+    const top = Math.max(
+      8,
+      Math.min(editorRect.top + position.top + position.height, window.innerHeight - panel.offsetHeight - 8),
+    );
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
     document.addEventListener('pointerdown', dismissQuickFixPanel, true);
     document.addEventListener('keydown', dismissQuickFixPanelWithEscape, true);
     window.addEventListener('resize', closeQuickFixPanel);
@@ -308,15 +401,17 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
   });
   const contextAction = editor.addAction({
     id: 'eaw.spelling.addWordFromContext',
-    label: uiText("Добавить слово в общий словарь"),
+    label: uiText('Добавить слово в общий словарь'),
     precondition: 'eawSpellingIssueAtContextMenu',
     contextMenuGroupId: '1_modification',
     contextMenuOrder: 1,
-    run: async () => { if (contextIssue) await addWord(contextIssue.word); },
+    run: async () => {
+      if (contextIssue) await addWord(contextIssue.word);
+    },
   });
   const quickFixAction = editor.addAction({
     id: 'eaw.spelling.openQuickFixesFromContext',
-    label: uiText("Открыть быстрые исправления"),
+    label: uiText('Открыть быстрые исправления'),
     precondition: 'eawSpellingIssueAtContextMenu',
     contextMenuGroupId: '1_modification',
     contextMenuOrder: 2,
@@ -328,19 +423,39 @@ export function createSpellcheck({ monaco, editor, token, showToast }: Spellchec
   });
   enabled.addEventListener('change', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ enabled: enabled.checked }));
-    if (enabled.checked) schedule(); else { checkId += 1; clear(); }
+    if (enabled.checked) schedule();
+    else {
+      checkId += 1;
+      clear();
+    }
   });
-  return { start() {
-    if (started) return;
-    started = true;
-    schedule();
-  }, refresh: schedule, dispose() {
-    editorNode?.removeEventListener('keydown', quickFixByCharacter, true);
-    window.removeEventListener('workspacevisibilitychange',schedule);
-    clearTimeout(timer); closeQuickFixPanel(); worker.terminate(); pending.clear(); decorations.clear();
-    if ('dispose' in decorations && typeof decorations.dispose === 'function') decorations.dispose();
-    content.dispose(); scrolling.dispose(); quickFixKey.dispose(); writableChanged.dispose(); provider.dispose(); command.dispose();
-    rightClick.dispose(); contextAction.dispose(); quickFixAction.dispose(); contextKey.reset();
-  } };
+  return {
+    start() {
+      if (started) return;
+      started = true;
+      schedule();
+    },
+    refresh: schedule,
+    dispose() {
+      editorNode?.removeEventListener('keydown', quickFixByCharacter, true);
+      window.removeEventListener('workspacevisibilitychange', schedule);
+      clearTimeout(timer);
+      closeQuickFixPanel();
+      worker.terminate();
+      pending.clear();
+      decorations.clear();
+      if ('dispose' in decorations && typeof decorations.dispose === 'function') decorations.dispose();
+      content.dispose();
+      scrolling.dispose();
+      quickFixKey.dispose();
+      writableChanged.dispose();
+      provider.dispose();
+      command.dispose();
+      rightClick.dispose();
+      contextAction.dispose();
+      quickFixAction.dispose();
+      contextKey.reset();
+    },
+  };
 }
 import { isWorkspaceVisible } from './workspace-runtime.ts';

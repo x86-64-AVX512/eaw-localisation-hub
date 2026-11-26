@@ -7,17 +7,18 @@ const root = path.resolve(import.meta.dirname, '..');
 const read = (relative) => fs.readFile(path.join(root, relative), 'utf8');
 
 test('deployment artifacts keep the server private, constrained, authenticated, and recoverable', async () => {
-  const [dockerfile, compose, install, backup, restore, environment, caddy, restoreModule, sourcePackage] = await Promise.all([
-    read('Dockerfile'),
-    read('deploy/docker-compose.yml'),
-    read('deploy/install.sh'),
-    read('deploy/backup.sh'),
-    read('deploy/restore.sh'),
-    read('deploy/.env.example'),
-    read('deploy/Caddyfile'),
-    read('apps/server/src/restore.mjs'),
-    read('scripts/build-source-package.ps1'),
-  ]);
+  const [dockerfile, compose, install, backup, restore, environment, caddy, restoreModule, sourcePackage] =
+    await Promise.all([
+      read('Dockerfile'),
+      read('deploy/docker-compose.yml'),
+      read('deploy/install.sh'),
+      read('deploy/backup.sh'),
+      read('deploy/restore.sh'),
+      read('deploy/.env.example'),
+      read('deploy/Caddyfile'),
+      read('apps/server/src/restore.mjs'),
+      read('scripts/build-source-package.ps1'),
+    ]);
 
   assert.match(dockerfile, /USER node/);
   assert.match(dockerfile, /--auth", "required/);

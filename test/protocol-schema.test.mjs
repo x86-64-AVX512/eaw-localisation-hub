@@ -25,82 +25,193 @@ test('Review can opt into compact variants while old open envelopes remain valid
 });
 
 test('Review reservation commands accept their bounded optional comment', () => {
-  assert.doesNotThrow(() => validateClientMessage({
-    type: 'reservationCreate', path: 'C:\\repo\\localisation\\russian\\file.yml',
-    startByte: 1, endByte: 20, assigneeId: 'user-1', assignee: 'Translator',
-    assigneeColor: '#66aaff', comment: 'Проверить терминологию',
-  }));
+  assert.doesNotThrow(() =>
+    validateClientMessage({
+      type: 'reservationCreate',
+      path: 'C:\\repo\\localisation\\russian\\file.yml',
+      startByte: 1,
+      endByte: 20,
+      assigneeId: 'user-1',
+      assignee: 'Translator',
+      assigneeColor: '#66aaff',
+      comment: 'Проверить терминологию',
+    }),
+  );
 });
 
 test('local-file selection accepts one bounded change id and a binary decision', () => {
-  assert.doesNotThrow(() => validateClientMessage({
-    type: 'personalFileSelectionSet', path: 'C:\\repo\\localisation\\russian\\file.yml',
-    changeId: 'key:example_key', include: 1, revision: 'revision-1',
-  }));
-  assert.throws(() => validateClientMessage({
-    type: 'personalFileSelectionSet', path: 'x.yml', changeId: 'key:x', include: true, revision: 'revision-1',
-  }), /include/);
-  assert.throws(() => validateClientMessage({
-    type: 'personalFileSelectionSet', path: 'x.yml', changeId: 'key:x', include: 2, revision: 'revision-1',
-  }), /include/);
+  assert.doesNotThrow(() =>
+    validateClientMessage({
+      type: 'personalFileSelectionSet',
+      path: 'C:\\repo\\localisation\\russian\\file.yml',
+      changeId: 'key:example_key',
+      include: 1,
+      revision: 'revision-1',
+    }),
+  );
+  assert.throws(
+    () =>
+      validateClientMessage({
+        type: 'personalFileSelectionSet',
+        path: 'x.yml',
+        changeId: 'key:x',
+        include: true,
+        revision: 'revision-1',
+      }),
+    /include/,
+  );
+  assert.throws(
+    () =>
+      validateClientMessage({
+        type: 'personalFileSelectionSet',
+        path: 'x.yml',
+        changeId: 'key:x',
+        include: 2,
+        revision: 'revision-1',
+      }),
+    /include/,
+  );
 });
 
 test('Review client protocol schema rejects field confusion and unknown commands', () => {
-  assert.throws(() => validateClientMessage({
-    type: 'edit', path: 'x.yml', positionByte: '12', deleteBytes: 0, insertBase64: '',
-  }), /positionByte/);
+  assert.throws(
+    () =>
+      validateClientMessage({
+        type: 'edit',
+        path: 'x.yml',
+        positionByte: '12',
+        deleteBytes: 0,
+        insertBase64: '',
+      }),
+    /positionByte/,
+  );
   assert.throws(() => validateClientMessage({ type: 'edit', path: 'x.yml' }), /positionByte/);
   assert.throws(() => validateClientMessage({ type: 'runCommand', command: 'whoami' }), /Unknown client message type/);
-  assert.throws(() => validateClientMessage({ type: 'close', path: 'x.yml', surprise: true }), /Unknown protocol field/);
+  assert.throws(
+    () => validateClientMessage({ type: 'close', path: 'x.yml', surprise: true }),
+    /Unknown protocol field/,
+  );
   assert.throws(() => validateClientMessage({ type: 'hello', clientId: 'old-plugin' }), /Unknown client message type/);
   assert.throws(() => validateClientMessage({ type: 'reviewOpen', path: 'x.yml' }), /Unknown client message type/);
 });
 
 test('every dispatched Review command has an explicit schema', () => {
   assert.deepEqual(clientMessageTypes, [
-    'open', 'activate', 'deactivate', 'close', 'edit', 'snapshot', 'reviewUpdate', 'cursor', 'undo', 'redo',
-    'reservationCreate', 'reservationDeleteAt', 'reservationUpdate', 'reservationDelete', 'commentCreate', 'commentReply',
-    'discussionMessageUpdate', 'discussionMessageDelete', 'commentStatus', 'commentDelete', 'suggestionCreate', 'suggestionUpdate', 'suggestionReply', 'suggestionAccept',
-    'suggestionRevert', 'suggestionReject', 'suggestionDelete', 'avatarSet', 'avatarDelete',
-    'recoveryIssue', 'recoveryConfirm', 'recoveryDiscard', 'externalConflictResolve',
-    'historyRequest', 'historyRestore', 'personalFileMaterialize', 'personalFileSelectionSet',
-    'personalConflictResolve', 'documentVariantRequest', 'documentVariantsRequest',
+    'open',
+    'activate',
+    'deactivate',
+    'close',
+    'edit',
+    'snapshot',
+    'reviewUpdate',
+    'cursor',
+    'undo',
+    'redo',
+    'reservationCreate',
+    'reservationDeleteAt',
+    'reservationUpdate',
+    'reservationDelete',
+    'commentCreate',
+    'commentReply',
+    'discussionMessageUpdate',
+    'discussionMessageDelete',
+    'commentStatus',
+    'commentDelete',
+    'suggestionCreate',
+    'suggestionUpdate',
+    'suggestionReply',
+    'suggestionAccept',
+    'suggestionRevert',
+    'suggestionReject',
+    'suggestionDelete',
+    'avatarSet',
+    'avatarDelete',
+    'recoveryIssue',
+    'recoveryConfirm',
+    'recoveryDiscard',
+    'externalConflictResolve',
+    'historyRequest',
+    'historyRestore',
+    'personalFileMaterialize',
+    'personalFileSelectionSet',
+    'personalConflictResolve',
+    'documentVariantRequest',
+    'documentVariantsRequest',
   ]);
 });
 
 test('server protocol schema validates nested collaborative state', () => {
   const message = {
-    type: 'synced', protocol: 14, version: '0.8.6F3', documentId: 'general-dev:localisation/russian/x.yml',
-    canSeed: false, reservations: [], commentThreads: [], suggestions: [], presences: [],
+    type: 'synced',
+    protocol: 14,
+    version: '0.8.6F3',
+    documentId: 'general-dev:localisation/russian/x.yml',
+    canSeed: false,
+    reservations: [],
+    commentThreads: [],
+    suggestions: [],
+    presences: [],
     git: {
-      status: 'branch-outdated', branch: 'general-dev', localHead: 'a'.repeat(40),
-      remoteHead: 'b'.repeat(40), localBlob: 'c'.repeat(40), remoteBlob: 'c'.repeat(40),
-      changedFiles: ['localisation/russian/x.yml'], checkedAt: Date.now(), reason: 'branch-head-outdated',
+      status: 'branch-outdated',
+      branch: 'general-dev',
+      localHead: 'a'.repeat(40),
+      remoteHead: 'b'.repeat(40),
+      localBlob: 'c'.repeat(40),
+      remoteBlob: 'c'.repeat(40),
+      changedFiles: ['localisation/russian/x.yml'],
+      checkedAt: Date.now(),
+      reason: 'branch-head-outdated',
     },
     identity: { id: 'u1', displayName: 'User', color: '#abcdef', roles: ['translator'] },
     directory: [],
   };
   assert.equal(validateServerMessage(message), message);
   assert.throws(() => validateServerMessage({ ...message, reservations: [{}] }), /Reservation id/);
-  assert.equal(validateServerMessage({
-    type: 'git-status', status: 'conflict', branch: 'general-dev', remoteHead: 'b'.repeat(40),
-    remoteBlob: 'c'.repeat(40), changedFiles: ['localisation/russian/x.yml'], reason: 'file-blob-differs',
-    conflicts: [{ key: 'x', label: 'x', conflictId: 'snapshot-x', detail: 'Один ключ изменён с обеих сторон.',
-      baseLine: 'x:0 "старое"', collaborativeLine: 'x:0 "совместное"', externalLine: 'x:0 "Git"' }],
-  }).status, 'conflict');
+  assert.equal(
+    validateServerMessage({
+      type: 'git-status',
+      status: 'conflict',
+      branch: 'general-dev',
+      remoteHead: 'b'.repeat(40),
+      remoteBlob: 'c'.repeat(40),
+      changedFiles: ['localisation/russian/x.yml'],
+      reason: 'file-blob-differs',
+      conflicts: [
+        {
+          key: 'x',
+          label: 'x',
+          conflictId: 'snapshot-x',
+          detail: 'Один ключ изменён с обеих сторон.',
+          baseLine: 'x:0 "старое"',
+          collaborativeLine: 'x:0 "совместное"',
+          externalLine: 'x:0 "Git"',
+        },
+      ],
+    }).status,
+    'conflict',
+  );
   assert.throws(() => validateServerMessage({ type: 'shell', command: 'whoami' }), /Unknown server message/);
 });
 
 test('server protocol schema accepts a revisioned personal projection patch', () => {
   const message = {
-    type: 'personal-projection', documentId: 'general-dev:localisation/russian/x.yml',
-    requestId: 'request-1', subjectAuthorId: 'alice', revision: 'b'.repeat(64),
+    type: 'personal-projection',
+    documentId: 'general-dev:localisation/russian/x.yml',
+    requestId: 'request-1',
+    subjectAuthorId: 'alice',
+    revision: 'b'.repeat(64),
     baseRevision: 'a'.repeat(64),
     patch: { positionByte: 10, deleteBytes: 4, insertBase64: '0YLQtdGB0YI=' },
-    contributors: [], conflicts: [],
+    contributors: [],
+    conflicts: [],
   };
   assert.equal(validateServerMessage(message), message);
-  assert.throws(() => validateServerMessage({
-    ...message, patch: { ...message.patch, deleteBytes: -1 },
-  }), /patch deletion/);
+  assert.throws(
+    () =>
+      validateServerMessage({
+        ...message,
+        patch: { ...message.patch, deleteBytes: -1 },
+      }),
+    /patch deletion/,
+  );
 });

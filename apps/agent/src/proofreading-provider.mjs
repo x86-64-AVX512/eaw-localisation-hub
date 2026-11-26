@@ -58,7 +58,8 @@ export class ProofreadingProvider {
   }
 
   checkStatus(status) {
-    if (status === 401 || status === 403) throw new Error('Провайдер ИИ отклонил API-ключ. Проверьте ключ и права доступа.');
+    if (status === 401 || status === 403)
+      throw new Error('Провайдер ИИ отклонил API-ключ. Проверьте ключ и права доступа.');
     if (status === 402) throw new Error('Провайдер ИИ требует пополнить баланс API.');
     if (status === 429) throw new Error('Достигнут лимит API провайдера. Повторите запрос позже.');
     if (status < 200 || status >= 300) throw new Error(`Провайдер ИИ вернул ошибку HTTP ${status}.`);
@@ -73,7 +74,7 @@ export class ProofreadingProvider {
     if (!/^[!-~]{1,512}$/u.test(apiKey)) throw new Error('Введите действительный API-ключ.');
     const { status, data } = await this.request('models', apiKey, signal);
     this.checkStatus(status);
-    if (!Array.isArray(data?.data) || !data.data.some(model => model?.id === this.model)) {
+    if (!Array.isArray(data?.data) || !data.data.some((model) => model?.id === this.model)) {
       throw new Error('Выбранная модель недоступна для этого API-ключа.');
     }
     signal?.throwIfAborted();
@@ -90,22 +91,33 @@ export class ProofreadingProvider {
       max_tokens: 8192,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: instructions
-          + '\nReturn this JSON object: {"suggestions":[{"key":"K","text":"Corrected value","reason":"Short explanation"}]}.'
-          + ' If no correction is needed, return {"suggestions":[]}.' },
+        {
+          role: 'system',
+          content:
+            instructions +
+            '\nReturn this JSON object: {"suggestions":[{"key":"K","text":"Corrected value","reason":"Short explanation"}]}.' +
+            ' If no correction is needed, return {"suggestions":[]}.',
+        },
         { role: 'user', content: input },
       ],
     });
     this.checkStatus(status);
     const choice = data?.choices?.[0];
     if (choice?.finish_reason === 'length') throw new Error('Ответ модели обрезан. Выберите меньший фрагмент.');
-    if (choice?.finish_reason !== 'stop' || typeof choice.message?.content !== 'string' || !choice.message.content.trim()) {
+    if (
+      choice?.finish_reason !== 'stop' ||
+      typeof choice.message?.content !== 'string' ||
+      !choice.message.content.trim()
+    ) {
       throw new Error('Провайдер ИИ вернул некорректный ответ.');
     }
-    return { text: choice.message.content, usage: {
-      inputTokens: data.usage?.prompt_tokens,
-      outputTokens: data.usage?.completion_tokens,
-      cachedInputTokens: data.usage?.prompt_tokens_details?.cached_tokens ?? data.usage?.prompt_cache_hit_tokens,
-    } };
+    return {
+      text: choice.message.content,
+      usage: {
+        inputTokens: data.usage?.prompt_tokens,
+        outputTokens: data.usage?.completion_tokens,
+        cachedInputTokens: data.usage?.prompt_tokens_details?.cached_tokens ?? data.usage?.prompt_cache_hit_tokens,
+      },
+    };
   }
 }

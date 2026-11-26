@@ -10,13 +10,19 @@ import * as Y from 'yjs';
 import { AgentHub } from '../apps/agent/src/agent-hub.mjs';
 import { closeDocument, handleUnavailableTicketClose } from '../apps/agent/src/document-lifecycle.mts';
 import { DocumentBinding } from '../apps/agent/src/document-binding.mjs';
-import { forwardLocalUpdate, handleFlushAcknowledgement, handleSocketClose } from '../apps/agent/src/document-delivery.mts';
+import {
+  forwardLocalUpdate,
+  handleFlushAcknowledgement,
+  handleSocketClose,
+} from '../apps/agent/src/document-delivery.mts';
 import { attachDocumentSocket } from '../apps/server/src/document-socket.mts';
 import { createInboundBudget } from '../apps/server/src/protocol-limits.mts';
 
 function deferred() {
   let resolve;
-  const promise = new Promise((done) => { resolve = done; });
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
@@ -24,7 +30,12 @@ test('flush acknowledgement without a pending waiter cannot complete a missing r
   const binding = { flushWaiter: null };
   assert.equal(handleFlushAcknowledgement(binding, { type: 'sync-flushed' }), true);
   let completed = false;
-  binding.flushWaiter = { id: 'expected', finish() { completed = true; } };
+  binding.flushWaiter = {
+    id: 'expected',
+    finish() {
+      completed = true;
+    },
+  };
   assert.equal(handleFlushAcknowledgement(binding, { type: 'sync-flushed', requestId: 'other' }), true);
   assert.equal(completed, false);
   assert.equal(handleFlushAcknowledgement(binding, { type: 'sync-flushed', requestId: 'expected' }), true);
@@ -37,17 +48,29 @@ test('sync flush acknowledgement follows the queued edit and durable room flush'
   const messages = [];
   const socket = new EventEmitter();
   Object.assign(socket, {
-    readyState: 1, bufferedAmount: 0, inboundBudget: createInboundBudget(),
-    send(data) { messages.push(JSON.parse(data)); }, close() {},
+    readyState: 1,
+    bufferedAmount: 0,
+    inboundBudget: createInboundBudget(),
+    send(data) {
+      messages.push(JSON.parse(data));
+    },
+    close() {},
   });
   attachDocumentSocket({
-    socket, documentId: 'main:localisation/russian/a.yml',
-    ticketStore: { documentWritable: () => true }, isShuttingDown: () => false,
+    socket,
+    documentId: 'main:localisation/russian/a.yml',
+    ticketStore: { documentWritable: () => true },
+    isShuttingDown: () => false,
     authoriseSession() {},
     room: {
       clientWritable: () => true,
-      async receiveBinary() { received.resolve(); await durable.promise; },
-      async flush() { await durable.promise; },
+      async receiveBinary() {
+        received.resolve();
+        await durable.promise;
+      },
+      async flush() {
+        await durable.promise;
+      },
     },
   });
   const requestId = crypto.randomUUID();
@@ -65,16 +88,27 @@ test('document socket rejects non-object control JSON before passing it to the r
   const messages = [];
   let dispatched = false;
   Object.assign(socket, {
-    readyState: 1, bufferedAmount: 0, inboundBudget: createInboundBudget(),
-    send(data) { messages.push(JSON.parse(data)); }, close() {},
+    readyState: 1,
+    bufferedAmount: 0,
+    inboundBudget: createInboundBudget(),
+    send(data) {
+      messages.push(JSON.parse(data));
+    },
+    close() {},
   });
   attachDocumentSocket({
-    socket, documentId: 'main:localisation/russian/a.yml',
-    ticketStore: { documentWritable: () => true }, isShuttingDown: () => false,
+    socket,
+    documentId: 'main:localisation/russian/a.yml',
+    ticketStore: { documentWritable: () => true },
+    isShuttingDown: () => false,
     authoriseSession() {},
     room: {
-      clientWritable: () => true, flush() {}, receiveBinary() {},
-      receiveJson() { dispatched = true; },
+      clientWritable: () => true,
+      flush() {},
+      receiveBinary() {},
+      receiveJson() {
+        dispatched = true;
+      },
     },
   });
   socket.emit('message', Buffer.from('[]'), false);
@@ -92,15 +126,30 @@ test('closing retains an unsent update and clears only one acknowledged as sent'
     return {
       binding: {
         documentId: `main:localisation/russian/${sent ? 'sent' : 'offline'}.yml`,
-        document, localUpdatePending: true, pendingUpdateSent: sent,
-        personalRequestTimer: null, variantRequests: new Map(), reconnectTimer: null,
+        document,
+        localUpdatePending: true,
+        pendingUpdateSent: sent,
+        personalRequestTimer: null,
+        variantRequests: new Map(),
+        reconnectTimer: null,
         hub: {
-          savePendingDocumentUpdate(id, update) { pending.set(id, Buffer.from(update)); },
-          clearPendingDocumentUpdate(id) { pending.delete(id); },
+          savePendingDocumentUpdate(id, update) {
+            pending.set(id, Buffer.from(update));
+          },
+          clearPendingDocumentUpdate(id) {
+            pending.delete(id);
+          },
         },
         flushToServer: async () => true,
-        socket: { close() { socketClosed = true; } },
-        localPresences: { clear() {} }, clients: new Set(), baseWrites: new Set(), undoManagers: new Map(),
+        socket: {
+          close() {
+            socketClosed = true;
+          },
+        },
+        localPresences: { clear() {} },
+        clients: new Set(),
+        baseWrites: new Set(),
+        undoManagers: new Map(),
       },
       wasClosed: () => socketClosed,
     };
@@ -124,13 +173,31 @@ test('a deleted ticket keeps a readable copy of all unconfirmed edits, including
     const document = new Y.Doc();
     document.getText('content').insert(0, 'ticket text');
     const notices = [];
-    const client = { kind: 'review', documents: new Map(), send(message) { notices.push(message); } };
+    const client = {
+      kind: 'review',
+      documents: new Map(),
+      send(message) {
+        notices.push(message);
+      },
+    };
     const binding = {
-      ticketId: crypto.randomUUID(), relativePath: 'localisation/russian/a_l_russian.yml',
-      document, localUpdatePending: true, pendingUpdateSent: sent, paused: false, flushWaiter: null,
-      personalRequestTimer: null, variantRequests: new Map(), reconnectTimer: null, hub,
-      flushToServer: async () => false, socket: { close() {} },
-      localPresences: { clear() {} }, clients: new Set([client]), baseWrites: new Set(), undoManagers: new Map(),
+      ticketId: crypto.randomUUID(),
+      relativePath: 'localisation/russian/a_l_russian.yml',
+      document,
+      localUpdatePending: true,
+      pendingUpdateSent: sent,
+      paused: false,
+      flushWaiter: null,
+      personalRequestTimer: null,
+      variantRequests: new Map(),
+      reconnectTimer: null,
+      hub,
+      flushToServer: async () => false,
+      socket: { close() {} },
+      localPresences: { clear() {} },
+      clients: new Set([client]),
+      baseWrites: new Set(),
+      undoManagers: new Map(),
     };
     binding.documentId = `ticket-${binding.ticketId}:${binding.relativePath}`;
     client.documents.set('C:/repo/a.yml', { binding, basePersistPromise: Promise.resolve() });
@@ -143,10 +210,16 @@ test('a deleted ticket keeps a readable copy of all unconfirmed edits, including
     hub.savePendingDocumentUpdate(binding.documentId, Y.encodeStateAsUpdate(binding.document));
     handleSocketClose(binding);
     assert.equal(handleUnavailableTicketClose(binding, 1001, 'Ticket deleted'), true);
-    assert.deepEqual(notices.filter((item) => item.type === 'ticketUnavailable').map((item) => item.reason), ['deleted']);
+    assert.deepEqual(
+      notices.filter((item) => item.type === 'ticketUnavailable').map((item) => item.reason),
+      ['deleted'],
+    );
     await closeDocument(binding);
-    assert.equal(hub.loadPendingDocumentUpdate(binding.documentId), null,
-      'an undeliverable buffer would block repository updates forever');
+    assert.equal(
+      hub.loadPendingDocumentUpdate(binding.documentId),
+      null,
+      'an undeliverable buffer would block repository updates forever',
+    );
     const saved = fs.existsSync(recovery) ? fs.readdirSync(recovery) : [];
     assert.equal(saved.length, sent ? 1 : 2, 'send() is not proof of durable acknowledgement');
     for (const file of saved) assert.equal(fs.readFileSync(path.join(recovery, file), 'utf8'), 'ticket text');
@@ -170,13 +243,33 @@ function recoveryFixture(t) {
   hub.documents = new Map();
   document.getText('content').insert(0, 'first edit');
   const notices = [];
-  const client = { kind: 'review', documents: new Map(), send(message) { notices.push(message); } };
+  const client = {
+    kind: 'review',
+    documents: new Map(),
+    send(message) {
+      notices.push(message);
+    },
+  };
   const binding = {
-    ticketId: crypto.randomUUID(), relativePath: 'localisation/russian/a_l_russian.yml',
-    document, localUpdatePending: true, pendingUpdateSent: false, synced: true, gitWritable: true,
-    paused: false, flushWaiter: null, personalRequestTimer: null, variantRequests: new Map(), reconnectTimer: null,
-    hub, flushToServer: async () => false, socket: { readyState: 1, send() {}, close() {} },
-    localPresences: { clear() {} }, clients: new Set([client]), baseWrites: new Set(), undoManagers: new Map(),
+    ticketId: crypto.randomUUID(),
+    relativePath: 'localisation/russian/a_l_russian.yml',
+    document,
+    localUpdatePending: true,
+    pendingUpdateSent: false,
+    synced: true,
+    gitWritable: true,
+    paused: false,
+    flushWaiter: null,
+    personalRequestTimer: null,
+    variantRequests: new Map(),
+    reconnectTimer: null,
+    hub,
+    flushToServer: async () => false,
+    socket: { readyState: 1, send() {}, close() {} },
+    localPresences: { clear() {} },
+    clients: new Set([client]),
+    baseWrites: new Set(),
+    undoManagers: new Map(),
   };
   binding.documentId = `ticket-${binding.ticketId}:${binding.relativePath}`;
   client.documents.set('C:/repo/a.yml', { binding, basePersistPromise: Promise.resolve() });
@@ -193,7 +286,10 @@ test('a later unsent edit is recovered even when an earlier edit was sent on the
   handleSocketClose(binding);
   handleUnavailableTicketClose(binding, 1001, 'Ticket deleted');
   await closeDocument(binding);
-  assert.equal(fs.readFileSync(path.join(recovery, fs.readdirSync(recovery)[0]), 'utf8'), 'first edit + later unsent edit');
+  assert.equal(
+    fs.readFileSync(path.join(recovery, fs.readdirSync(recovery)[0]), 'utf8'),
+    'first edit + later unsent edit',
+  );
   assert.equal(hub.loadPendingDocumentUpdate(binding.documentId), null);
   assert.equal(binding.gitWritable, false);
 });
@@ -204,7 +300,10 @@ test('closing waits for the recovery copy and keeps the checkpoint until its wri
   const entered = deferred();
   const mkdir = fsPromises.mkdir;
   t.mock.method(fsPromises, 'mkdir', async (...args) => {
-    if (args[0] === recovery) { entered.resolve(); await gate.promise; }
+    if (args[0] === recovery) {
+      entered.resolve();
+      await gate.promise;
+    }
     return mkdir(...args);
   });
   handleSocketClose(binding);
@@ -224,7 +323,9 @@ test('closing waits for the recovery copy and keeps the checkpoint until its wri
 
 test('recovery write failures retain the current CRDT checkpoint and report the error', async (t) => {
   const { binding, hub, notices, recovery } = recoveryFixture(t);
-  t.mock.method(fsPromises, 'open', async () => { throw Object.assign(new Error('Access denied'), { code: 'EACCES' }); });
+  t.mock.method(fsPromises, 'open', async () => {
+    throw Object.assign(new Error('Access denied'), { code: 'EACCES' });
+  });
   handleSocketClose(binding);
   handleUnavailableTicketClose(binding, 1001, 'Ticket deleted');
   await closeDocument(binding);
@@ -243,7 +344,9 @@ test('a recovery sync failure cannot retire the checkpoint or report success', a
     const file = await open(...args);
     return {
       writeFile: (...values) => file.writeFile(...values),
-      sync: async () => { throw Object.assign(new Error('No space left'), { code: 'ENOSPC' }); },
+      sync: async () => {
+        throw Object.assign(new Error('No space left'), { code: 'ENOSPC' });
+      },
       close: () => file.close(),
     };
   });
@@ -275,7 +378,10 @@ test('a completed ticket recovery copy cannot remove a newer checkpoint', async 
   const entered = deferred();
   const mkdir = fsPromises.mkdir;
   t.mock.method(fsPromises, 'mkdir', async (...args) => {
-    if (args[0] === recovery) { entered.resolve(); await gate.promise; }
+    if (args[0] === recovery) {
+      entered.resolve();
+      await gate.promise;
+    }
     return mkdir(...args);
   });
   handleSocketClose(binding);
@@ -340,7 +446,10 @@ test('a ticket this user removed through the Agent leaves neither a copy, a noti
   await closeDocument(binding);
   assert.equal(fs.existsSync(recovery), false);
   assert.equal(hub.loadPendingDocumentUpdate(binding.documentId), null);
-  assert.deepEqual(notices.map((item) => item.type), ['ticketUnavailable']);
+  assert.deepEqual(
+    notices.map((item) => item.type),
+    ['ticketUnavailable'],
+  );
 });
 
 test('removal intent is recorded before the request, withdrawn on failure and expires', async () => {
@@ -358,11 +467,17 @@ test('removal intent is recorded before the request, withdrawn on failure and ex
     if (fail) throw new Error('forbidden');
     return { ok: true };
   };
-  const call = (method, suffix = '') => handleTicketReviewApi({
-    request: { method }, requestUrl: new URL(`http://127.0.0.1/api/tickets/${id}${suffix}`),
-    response: { end() {} }, authorised: () => true, hub, options: {}, secureHeaders() {},
-    readJsonBody: async () => ({ files: ['localisation/russian/b_l_russian.yml'] }),
-  });
+  const call = (method, suffix = '') =>
+    handleTicketReviewApi({
+      request: { method },
+      requestUrl: new URL(`http://127.0.0.1/api/tickets/${id}${suffix}`),
+      response: { end() {} },
+      authorised: () => true,
+      hub,
+      options: {},
+      secureHeaders() {},
+      readJsonBody: async () => ({ files: ['localisation/russian/b_l_russian.yml'] }),
+    });
   await call('DELETE');
   await call('PUT', '/files');
   assert.deepEqual(seen, [true, true], 'the server closes the rooms before it answers');
@@ -378,8 +493,13 @@ test('removal intent is recorded before the request, withdrawn on failure and ex
 async function ticketApiCall(hub, id, method, suffix = '', files = []) {
   const { handleTicketReviewApi } = await import('../apps/agent/src/ticket-review-api.mjs');
   return handleTicketReviewApi({
-    request: { method }, requestUrl: new URL(`http://127.0.0.1/api/tickets/${id}${suffix}`),
-    response: { end() {} }, authorised: () => true, hub, options: {}, secureHeaders() {},
+    request: { method },
+    requestUrl: new URL(`http://127.0.0.1/api/tickets/${id}${suffix}`),
+    response: { end() {} },
+    authorised: () => true,
+    hub,
+    options: {},
+    secureHeaders() {},
     readJsonBody: async () => ({ files }),
   });
 }
@@ -421,7 +541,8 @@ test('adding files with Windows path separators does not mark any retained docum
     return { ok: true };
   };
   await ticketApiCall(hub, binding.ticketId, 'PUT', '/files', [
-    binding.relativePath.replaceAll('/', '\\'), 'localisation/russian/new_l_russian.yml',
+    binding.relativePath.replaceAll('/', '\\'),
+    'localisation/russian/new_l_russian.yml',
   ]);
   handleUnavailableTicketClose(binding, 1001, 'Ticket deleted');
   await closeDocument(binding);
@@ -484,7 +605,13 @@ test('a locked buffer during own deletion cannot throw from socket close and ret
     return unlink(file);
   });
   // Disconnected notification recipients must not turn the handled I/O error into a crash.
-  binding.clients.add({ kind: 'extension', documents: new Map(), send() { throw new Error('Peer disconnected'); } });
+  binding.clients.add({
+    kind: 'extension',
+    documents: new Map(),
+    send() {
+      throw new Error('Peer disconnected');
+    },
+  });
   hub.expectTicketRemoval([binding.documentId], 'Ticket deleted');
   assert.doesNotThrow(() => handleUnavailableTicketClose(binding, 1001, 'Ticket deleted'));
   binding.document.getText('content').insert(10, ' + latest');
@@ -503,8 +630,12 @@ test('a discard failure followed by a checkpoint failure still retains the older
   const { binding, hub, notices } = recoveryFixture(t);
   const original = Y.encodeStateAsUpdate(binding.document);
   hub.savePendingDocumentUpdate(binding.documentId, original);
-  hub.discardPendingDocumentUpdate = () => { throw new Error('Access denied'); };
-  hub.savePendingDocumentUpdate = () => { throw new Error('No space left'); };
+  hub.discardPendingDocumentUpdate = () => {
+    throw new Error('Access denied');
+  };
+  hub.savePendingDocumentUpdate = () => {
+    throw new Error('No space left');
+  };
   hub.expectTicketRemoval([binding.documentId], 'Ticket deleted');
   assert.doesNotThrow(() => handleUnavailableTicketClose(binding, 1001, 'Ticket deleted'));
   await closeDocument(binding);
@@ -534,11 +665,22 @@ test('an older closing binding cannot remove a newer pending snapshot', (t) => {
 test('external merge forwards the personal text and user notice', () => {
   const sent = [];
   const state = {};
-  const client = { documents: new Map([['file', state]]), send(message) { sent.push(message); } };
+  const client = {
+    documents: new Map([['file', state]]),
+    send(message) {
+      sent.push(message);
+    },
+  };
   const binding = { clients: new Set([client]), applyMergedText() {} };
   state.binding = binding;
   DocumentBinding.prototype.finishExternalMerge.call(
-    binding, client, 'file', state, 'shared', 'personal', 'merge complete',
+    binding,
+    client,
+    'file',
+    state,
+    'shared',
+    'personal',
+    'merge complete',
   );
   assert.equal(binding.personalText, 'personal');
   assert.equal(sent.find((message) => message.type === 'notice').message, 'merge complete');

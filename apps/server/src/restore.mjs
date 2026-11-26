@@ -46,7 +46,8 @@ for (const name of ['auth.json', 'tickets.json', 'branch-merges.json', 'room-ind
 }
 let recoveryDirectory = null;
 if (existing.length > 0) {
-  if (!options.force) throw new Error('Target already contains server state; stop the server and pass --force to create a recovery copy');
+  if (!options.force)
+    throw new Error('Target already contains server state; stop the server and pass --force to create a recovery copy');
   recoveryDirectory = path.join(
     options.data,
     `.before-restore-${new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')}`,

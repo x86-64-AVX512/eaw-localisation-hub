@@ -39,7 +39,12 @@ function unpackText(entry) {
 
 function boundedHistoryJson(persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts) {
   const envelope = `${JSON.stringify({
-    schema: 5, entries: [], ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts,
+    schema: 5,
+    entries: [],
+    ownership,
+    authorVariants,
+    gitBaseGzipBase64,
+    rebaseConflicts,
   })}\n`;
   const marker = '"entries":[]';
   const entryJson = persisted.map((entry) => JSON.stringify(entry));
@@ -117,7 +122,8 @@ export class DocumentHistory {
     try {
       let value;
       try {
-        if ((await fs.stat(this.target)).size > MAX_STORED_BYTES) throw new SyntaxError('Persisted history exceeds its limit');
+        if ((await fs.stat(this.target)).size > MAX_STORED_BYTES)
+          throw new SyntaxError('Persisted history exceeds its limit');
         value = JSON.parse(await fs.readFile(this.target, 'utf8'));
       } catch (error) {
         if (!(error instanceof SyntaxError)) throw error;
@@ -127,17 +133,23 @@ export class DocumentHistory {
         // Keep only the newest unreadable copy: these files are outside the storage quota.
         const prefix = `${path.basename(this.target)}.unreadable-`;
         for (const name of await fs.readdir(path.dirname(this.target)).catch(() => [])) {
-          if (name.startsWith(prefix)) await fs.rm(path.join(path.dirname(this.target), name), { force: true }).catch(() => {});
+          if (name.startsWith(prefix))
+            await fs.rm(path.join(path.dirname(this.target), name), { force: true }).catch(() => {});
         }
         await fs.rename(this.target, aside).catch(() => {});
-        console.warn(`[server] history ${path.basename(this.target)} was unreadable (${error.message}); moved to ${path.basename(aside)}`);
+        console.warn(
+          `[server] history ${path.basename(this.target)} was unreadable (${error.message}); moved to ${path.basename(aside)}`,
+        );
         return;
       }
-      this.gitBaseText = typeof value.gitBaseGzipBase64 === 'string'
-        ? unpackText({ textGzipBase64: value.gitBaseGzipBase64 }) : null;
-      this.rebaseConflicts = new Map((value.rebaseConflicts ?? []).map(({ authorId, conflicts }) => [
-        String(authorId), new Map(conflicts.map((conflict) => [conflict.key, conflict])),
-      ]));
+      this.gitBaseText =
+        typeof value.gitBaseGzipBase64 === 'string' ? unpackText({ textGzipBase64: value.gitBaseGzipBase64 }) : null;
+      this.rebaseConflicts = new Map(
+        (value.rebaseConflicts ?? []).map(({ authorId, conflicts }) => [
+          String(authorId),
+          new Map(conflicts.map((conflict) => [conflict.key, conflict])),
+        ]),
+      );
       this.entries = (Array.isArray(value.entries) ? value.entries : [])
         .filter((entry) => entry?.id && entry?.textGzipBase64)
         .slice(-MAX_ENTRIES);
@@ -148,17 +160,20 @@ export class DocumentHistory {
       }
       for (const author of Array.isArray(value.authorVariants) ? value.authorVariants : []) {
         if (!author?.authorId || !Array.isArray(author.values)) continue;
-        this.authorVariants.set(String(author.authorId), new Map(author.values.map((item) => [
-          String(item.key), item.line === null ? null : String(item.line ?? ''),
-        ])));
+        this.authorVariants.set(
+          String(author.authorId),
+          new Map(author.values.map((item) => [String(item.key), item.line === null ? null : String(item.line ?? '')])),
+        );
         this.ownerNames.set(String(author.authorId), String(author.authorName ?? 'Unknown'));
       }
       if (!this.ownership.size) this.rebuildOwnership();
       if (!this.authorVariants.size) this.rebuildAuthorVariants();
       if (this.gitBaseText !== null) {
         for (const [id, variant] of this.authorVariants) {
-          this.authorVariants.set(id, captureLocalisationVariant(this.gitBaseText,
-            projectLocalisationVariant(this.gitBaseText, variant)));
+          this.authorVariants.set(
+            id,
+            captureLocalisationVariant(this.gitBaseText, projectLocalisationVariant(this.gitBaseText, variant)),
+          );
         }
       }
       this.prune();
@@ -196,28 +211,43 @@ export class DocumentHistory {
     }
     if (identity.authorId && reason !== 'baseline') {
       const changes = captureLocalisationVariant(previousText, text);
-      const variant = accumulateLocalisationVariant(this.gitBaseText ?? previousText,
-        this.authorVariants.get(identity.authorId) ?? new Map(), previousText, text, changes);
+      const variant = accumulateLocalisationVariant(
+        this.gitBaseText ?? previousText,
+        this.authorVariants.get(identity.authorId) ?? new Map(),
+        previousText,
+        text,
+        changes,
+      );
       for (const [key] of changes) {
         this.ownership.set(key, identity.authorId);
         this.rebaseConflicts.get(identity.authorId)?.delete(key);
       }
       this.authorVariants.set(identity.authorId, variant);
       const ambiguous = this.rebaseConflicts.get(identity.authorId)?.get('__duplicate_keys__');
-      if (ambiguous) this.rebaseConflicts.get(identity.authorId).set('__duplicate_keys__', {
-        ...ambiguous, mineGzipBase64: packedText(projectLocalisationVariant(this.gitBaseText ?? previousText, variant)),
-      });
+      if (ambiguous)
+        this.rebaseConflicts.get(identity.authorId).set('__duplicate_keys__', {
+          ...ambiguous,
+          mineGzipBase64: packedText(projectLocalisationVariant(this.gitBaseText ?? previousText, variant)),
+        });
       this.ownerNames.set(identity.authorId, identity.author);
     }
-    if (coalesce && reason === 'edit' && previous?.reason === 'edit'
-      && previous.authorId === identity.authorId
-      && Date.now() - Date.parse(previous.updatedAt ?? previous.createdAt) <= EDIT_SESSION_MILLISECONDS) {
+    if (
+      coalesce &&
+      reason === 'edit' &&
+      previous?.reason === 'edit' &&
+      previous.authorId === identity.authorId &&
+      Date.now() - Date.parse(previous.updatedAt ?? previous.createdAt) <= EDIT_SESSION_MILLISECONDS
+    ) {
       Object.assign(previous, identity, { id: crypto.randomUUID(), updatedAt: now, _text: text });
       delete previous.textGzipBase64;
     } else {
       this.entries.push({
-        id: crypto.randomUUID(), ...identity, ...suggestionFields(suggestion),
-        reason, createdAt: now, updatedAt: now,
+        id: crypto.randomUUID(),
+        ...identity,
+        ...suggestionFields(suggestion),
+        reason,
+        createdAt: now,
+        updatedAt: now,
         _text: text,
       });
     }
@@ -227,7 +257,7 @@ export class DocumentHistory {
 
   text(id) {
     const entry = this.entries.find((item) => item.id === id);
-    return entry ? entry._text ?? unpackText(entry) : null;
+    return entry ? (entry._text ?? unpackText(entry)) : null;
   }
 
   personalProjection(userId, gitText) {
@@ -247,8 +277,8 @@ export class DocumentHistory {
     this.updateGitBase(base);
     const next = captureLocalisationVariant(base, String(text ?? ''));
     const previous = this.authorVariants.get(identity.authorId);
-    const variantChanged = !previous || previous.size !== next.size
-      || [...next].some(([key, line]) => previous.get(key) !== line);
+    const variantChanged =
+      !previous || previous.size !== next.size || [...next].some(([key, line]) => previous.get(key) !== line);
     const nameChanged = this.ownerNames.get(identity.authorId) !== identity.author;
     this.authorVariants.set(identity.authorId, next);
     this.ownerNames.set(identity.authorId, identity.author);
@@ -257,13 +287,14 @@ export class DocumentHistory {
   }
 
   contributors() {
-    return [...new Set([...this.ownership.values(), ...this.authorVariants.keys()])]
-      .map((id) => ({ id, displayName: this.ownerNames.get(id) ?? 'Unknown' }));
+    return [...new Set([...this.ownership.values(), ...this.authorVariants.keys()])].map((id) => ({
+      id,
+      displayName: this.ownerNames.get(id) ?? 'Unknown',
+    }));
   }
 
   reconcileSuggestionAttribution(suggestions) {
-    const accepted = (Array.isArray(suggestions) ? suggestions : [])
-      .filter(({ status }) => status === 'accepted');
+    const accepted = (Array.isArray(suggestions) ? suggestions : []).filter(({ status }) => status === 'accepted');
     let previous = this.entries[0]?._text ?? (this.entries[0] ? unpackText(this.entries[0]) : '');
     let changed = false;
     for (const entry of this.entries.slice(1)) {
@@ -277,26 +308,31 @@ export class DocumentHistory {
         displayName: entry.author,
         color: entry.color,
       };
-      const candidates = accepted.filter((item) => (
-        (!creator.id || item.authorId === creator.id)
-        && appliesSuggestion(previous, current, item)
-      ));
+      const candidates = accepted.filter(
+        (item) => (!creator.id || item.authorId === creator.id) && appliesSuggestion(previous, current, item),
+      );
       const decisions = new Set(candidates.map((item) => `${item.decidedById ?? ''}\0${item.decidedBy ?? ''}`));
       const matched = decisions.size === 1 ? candidates[0] : null;
-      Object.assign(entry, suggestionFields({
-        id: matched?.id,
-        authorId: creator.id,
-        author: creator.displayName,
-        color: creator.color,
-      }), matched?.decidedBy ? {
-        authorId: matched.decidedById ? String(matched.decidedById) : null,
-        author: String(matched.decidedBy),
-        color: '#8a8a8a',
-      } : {
-        authorId: null,
-        author: 'Unknown',
-        color: '#8a8a8a',
-      });
+      Object.assign(
+        entry,
+        suggestionFields({
+          id: matched?.id,
+          authorId: creator.id,
+          author: creator.displayName,
+          color: creator.color,
+        }),
+        matched?.decidedBy
+          ? {
+              authorId: matched.decidedById ? String(matched.decidedById) : null,
+              author: String(matched.decidedBy),
+              color: '#8a8a8a',
+            }
+          : {
+              authorId: null,
+              author: 'Unknown',
+              color: '#8a8a8a',
+            },
+      );
       for (const [key, line] of captureLocalisationVariant(previous, current)) {
         const creatorVariant = creator.id ? this.authorVariants.get(creator.id) : null;
         const migratedCreatorLine = creatorVariant?.get(key) === line;
@@ -323,9 +359,7 @@ export class DocumentHistory {
 
   conflicts(gitText, subjectAuthorId = '') {
     this.updateGitBase(String(gitText ?? ''));
-    const conflicts = localisationVariantConflicts(
-      String(gitText ?? ''), this.authorVariants, this.ownerNames,
-    );
+    const conflicts = localisationVariantConflicts(String(gitText ?? ''), this.authorVariants, this.ownerNames);
     const subject = String(subjectAuthorId ?? '');
     return subject
       ? conflicts.filter(({ variants }) => variants.some(({ authorId }) => authorId === subject))
@@ -353,9 +387,18 @@ export class DocumentHistory {
         // Ordinal matching is unproven. Retain the complete original personal
         // side until an explicit choice, rather than storing a guessed merge.
         this.authorVariants.set(authorId, captureLocalisationVariant(nextGitText, personal));
-        this.rebaseConflicts.set(authorId, new Map([['__duplicate_keys__', {
-          ...wholeFile, mineGzipBase64: packedText(personal),
-        }]]));
+        this.rebaseConflicts.set(
+          authorId,
+          new Map([
+            [
+              '__duplicate_keys__',
+              {
+                ...wholeFile,
+                mineGzipBase64: packedText(personal),
+              },
+            ],
+          ]),
+        );
         continue;
       }
       const rebased = captureLocalisationVariant(nextGitText, merged.text);
@@ -364,11 +407,15 @@ export class DocumentHistory {
       if (this.gitBaseText === null) {
         // Older histories stored no Git ancestry. Preserve their variants, but
         // require a choice before an unproven old line can overwrite today's HEAD.
-        for (const key of rebased.keys()) pending.set(key, {
-          key, label: key === '__file_structure__' ? 'Структура файла' : key,
-          baseLine: null, collaborativeLine: key === '__file_structure__' ? null : rebased.get(key),
-          externalLine: null, reason: 'legacy-base-unknown',
-        });
+        for (const key of rebased.keys())
+          pending.set(key, {
+            key,
+            label: key === '__file_structure__' ? 'Структура файла' : key,
+            baseLine: null,
+            collaborativeLine: key === '__file_structure__' ? null : rebased.get(key),
+            externalLine: null,
+            reason: 'legacy-base-unknown',
+          });
       }
       this.authorVariants.set(authorId, rebased);
       this.rebaseConflicts.set(authorId, pending);
@@ -380,8 +427,13 @@ export class DocumentHistory {
   personalGitConflicts(userId) {
     return [...(this.rebaseConflicts.get(String(userId))?.values() ?? [])].map((stored) => {
       const { mineGzipBase64: _snapshot, ...conflict } = stored;
-      return { ...conflict,
-        id: crypto.createHash('sha256').update(JSON.stringify([this.gitBaseText, stored])).digest('hex') };
+      return {
+        ...conflict,
+        id: crypto
+          .createHash('sha256')
+          .update(JSON.stringify([this.gitBaseText, stored]))
+          .digest('hex'),
+      };
     });
   }
 
@@ -393,7 +445,8 @@ export class DocumentHistory {
     if (key === '__duplicate_keys__') {
       const stored = pending.get(key);
       const git = this.gitBaseText ?? '';
-      const mine = stored.mineGzipBase64 ? unpackText({ textGzipBase64: stored.mineGzipBase64 })
+      const mine = stored.mineGzipBase64
+        ? unpackText({ textGzipBase64: stored.mineGzipBase64 })
         : projectLocalisationVariant(git, this.authorVariants.get(identity));
       this.authorVariants.set(identity, choice === 'git' ? new Map() : captureLocalisationVariant(git, mine));
       pending.clear();
@@ -421,8 +474,12 @@ export class DocumentHistory {
     for (const entry of this.entries.slice(1)) {
       const current = entry._text ?? unpackText(entry);
       if (entry.authorId) {
-        const variant = accumulateLocalisationVariant(this.gitBaseText ?? this.entries[0]?._text ?? previous,
-          this.authorVariants.get(entry.authorId) ?? new Map(), previous, current);
+        const variant = accumulateLocalisationVariant(
+          this.gitBaseText ?? this.entries[0]?._text ?? previous,
+          this.authorVariants.get(entry.authorId) ?? new Map(),
+          previous,
+          current,
+        );
         this.authorVariants.set(entry.authorId, variant);
         this.ownerNames.set(entry.authorId, entry.author);
       }
@@ -477,59 +534,80 @@ export class DocumentHistory {
       return entry;
     });
     const ownership = [...this.ownership].map(([key, ownerId]) => ({
-      key, ownerId, ownerName: this.ownerNames.get(ownerId) ?? 'Unknown',
+      key,
+      ownerId,
+      ownerName: this.ownerNames.get(ownerId) ?? 'Unknown',
     }));
     const authorVariants = [...this.authorVariants].map(([authorId, variant]) => ({
-      authorId, authorName: this.ownerNames.get(authorId) ?? 'Unknown',
+      authorId,
+      authorName: this.ownerNames.get(authorId) ?? 'Unknown',
       values: [...variant].map(([key, line]) => ({ key, line })),
     }));
     const gitBaseGzipBase64 = this.gitBaseText === null ? null : packedText(this.gitBaseText);
-    const rebaseConflicts = [...this.rebaseConflicts].map(([authorId, conflicts]) => ({ authorId, conflicts: [...conflicts.values()] }));
-    const bounded = boundedHistoryJson(
-      persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts,
-    );
+    const rebaseConflicts = [...this.rebaseConflicts].map(([authorId, conflicts]) => ({
+      authorId,
+      conflicts: [...conflicts.values()],
+    }));
+    const bounded = boundedHistoryJson(persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts);
     if (bounded.dropped) this.entries.splice(0, bounded.dropped);
     return bounded.value;
   }
 
   async serialiseAsync() {
     const snapshots = this.entries.map((item) => ({
-      item, id: item.id, text: item._text, packed: item.textGzipBase64,
+      item,
+      id: item.id,
+      text: item._text,
+      packed: item.textGzipBase64,
       metadata: Object.fromEntries(Object.entries(item).filter(([key]) => key !== '_text')),
     }));
     const gitBaseText = this.gitBaseText;
     const ownership = [...this.ownership].map(([key, ownerId]) => ({
-      key, ownerId, ownerName: this.ownerNames.get(ownerId) ?? 'Unknown',
+      key,
+      ownerId,
+      ownerName: this.ownerNames.get(ownerId) ?? 'Unknown',
     }));
     const authorVariants = [...this.authorVariants].map(([authorId, variant]) => ({
-      authorId, authorName: this.ownerNames.get(authorId) ?? 'Unknown',
+      authorId,
+      authorName: this.ownerNames.get(authorId) ?? 'Unknown',
       values: [...variant].map(([key, line]) => ({ key, line })),
     }));
-    const rebaseConflicts = [...this.rebaseConflicts].map(([authorId, conflicts]) => ({ authorId, conflicts: [...conflicts.values()] }));
-    const persisted = await Promise.all(snapshots.map(async (snapshot) => {
-      const packed = snapshot.packed ?? await packedTextAsync(snapshot.text);
-      if (snapshot.item.id === snapshot.id && snapshot.item._text === snapshot.text) {
-        snapshot.item.textGzipBase64 = packed;
-      }
-      return { ...snapshot.metadata, textGzipBase64: packed };
+    const rebaseConflicts = [...this.rebaseConflicts].map(([authorId, conflicts]) => ({
+      authorId,
+      conflicts: [...conflicts.values()],
     }));
-    const gitBaseGzipBase64 = gitBaseText === null ? null
-      : this.packedGitBaseText === gitBaseText ? this.packedGitBaseValue
-        : await packedTextAsync(gitBaseText);
+    const persisted = await Promise.all(
+      snapshots.map(async (snapshot) => {
+        const packed = snapshot.packed ?? (await packedTextAsync(snapshot.text));
+        if (snapshot.item.id === snapshot.id && snapshot.item._text === snapshot.text) {
+          snapshot.item.textGzipBase64 = packed;
+        }
+        return { ...snapshot.metadata, textGzipBase64: packed };
+      }),
+    );
+    const gitBaseGzipBase64 =
+      gitBaseText === null
+        ? null
+        : this.packedGitBaseText === gitBaseText
+          ? this.packedGitBaseValue
+          : await packedTextAsync(gitBaseText);
     if (this.gitBaseText === gitBaseText) {
       this.packedGitBaseText = gitBaseText;
       this.packedGitBaseValue = gitBaseGzipBase64;
     }
-    const bounded = boundedHistoryJson(
-      persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts,
-    );
-    const stablePrefix = snapshots.slice(0, bounded.dropped)
+    const bounded = boundedHistoryJson(persisted, ownership, authorVariants, gitBaseGzipBase64, rebaseConflicts);
+    const stablePrefix = snapshots
+      .slice(0, bounded.dropped)
       .every((snapshot, index) => this.entries[index] === snapshot.item);
     if (bounded.dropped && stablePrefix) this.entries.splice(0, bounded.dropped);
     const newest = snapshots.at(-1)?.item;
     for (const snapshot of snapshots) {
-      if (snapshot.item !== newest && snapshot.item.id === snapshot.id
-        && snapshot.item._text === snapshot.text && snapshot.item.textGzipBase64) {
+      if (
+        snapshot.item !== newest &&
+        snapshot.item.id === snapshot.id &&
+        snapshot.item._text === snapshot.text &&
+        snapshot.item.textGzipBase64
+      ) {
         delete snapshot.item._text;
       }
     }

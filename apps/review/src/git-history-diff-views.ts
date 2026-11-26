@@ -13,14 +13,11 @@ interface CachedDiff {
   listener: { dispose(): void } | null;
 }
 
-export function createGitHistoryDiffViews({ monaco, container }: {
-  monaco: typeof Monaco;
-  container: HTMLElement;
-}) {
+export function createGitHistoryDiffViews({ monaco, container }: { monaco: typeof Monaco; container: HTMLElement }) {
   container.classList.add('git-history-diff-host');
   const status = document.createElement('div');
   status.className = 'git-history-diff-status';
-  status.textContent = uiText("Загрузка сравнения…");
+  status.textContent = uiText('Загрузка сравнения…');
   status.hidden = true;
   container.append(status);
   const cached = new Map<string, CachedDiff>();
@@ -74,7 +71,7 @@ export function createGitHistoryDiffViews({ monaco, container }: {
 
   function showLoading() {
     cancelPending();
-    status.textContent = uiText("Вычисление отличий…");
+    status.textContent = uiText('Вычисление отличий…');
     status.hidden = false;
   }
 
@@ -87,7 +84,9 @@ export function createGitHistoryDiffViews({ monaco, container }: {
     let view: ReturnType<typeof createStandardDiffView>;
     try {
       view = createStandardDiffView({
-        monaco, container: element, preserveOnDeactivate: true,
+        monaco,
+        container: element,
+        preserveOnDeactivate: true,
         editorOptions: { maxComputationTime: 500, ignoreTrimWhitespace: false },
       });
     } catch (error) {
@@ -125,7 +124,10 @@ export function createGitHistoryDiffViews({ monaco, container }: {
   }
 
   return {
-    showCached, showLoading, prepare, clear,
+    showCached,
+    showLoading,
+    prepare,
+    clear,
     suspend() {
       visible = false;
       cancelPending();
@@ -137,7 +139,9 @@ export function createGitHistoryDiffViews({ monaco, container }: {
       const entry = cached.get(activePair);
       if (entry) entry.view.setActive(true);
     },
-    layout() { cached.get(activePair)?.view.layout(); },
+    layout() {
+      cached.get(activePair)?.view.layout();
+    },
     dispose() {
       clear();
       status.remove();

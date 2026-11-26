@@ -15,13 +15,21 @@ function byteLength(value: string): number {
   return new TextEncoder().encode(value).length;
 }
 
-export function parseSuggestionTrace(traceJson: unknown, original: string, replacement: string): SuggestionTraceSpan[] | null {
+export function parseSuggestionTrace(
+  traceJson: unknown,
+  original: string,
+  replacement: string,
+): SuggestionTraceSpan[] | null {
   if (!traceJson) return null;
   if (typeof traceJson !== 'string' || byteLength(traceJson) > MAX_TRACE_BYTES) {
     throw new TypeError('Suggestion trace exceeds its size limit');
   }
   let encoded;
-  try { encoded = JSON.parse(traceJson); } catch { throw new TypeError('Suggestion trace must be valid JSON'); }
+  try {
+    encoded = JSON.parse(traceJson);
+  } catch {
+    throw new TypeError('Suggestion trace must be valid JSON');
+  }
   if (!Array.isArray(encoded) || encoded.length > replacement.length + 1) {
     throw new TypeError('Suggestion trace must be a bounded array');
   }
@@ -29,16 +37,25 @@ export function parseSuggestionTrace(traceJson: unknown, original: string, repla
   let replacementOffset = 0;
   let previousOriginalEnd = 0;
   for (const value of encoded) {
-    if (!Array.isArray(value) || value.length !== 2
-      || !Number.isSafeInteger(value[0]) || !Number.isSafeInteger(value[1]) || value[1] <= 0) {
+    if (
+      !Array.isArray(value) ||
+      value.length !== 2 ||
+      !Number.isSafeInteger(value[0]) ||
+      !Number.isSafeInteger(value[1]) ||
+      value[1] <= 0
+    ) {
       throw new TypeError('Suggestion trace span is invalid');
     }
     const [originalStart, length] = value;
-    if (replacementOffset + length > replacement.length) throw new TypeError('Suggestion trace exceeds replacement text');
+    if (replacementOffset + length > replacement.length)
+      throw new TypeError('Suggestion trace exceeds replacement text');
     if (originalStart >= 0) {
-      if (originalStart < previousOriginalEnd || originalStart + length > original.length
-        || replacement.slice(replacementOffset, replacementOffset + length)
-          !== original.slice(originalStart, originalStart + length)) {
+      if (
+        originalStart < previousOriginalEnd ||
+        originalStart + length > original.length ||
+        replacement.slice(replacementOffset, replacementOffset + length) !==
+          original.slice(originalStart, originalStart + length)
+      ) {
         throw new TypeError('Suggestion trace does not match its text');
       }
       previousOriginalEnd = originalStart + length;
@@ -52,20 +69,23 @@ export function parseSuggestionTrace(traceJson: unknown, original: string, repla
   return spans;
 }
 
-export function createSuggestionTrace(original: string, replacement: string,
-  origins: ArrayLike<number>, baseStart = 0): string {
-  if (!(Array.isArray(origins) || ArrayBuffer.isView(origins))
-    || origins.length !== replacement.length) return '';
+export function createSuggestionTrace(
+  original: string,
+  replacement: string,
+  origins: ArrayLike<number>,
+  baseStart = 0,
+): string {
+  if (!(Array.isArray(origins) || ArrayBuffer.isView(origins)) || origins.length !== replacement.length) return '';
   const encoded = [];
   for (let index = 0; index < origins.length;) {
     const absoluteOrigin = origins[index];
-    const relativeOrigin = Number.isSafeInteger(absoluteOrigin) && absoluteOrigin >= baseStart
-      ? absoluteOrigin - baseStart : -1;
+    const relativeOrigin =
+      Number.isSafeInteger(absoluteOrigin) && absoluteOrigin >= baseStart ? absoluteOrigin - baseStart : -1;
     let length = 1;
     while (index + length < origins.length) {
       const nextAbsolute = origins[index + length];
-      const nextRelative = Number.isSafeInteger(nextAbsolute) && nextAbsolute >= baseStart
-        ? nextAbsolute - baseStart : -1;
+      const nextRelative =
+        Number.isSafeInteger(nextAbsolute) && nextAbsolute >= baseStart ? nextAbsolute - baseStart : -1;
       if (relativeOrigin === -1 ? nextRelative !== -1 : nextRelative !== relativeOrigin + length) break;
       length += 1;
     }
@@ -79,10 +99,11 @@ export function createSuggestionTrace(original: string, replacement: string,
 
 export function suggestionTraceParts(original: string, replacement: string, traceJson: unknown): SuggestionTracePart[] {
   const spans = parseSuggestionTrace(traceJson, original, replacement);
-  if (!spans) return [
-    ...(original ? [{ kind: 'delete' as const, text: original }] : []),
-    ...(replacement ? [{ kind: 'insert' as const, text: replacement }] : []),
-  ];
+  if (!spans)
+    return [
+      ...(original ? [{ kind: 'delete' as const, text: original }] : []),
+      ...(replacement ? [{ kind: 'insert' as const, text: replacement }] : []),
+    ];
   const parts: SuggestionTracePart[] = [];
   let originalOffset = 0;
   for (let index = 0; index < spans.length; index += 1) {
@@ -113,8 +134,12 @@ export function suggestionTraceParts(original: string, replacement: string, trac
   return parts;
 }
 
-export function suggestionTraceOrigins(original: string, replacement: string,
-  traceJson: unknown, baseStart = 0): number[] {
+export function suggestionTraceOrigins(
+  original: string,
+  replacement: string,
+  traceJson: unknown,
+  baseStart = 0,
+): number[] {
   const spans = parseSuggestionTrace(traceJson, original, replacement);
   if (!spans) return Array.from({ length: replacement.length }, () => -1);
   const origins: number[] = [];

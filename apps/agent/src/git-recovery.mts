@@ -19,21 +19,27 @@ interface RecoveryGitState {
 
 function hasLocalChanges(repository: string, relativePath: string): boolean {
   const status = runGitSync(['status', '--porcelain', '--', relativePath], {
-    cwd: repository, encoding: 'utf8', windowsHide: true,
+    cwd: repository,
+    encoding: 'utf8',
+    windowsHide: true,
   });
   return status.status === 0 && Boolean(status.stdout.trim());
 }
 
-export async function preserveChangedFile(binding: RecoveryBinding,
-  gitState: RecoveryGitState | null | undefined): Promise<string> {
-  if (binding.ticketId || !gitState || (gitState.status !== 'file-outdated' && gitState.status !== 'conflict')) return '';
+export async function preserveChangedFile(
+  binding: RecoveryBinding,
+  gitState: RecoveryGitState | null | undefined,
+): Promise<string> {
+  if (binding.ticketId || !gitState || (gitState.status !== 'file-outdated' && gitState.status !== 'conflict'))
+    return '';
   const marker = `${gitState.remoteBlob ?? ''}:${gitState.remoteHead ?? ''}`;
   if (!marker.replace(':', '') || binding.gitRecoveryMarker === marker) return '';
   if (!hasLocalChanges(binding.hub.options.repo, binding.relativePath)) {
     binding.gitRecoveryMarker = marker;
     return '';
   }
-  const attached = [...binding.clients].flatMap((client) => [...client.documents.entries()])
+  const attached = [...binding.clients]
+    .flatMap((client) => [...client.documents.entries()])
     .find(([, state]) => state.binding === binding);
   if (!attached) return '';
   const [absolutePath] = attached;

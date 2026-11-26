@@ -7,7 +7,16 @@ import { promisify } from 'node:util';
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
-const ALLOWED_ROOTS = new Set(['auth.json', 'recovery-pepper.key', 'tickets.json', 'branch-merges.json', 'room-index.json', 'documents', 'audit', 'events.json']);
+const ALLOWED_ROOTS = new Set([
+  'auth.json',
+  'recovery-pepper.key',
+  'tickets.json',
+  'branch-merges.json',
+  'room-index.json',
+  'documents',
+  'audit',
+  'events.json',
+]);
 
 async function collectFiles(root, relative = '') {
   const absolute = path.join(root, relative);
@@ -21,7 +30,7 @@ async function collectFiles(root, relative = '') {
   const files = [];
   for (const entry of entries) {
     const child = path.join(relative, entry.name);
-    if (entry.isDirectory()) files.push(...await collectFiles(root, child));
+    if (entry.isDirectory()) files.push(...(await collectFiles(root, child)));
     else if (entry.isFile()) files.push(child.replaceAll('\\', '/'));
   }
   return files;
@@ -34,7 +43,7 @@ async function selectedBackupFiles(dataDirectory) {
     try {
       const info = await fs.stat(absolute);
       if (info.isFile()) selected.push(rootEntry);
-      else if (info.isDirectory()) selected.push(...await collectFiles(dataDirectory, rootEntry));
+      else if (info.isDirectory()) selected.push(...(await collectFiles(dataDirectory, rootEntry)));
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
@@ -48,12 +57,15 @@ export async function createBackupBundle(dataDirectory, version) {
     const data = await fs.readFile(path.join(dataDirectory, relativePath));
     files.push({ path: relativePath, dataBase64: data.toString('base64') });
   }
-  const payload = Buffer.from(JSON.stringify({
-    schema: 1,
-    version,
-    createdAt: new Date().toISOString(),
-    files,
-  }), 'utf8');
+  const payload = Buffer.from(
+    JSON.stringify({
+      schema: 1,
+      version,
+      createdAt: new Date().toISOString(),
+      files,
+    }),
+    'utf8',
+  );
   return gzipAsync(payload, { level: 9 });
 }
 
@@ -90,8 +102,13 @@ function safeBackupPath(dataDirectory, relativePath) {
   if (!ALLOWED_ROOTS.has(first)) throw new Error(`Unsupported backup path: ${relativePath}`);
   const target = path.resolve(dataDirectory, normalised);
   const root = `${path.resolve(dataDirectory)}${path.sep}`;
-  const allowedRootFile = ['auth.json', 'recovery-pepper.key', 'tickets.json', 'branch-merges.json', 'room-index.json']
-    .some((name) => target === path.resolve(dataDirectory, name));
+  const allowedRootFile = [
+    'auth.json',
+    'recovery-pepper.key',
+    'tickets.json',
+    'branch-merges.json',
+    'room-index.json',
+  ].some((name) => target === path.resolve(dataDirectory, name));
   if (!allowedRootFile && !target.startsWith(root)) {
     throw new Error(`Backup path escapes the data directory: ${relativePath}`);
   }

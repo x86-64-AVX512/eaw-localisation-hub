@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as Y from 'yjs';
-import { emitPresences, emitReservationTargets, emitReservations, emitReview } from '../apps/agent/src/document-view.mjs';
+import {
+  emitPresences,
+  emitReservationTargets,
+  emitReservations,
+  emitReview,
+} from '../apps/agent/src/document-view.mjs';
 import { createCollaborationRefresh } from '../apps/review/src/review-refresh.ts';
 import { parseAgentMessage } from '../apps/review/src/agent-message.ts';
 
@@ -18,9 +23,15 @@ function harness(kind) {
   };
   const client = {
     kind,
-    documents: new Map([['C:\\repo\\localisation\\russian\\test.yml', {
-      binding, initialised: true,
-    }]]),
+    documents: new Map([
+      [
+        'C:\\repo\\localisation\\russian\\test.yml',
+        {
+          binding,
+          initialised: true,
+        },
+      ],
+    ]),
     send: (message) => messages.push(message),
   };
   binding.clients.push(client);
@@ -30,9 +41,10 @@ function harness(kind) {
 test('Review receives comment and suggestion snapshots as one atomic batch and skips unchanged repeats', () => {
   const { binding, messages } = harness('review');
   emitReview(binding);
-  assert.deepEqual(messages.map(({ type }) => type), [
-    'reviewBatchStart', 'commentReset', 'suggestionReset', 'reviewBatchEnd',
-  ]);
+  assert.deepEqual(
+    messages.map(({ type }) => type),
+    ['reviewBatchStart', 'commentReset', 'suggestionReset', 'reviewBatchEnd'],
+  );
   assert.ok(messages.every((message) => parseAgentMessage(message) !== null));
   emitReview(binding);
   assert.equal(messages.length, 4);
@@ -42,9 +54,15 @@ test('an unchanged review snapshot skips text encoding after resolving its ancho
   const { binding, messages } = harness('review');
   let discussions = 0;
   binding.resolveAnchoredItem = () => ({ start: 0, end: 1 });
-  binding.discussionText = () => { discussions += 1; return 'thread'; };
+  binding.discussionText = () => {
+    discussions += 1;
+    return 'thread';
+  };
   binding.commentThreads.set('one', {
-    id: 'one', author: 'User', status: 'open', messages: [{ body: 'body' }],
+    id: 'one',
+    author: 'User',
+    status: 'open',
+    messages: [{ body: 'body' }],
   });
   emitReview(binding);
   emitReview(binding);
@@ -56,48 +74,66 @@ test('an unchanged review snapshot skips text encoding after resolving its ancho
 test('Review receives reservations in one snapshot', () => {
   const review = harness('review');
   review.binding.reservations.set('one', {
-    id: 'one', assignee: 'User', color: '#123456', startRelative: '', endRelative: '', initialKeys: ['key'],
+    id: 'one',
+    assignee: 'User',
+    color: '#123456',
+    startRelative: '',
+    endRelative: '',
+    initialKeys: ['key'],
   });
   emitReservations(review.binding);
-  assert.deepEqual(review.messages.map(({ type }) => type), ['reservationSnapshot']);
+  assert.deepEqual(
+    review.messages.map(({ type }) => type),
+    ['reservationSnapshot'],
+  );
   assert.equal(review.messages[0].reservations.length, 1);
   assert.ok(review.messages.every((message) => parseAgentMessage(message) !== null));
   emitReservations(review.binding);
   assert.equal(review.messages.length, 1, 'an unchanged Review reservation snapshot is not resent');
-
 });
 
 test('Review receives presence and reservation targets as snapshots', () => {
-    const { binding, messages } = harness('review');
-    const document = new Y.Doc();
-    const text = document.getText('content');
-    text.insert(0, 'l_russian:\nKEY:0 "Значение"');
-    const relative = Buffer.from(Y.encodeRelativePosition(
-      Y.createRelativePositionFromTypeIndex(text, 12),
-    )).toString('base64');
-    binding.document = document;
-    binding.text = text;
-    binding.presences = new Map([['remote', {
-      clientId: 'remote', user: 'Другой', color: '#123456',
-      caretRelative: relative, anchorRelative: relative,
-    }]]);
-    binding.hub = {
-      isLocalPresenceId: () => false,
-      directory: [{ id: 'one', displayName: 'Другой', color: '#123456' }],
-      identity: { id: 'self' }, options: { user: 'Я', color: '#654321' },
-    };
-    emitPresences(binding);
-    emitReservationTargets(binding);
-    assert.deepEqual(messages.map(({ type }) => type),
-      ['presenceSnapshot', 'reservationTargetSnapshot']);
-      assert.ok(messages.every((message) => parseAgentMessage(message) !== null));
-      assert.equal(messages[0].presences[0].user, 'Другой');
-      assert.equal(messages[1].targets[0].displayName, 'Другой');
-      emitReservationTargets(binding);
-      assert.equal(messages.length, 2, 'an unchanged target directory must not be sent again');
-      emitReservationTargets(binding, binding.clients[0]);
-      assert.equal(messages.length, 3, 'an explicit client synchronisation must resend the snapshot');
-    document.destroy();
+  const { binding, messages } = harness('review');
+  const document = new Y.Doc();
+  const text = document.getText('content');
+  text.insert(0, 'l_russian:\nKEY:0 "Значение"');
+  const relative = Buffer.from(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, 12))).toString(
+    'base64',
+  );
+  binding.document = document;
+  binding.text = text;
+  binding.presences = new Map([
+    [
+      'remote',
+      {
+        clientId: 'remote',
+        user: 'Другой',
+        color: '#123456',
+        caretRelative: relative,
+        anchorRelative: relative,
+      },
+    ],
+  ]);
+  binding.hub = {
+    isLocalPresenceId: () => false,
+    directory: [{ id: 'one', displayName: 'Другой', color: '#123456' }],
+    identity: { id: 'self' },
+    options: { user: 'Я', color: '#654321' },
+  };
+  emitPresences(binding);
+  emitReservationTargets(binding);
+  assert.deepEqual(
+    messages.map(({ type }) => type),
+    ['presenceSnapshot', 'reservationTargetSnapshot'],
+  );
+  assert.ok(messages.every((message) => parseAgentMessage(message) !== null));
+  assert.equal(messages[0].presences[0].user, 'Другой');
+  assert.equal(messages[1].targets[0].displayName, 'Другой');
+  emitReservationTargets(binding);
+  assert.equal(messages.length, 2, 'an unchanged target directory must not be sent again');
+  emitReservationTargets(binding, binding.clients[0]);
+  assert.equal(messages.length, 3, 'an explicit client synchronisation must resend the snapshot');
+  document.destroy();
 });
 
 test('Review rejects malformed Agent envelopes without throwing or accepting unknown types', () => {
@@ -110,8 +146,13 @@ test('Review rejects malformed Agent envelopes without throwing or accepting unk
 
 test('collaboration refresh redraws only sections changed during one animation frame', (t) => {
   let frame = null;
-  globalThis.requestAnimationFrame = (callback) => { frame = callback; return 1; };
-  globalThis.cancelAnimationFrame = () => { frame = null; };
+  globalThis.requestAnimationFrame = (callback) => {
+    frame = callback;
+    return 1;
+  };
+  globalThis.cancelAnimationFrame = () => {
+    frame = null;
+  };
   t.after(() => {
     delete globalThis.requestAnimationFrame;
     delete globalThis.cancelAnimationFrame;
@@ -119,7 +160,9 @@ test('collaboration refresh redraws only sections changed during one animation f
   let decorations = 0;
   const sections = [];
   const refresh = createCollaborationRefresh(
-    () => { decorations += 1; },
+    () => {
+      decorations += 1;
+    },
     { refresh: (requested) => sections.push(requested ? [...requested].sort() : null) },
   );
   refresh.schedule('presenceSnapshot');

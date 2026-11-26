@@ -4,37 +4,60 @@ import { canEditDocument } from '../../../packages/shared/src/document-permissio
 import { confirmAction } from './confirm-action.ts';
 import { requiredElement } from './dom-elements.ts';
 import type {
-  DocumentVariants, DocumentVariantsOptions, DocumentVariantsPayload, LocalSelection, VariantTexts,
+  DocumentVariants,
+  DocumentVariantsOptions,
+  DocumentVariantsPayload,
+  LocalSelection,
+  VariantTexts,
 } from './document-variants-types.ts';
 
-export function variantTexts(previous: DocumentVariants | null, payload: DocumentVariantsPayload,
-  reviewText: string | null = null): VariantTexts {
+export function variantTexts(
+  previous: DocumentVariants | null,
+  payload: DocumentVariantsPayload,
+  reviewText: string | null = null,
+): VariantTexts {
   const patch = payload.minePatch;
-  const patchCurrent = patch && previous
-    && previous.mineRevision === payload.mineBaseRevision;
-  const git = payload.gitBase64 !== undefined ? decodeBase64(payload.gitBase64) : previous?.git ?? '';
-  const mine = payload.mineFromGit === true ? git : patchCurrent ? previous.mine.slice(0, byteToUtf16(previous.mine, patch.positionByte))
-    + decodeBase64(patch.insertBase64)
-    + previous.mine.slice(byteToUtf16(previous.mine, patch.positionByte + patch.deleteBytes))
-    : payload.mineBase64 !== undefined ? decodeBase64(payload.mineBase64) : previous?.mine ?? '';
+  const patchCurrent = patch && previous && previous.mineRevision === payload.mineBaseRevision;
+  const git = payload.gitBase64 !== undefined ? decodeBase64(payload.gitBase64) : (previous?.git ?? '');
+  const mine =
+    payload.mineFromGit === true
+      ? git
+      : patchCurrent
+        ? previous.mine.slice(0, byteToUtf16(previous.mine, patch.positionByte)) +
+          decodeBase64(patch.insertBase64) +
+          previous.mine.slice(byteToUtf16(previous.mine, patch.positionByte + patch.deleteBytes))
+        : payload.mineBase64 !== undefined
+          ? decodeBase64(payload.mineBase64)
+          : (previous?.mine ?? '');
   return {
-    shared: reviewText ?? (payload.sharedBase64 !== undefined ? decodeBase64(payload.sharedBase64) : previous?.shared ?? ''),
+    shared:
+      reviewText ??
+      (payload.sharedBase64 !== undefined ? decodeBase64(payload.sharedBase64) : (previous?.shared ?? '')),
     mine,
-    mineRevision: patchCurrent || payload.mineBase64 !== undefined || payload.mineFromGit === true
-      ? payload.mineRevision ?? '' : previous?.mineRevision ?? '',
-    minePatchMissed: Boolean((patch && !patchCurrent)
-      || (payload.mineFromGit === true && payload.gitBase64 === undefined && !previous)),
+    mineRevision:
+      patchCurrent || payload.mineBase64 !== undefined || payload.mineFromGit === true
+        ? (payload.mineRevision ?? '')
+        : (previous?.mineRevision ?? ''),
+    minePatchMissed: Boolean(
+      (patch && !patchCurrent) || (payload.mineFromGit === true && payload.gitBase64 === undefined && !previous),
+    ),
     git,
   };
 }
 
 export function retainedAuthorPreviews(previous: DocumentVariants | null, texts: VariantTexts): Map<string, string> {
-  return previous?.shared === texts.shared && previous?.git === texts.git
-    ? previous.authors : new Map();
+  return previous?.shared === texts.shared && previous?.git === texts.git ? previous.authors : new Map();
 }
 
 export function createDocumentVariants({
-  monaco, state, editor, send, showToast, beforeChange, afterChange, onChanged,
+  monaco,
+  state,
+  editor,
+  send,
+  showToast,
+  beforeChange,
+  afterChange,
+  onChanged,
 }: DocumentVariantsOptions) {
   const selector = requiredElement<HTMLSelectElement>('#document-view');
   const openButton = requiredElement<HTMLButtonElement>('#personal-file-open');
@@ -60,12 +83,16 @@ export function createDocumentVariants({
 
   function setSelection(entry: LocalSelection, include: boolean): void {
     if (!state.ready || state.documentView !== 'shared') {
-      showToast(uiText("Переключитесь на совместную версию и дождитесь подключения."), true);
+      showToast(uiText('Переключитесь на совместную версию и дождитесь подключения.'), true);
       return;
     }
-    send({ type: 'personalFileSelectionSet', path: state.path,
-      changeId: entry.id, include: include ? 1 : 0,
-      revision: state.documentVariants?.localSelectionRevision ?? '' });
+    send({
+      type: 'personalFileSelectionSet',
+      path: state.path,
+      changeId: entry.id,
+      include: include ? 1 : 0,
+      revision: state.documentVariants?.localSelectionRevision ?? '',
+    });
   }
 
   function renderSelections(renderDialog = dialog.open): void {
@@ -83,7 +110,7 @@ export function createDocumentVariants({
       if (!entries.length) {
         const empty = document.createElement('div');
         empty.className = 'personal-selection-empty';
-        empty.textContent = blocked || uiText("Совместная версия не отличается от Git HEAD.");
+        empty.textContent = blocked || uiText('Совместная версия не отличается от Git HEAD.');
         selectionsElement.append(empty);
       }
       for (const entry of entries) {
@@ -97,20 +124,29 @@ export function createDocumentVariants({
         checkbox.addEventListener('change', () => setSelection(entry, checkbox.checked));
         const label = document.createElement('span');
         label.className = 'personal-selection-label';
-        label.textContent = entry.kind === 'structure' ? uiMessage(entry.label)
-          : uiText("{0} · строка {1}{2}", entry.label, entry.lineNumber, entry.kind === 'local-only' ? uiText(" · только в личной версии") : '');
+        label.textContent =
+          entry.kind === 'structure'
+            ? uiMessage(entry.label)
+            : uiText(
+                '{0} · строка {1}{2}',
+                entry.label,
+                entry.lineNumber,
+                entry.kind === 'local-only' ? uiText(' · только в личной версии') : '',
+              );
         const diff = document.createElement('span');
         diff.className = 'personal-selection-diff';
         const before = document.createElement('del');
-        before.textContent = entry.kind === 'local-only'
-          ? displayLine(entry.localLine ?? null, uiText("в личной версии строки нет"))
-          : displayLine(entry.gitLine, uiText("в Git строки нет"));
+        before.textContent =
+          entry.kind === 'local-only'
+            ? displayLine(entry.localLine ?? null, uiText('в личной версии строки нет'))
+            : displayLine(entry.gitLine, uiText('в Git строки нет'));
         const after = document.createElement('ins');
-        after.textContent = entry.kind === 'structure'
-          ? uiText("Изменена структура, отдельные комментарии или порядок строк")
-          : entry.kind === 'local-only'
-            ? displayLine(entry.gitLine, uiText("в Git строки нет"))
-            : displayLine(entry.sharedLine, uiText("удалено в совместной версии"));
+        after.textContent =
+          entry.kind === 'structure'
+            ? uiText('Изменена структура, отдельные комментарии или порядок строк')
+            : entry.kind === 'local-only'
+              ? displayLine(entry.gitLine, uiText('в Git строки нет'))
+              : displayLine(entry.sharedLine, uiText('удалено в совместной версии'));
         diff.append(before, after);
         row.append(checkbox, label, diff);
         selectionsElement.append(row);
@@ -121,27 +157,36 @@ export function createDocumentVariants({
     const custom = entries.filter((entry) => entry.state === 'custom').length;
     notice.hidden = included === 0;
     notice.textContent = included
-      ? uiText("В локальный файл включено изменений из совместной версии: {0}.", included)
+      ? uiText('В локальный файл включено изменений из совместной версии: {0}.', included)
       : '';
     openButton.classList.toggle('has-included', included > 0);
-    openButton.textContent = included ? uiText("Локальный файл · {0}", included) : uiText("Локальный файл");
-    const decorations = state.documentView === 'shared' && !disabled
-      ? entries.filter((entry) => entry.kind !== 'structure').map((entry) => ({
-        range: new monaco.Range(entry.lineNumber, 1, entry.lineNumber, 1),
-        options: {
-          // Keep the glyph anchored to column 1 of the model line. A whole-line
-          // decoration is repeated by Monaco for every visual word-wrap row.
-          isWholeLine: false,
-          glyphMarginClassName: `local-file-check ${entry.state}`,
-          glyphMarginHoverMessage: { value: entry.state === 'included'
-            ? uiText("Изменение включено в локальный файл. Нажмите, чтобы вернуть Git-вариант.")
-            : entry.state === 'excluded'
-              ? uiText("В локальном файле оставлен Git-вариант. Нажмите, чтобы включить совместный.")
-              : uiText("Локальный вариант отличается и от Git, и от совместного. Нажмите, чтобы включить совместный.") },
-        },
-      })) : [];
+    openButton.textContent = included ? uiText('Локальный файл · {0}', included) : uiText('Локальный файл');
+    const decorations =
+      state.documentView === 'shared' && !disabled
+        ? entries
+            .filter((entry) => entry.kind !== 'structure')
+            .map((entry) => ({
+              range: new monaco.Range(entry.lineNumber, 1, entry.lineNumber, 1),
+              options: {
+                // Keep the glyph anchored to column 1 of the model line. A whole-line
+                // decoration is repeated by Monaco for every visual word-wrap row.
+                isWholeLine: false,
+                glyphMarginClassName: `local-file-check ${entry.state}`,
+                glyphMarginHoverMessage: {
+                  value:
+                    entry.state === 'included'
+                      ? uiText('Изменение включено в локальный файл. Нажмите, чтобы вернуть Git-вариант.')
+                      : entry.state === 'excluded'
+                        ? uiText('В локальном файле оставлен Git-вариант. Нажмите, чтобы включить совместный.')
+                        : uiText(
+                            'Локальный вариант отличается и от Git, и от совместного. Нажмите, чтобы включить совместный.',
+                          ),
+                },
+              },
+            }))
+        : [];
     selectionDecorations.set(decorations);
-    if (custom) openButton.title = uiText("Собственных или устаревших локальных вариантов: {0}", custom);
+    if (custom) openButton.title = uiText('Собственных или устаревших локальных вариантов: {0}', custom);
     else openButton.removeAttribute('title');
   }
 
@@ -153,17 +198,31 @@ export function createDocumentVariants({
       const label = document.createElement('h3');
       label.textContent = conflict.key === '__file_structure__' ? uiMessage(conflict.label) : conflict.label;
       const detail = document.createElement('pre');
-      detail.textContent = conflict.reason === 'legacy-base-unknown'
-        ? uiText("У сохранённой версии нет надёжной базы Git. Проверьте версии «Моя» и «Git» перед выбором.")
-        : uiText("База: {0}\nМоя: {1}\nGit: {2}", conflict.baseLine ?? uiText("(структура или удаление)"), conflict.collaborativeLine ?? uiText("(структура или удаление)"), conflict.externalLine ?? uiText("(структура или удаление)"));
+      detail.textContent =
+        conflict.reason === 'legacy-base-unknown'
+          ? uiText('У сохранённой версии нет надёжной базы Git. Проверьте версии «Моя» и «Git» перед выбором.')
+          : uiText(
+              'База: {0}\nМоя: {1}\nGit: {2}',
+              conflict.baseLine ?? uiText('(структура или удаление)'),
+              conflict.collaborativeLine ?? uiText('(структура или удаление)'),
+              conflict.externalLine ?? uiText('(структура или удаление)'),
+            );
       row.append(label, detail);
-      for (const [choice, title] of [['mine', uiText("Оставить мою правку")], ['git', uiText("Взять Git")]] as const) {
+      for (const [choice, title] of [
+        ['mine', uiText('Оставить мою правку')],
+        ['git', uiText('Взять Git')],
+      ] as const) {
         const button = document.createElement('button');
         button.type = 'button';
         button.textContent = title;
         button.addEventListener('click', () => {
-          send({ type: 'personalConflictResolve', path: state.path, key: conflict.key,
-            choice, conflictId: conflict.id });
+          send({
+            type: 'personalConflictResolve',
+            path: state.path,
+            key: conflict.key,
+            choice,
+            conflictId: conflict.id,
+          });
           for (const control of row.querySelectorAll<HTMLButtonElement>('button')) control.disabled = true;
         });
         row.append(button);
@@ -182,8 +241,7 @@ export function createDocumentVariants({
     if (event.target.type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) return;
     if (!event.target.element?.classList?.contains('local-file-check')) return;
     const lineNumber = event.target.position?.lineNumber;
-    const entries = (state.documentVariants?.localSelections ?? [])
-      .filter((entry) => entry.lineNumber === lineNumber);
+    const entries = (state.documentVariants?.localSelections ?? []).filter((entry) => entry.lineNumber === lineNumber);
     if (entries.length === 1) setSelection(entries[0], entries[0].state !== 'included');
     else if (entries.length > 1) openDialog();
   });
@@ -194,8 +252,11 @@ export function createDocumentVariants({
     if (!model) return false;
     beforeChange();
     state.applyingRemote = true;
-    try { model.setValue(text); }
-    finally { state.applyingRemote = false; }
+    try {
+      model.setValue(text);
+    } finally {
+      state.applyingRemote = false;
+    }
     afterChange();
     onChanged();
     return true;
@@ -214,34 +275,42 @@ export function createDocumentVariants({
     const valid = ['shared', 'mine', 'git'].includes(view) || view.startsWith('author:');
     state.documentView = valid ? view : 'shared';
     selector.value = state.documentView;
-    if (state.documentView.startsWith('author:')
-      && !state.documentVariants?.authors.has(state.documentView.slice(7))) {
+    if (state.documentView.startsWith('author:') && !state.documentVariants?.authors.has(state.documentView.slice(7))) {
       const authorId = state.documentView.slice(7);
       if (!pendingAuthors.has(authorId)) {
         const epoch = authorEpoch;
         const timer = setTimeout(() => {
           pendingAuthors.delete(authorId);
-          if (authorEpoch === epoch && state.documentView === `author:${authorId}`
-            && !state.documentVariants?.authors.has(authorId)) select(state.documentView);
+          if (
+            authorEpoch === epoch &&
+            state.documentView === `author:${authorId}` &&
+            !state.documentVariants?.authors.has(authorId)
+          )
+            select(state.documentView);
         }, 10_000);
         pendingAuthors.set(authorId, timer);
-        send({ type: 'documentVariantRequest', path: state.path,
-          authorId, variantEpoch: String(authorEpoch) });
-        showToast(uiText("Загружается персональная версия участника…"));
+        send({ type: 'documentVariantRequest', path: state.path, authorId, variantEpoch: String(authorEpoch) });
+        showToast(uiText('Загружается персональная версия участника…'));
       }
       return;
     }
     applyText(textFor(state.documentView));
     editor.updateOptions({
-      readOnly: !state.ready || !canEditDocument(state, state.relativePath ?? '') || state.documentView !== 'shared'
-        || ['applied', 'closed'].includes(state.ticket?.status ?? ''),
+      readOnly:
+        !state.ready ||
+        !canEditDocument(state, state.relativePath ?? '') ||
+        state.documentView !== 'shared' ||
+        ['applied', 'closed'].includes(state.ticket?.status ?? ''),
     });
-    showToast(state.documentView === 'shared'
-      ? uiText("Открыта совместная версия.")
-      : state.documentView === 'mine'
-        ? uiText("Предпросмотр Git + только ваши изменения.")
-        : state.documentView === 'git' ? uiText("Предпросмотр чистого Git HEAD.")
-          : uiText("Предпросмотр изменений: {0}.", selector.selectedOptions[0]?.textContent ?? uiText("участник")));
+    showToast(
+      state.documentView === 'shared'
+        ? uiText('Открыта совместная версия.')
+        : state.documentView === 'mine'
+          ? uiText('Предпросмотр Git + только ваши изменения.')
+          : state.documentView === 'git'
+            ? uiText('Предпросмотр чистого Git HEAD.')
+            : uiText('Предпросмотр изменений: {0}.', selector.selectedOptions[0]?.textContent ?? uiText('участник')),
+    );
     renderSelections();
   }
 
@@ -249,7 +318,12 @@ export function createDocumentVariants({
   openButton.addEventListener('click', openDialog);
   const gitButton = requiredElement<HTMLButtonElement>('#personal-file-git');
   gitButton.addEventListener('click', async () => {
-    if (!await confirmAction(gitButton, uiText("Записать в рабочий файл чистую версию Git HEAD?"), { label: uiText("Записать") })) return;
+    if (
+      !(await confirmAction(gitButton, uiText('Записать в рабочий файл чистую версию Git HEAD?'), {
+        label: uiText('Записать'),
+      }))
+    )
+      return;
     send({ type: 'personalFileMaterialize', path: state.path, mode: 'git' });
     dialog.close();
   });
@@ -286,7 +360,7 @@ export function createDocumentVariants({
       const option = document.createElement('option');
       option.value = `author:${contributor.id}`;
       option.dataset.author = contributor.id;
-      option.textContent = uiText("Изменения: {0}", contributor.displayName);
+      option.textContent = uiText('Изменения: {0}', contributor.displayName);
       selector.append(option);
     }
     selector.value = state.documentView;
@@ -298,10 +372,16 @@ export function createDocumentVariants({
     renderConflicts();
     openButton.disabled = false;
     message.textContent = gitConflicts.length
-      ? uiText("Запись личной версии приостановлена: конфликтов с Git – {0}. Выберите вариант для каждого конфликта.", gitConflicts.length)
+      ? uiText(
+          'Запись личной версии приостановлена: конфликтов с Git – {0}. Выберите вариант для каждого конфликта.',
+          gitConflicts.length,
+        )
       : conflictCount
-      ? uiText("Ваши персональные изменения пересекаются с вариантами других участников. Конфликтующих ключей: {0}.", conflictCount)
-      : uiText("Рабочий файл содержит только Git и ваши изменения; совместная версия хранится отдельно.");
+        ? uiText(
+            'Ваши персональные изменения пересекаются с вариантами других участников. Конфликтующих ключей: {0}.',
+            conflictCount,
+          )
+        : uiText('Рабочий файл содержит только Git и ваши изменения; совместная версия хранится отдельно.');
     dialog.classList.toggle('has-conflicts', conflictCount > 0 || gitConflicts.length > 0);
     openButton.classList.toggle('has-conflicts', conflictCount > 0 || gitConflicts.length > 0);
     renderSelections();
@@ -324,7 +404,14 @@ export function createDocumentVariants({
   }
 
   return {
-    update, updateAuthor, status, select,
-    dispose() { clearPendingAuthors(); gutterClick.dispose(); selectionDecorations.clear(); },
+    update,
+    updateAuthor,
+    status,
+    select,
+    dispose() {
+      clearPendingAuthors();
+      gutterClick.dispose();
+      selectionDecorations.clear();
+    },
   };
 }

@@ -88,7 +88,9 @@ function upload(client, localPath, remotePath) {
   return new Promise((resolve, reject) => {
     client.sftp((error, sftp) => {
       if (error) return reject(error);
-      sftp.fastPut(localPath, remotePath, {}, (uploadError) => uploadError ? reject(uploadError) : resolve(undefined));
+      sftp.fastPut(localPath, remotePath, {}, (uploadError) =>
+        uploadError ? reject(uploadError) : resolve(undefined),
+      );
     });
   });
 }

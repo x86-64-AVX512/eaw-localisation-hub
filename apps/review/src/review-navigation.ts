@@ -24,15 +24,22 @@ export function reviewItemsAtByte(
   return [
     ...[...state.comments.values()].map((item) => ({ ...item, kind: 'comment' as const })),
     ...[...state.suggestions.values()].map((item) => ({ ...item, kind: 'suggestion' as const })),
-  ].filter((item) => item.status === 'open'
-      && item.startByte <= positionByte && positionByte <= item.endByte)
+  ]
+    .filter((item) => item.status === 'open' && item.startByte <= positionByte && positionByte <= item.endByte)
     .sort((left, right) => {
-      const length = (left.endByte - left.startByte) - (right.endByte - right.startByte);
+      const length = left.endByte - left.startByte - (right.endByte - right.startByte);
       return length || left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id);
     });
 }
 
-export function createReviewNavigation({ state, editor, positionByteAt, focusCard, onSuggestion, finishSuggestionAt }: {
+export function createReviewNavigation({
+  state,
+  editor,
+  positionByteAt,
+  focusCard,
+  onSuggestion,
+  finishSuggestionAt,
+}: {
   state: ReviewNavigationState;
   editor: Monaco.editor.IStandaloneCodeEditor;
   positionByteAt: (position: Monaco.IPosition) => number;
@@ -49,15 +56,25 @@ export function createReviewNavigation({ state, editor, positionByteAt, focusCar
     // Capture before Monaco moves its cursor. Its onMouseDown notification
     // runs after cursor listeners may have restored the canonical model.
     editingAtMouseDown = Boolean(state.editingSuggestionId);
-    if (!editingAtMouseDown || !finishSuggestionAt || event.button !== 0
-      || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (
+      !editingAtMouseDown ||
+      !finishSuggestionAt ||
+      event.button !== 0 ||
+      event.shiftKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey
+    )
+      return;
     const target = editor.getTargetAtClientPoint(event.clientX, event.clientY);
     // Original view-zone text is a preview, not an outside editor click.
     if (!target?.position || target.type === 5 || target.type === 8) return;
     if (!finishSuggestionAt(target.position)) return;
     // Finish before Monaco begins a gesture on the projected model. Letting
     // that gesture continue on the restored base selects unrelated lines.
-    event.preventDefault(); event.stopImmediatePropagation(); editor.focus();
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    editor.focus();
   };
   domNode?.addEventListener('mousedown', mouseDown, true);
   const mouseUp = editor.onMouseUp((event) => {
@@ -78,5 +95,10 @@ export function createReviewNavigation({ state, editor, positionByteAt, focusCar
     focusCard(item.kind, item.id);
     if (item.kind === 'suggestion') onSuggestion(item);
   });
-  return { dispose() { domNode?.removeEventListener('mousedown', mouseDown, true); mouseUp.dispose(); } };
+  return {
+    dispose() {
+      domNode?.removeEventListener('mousedown', mouseDown, true);
+      mouseUp.dispose();
+    },
+  };
 }

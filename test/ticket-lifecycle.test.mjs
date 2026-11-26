@@ -12,12 +12,26 @@ async function atomicWrite(target, data) {
 }
 
 class FakeRoom {
-  constructor(text) { this.text = text; this.reasons = []; }
-  currentText() { return this.text; }
-  hasAuthoritativeState() { return true; }
-  prepareReplacement(text) { return { value: text, stateBytes: Buffer.byteLength(text) }; }
-  replacePrepared(prepared, actor, reason) { this.replaceText(prepared.value, actor, reason); }
-  replaceText(text, _actor, reason) { this.text = text; this.reasons.push(reason); }
+  constructor(text) {
+    this.text = text;
+    this.reasons = [];
+  }
+  currentText() {
+    return this.text;
+  }
+  hasAuthoritativeState() {
+    return true;
+  }
+  prepareReplacement(text) {
+    return { value: text, stateBytes: Buffer.byteLength(text) };
+  }
+  replacePrepared(prepared, actor, reason) {
+    this.replaceText(prepared.value, actor, reason);
+  }
+  replaceText(text, _actor, reason) {
+    this.text = text;
+    this.reasons.push(reason);
+  }
   async flush() {}
 }
 
@@ -28,15 +42,23 @@ test('ticket lifecycle applies verified text, records events, archives, and dele
   const rooms = new Map();
   const deleted = [];
   const registry = {
-    async get(id) { return rooms.get(id); },
+    async get(id) {
+      return rooms.get(id);
+    },
     assertBatchStateBudget() {},
-    async deleteDocuments(ids) { deleted.push(...ids); for (const id of ids) rooms.delete(id); },
+    async deleteDocuments(ids) {
+      deleted.push(...ids);
+      for (const id of ids) rooms.delete(id);
+    },
   };
   try {
     const store = new TicketStore(temporary, atomicWrite);
     await store.initialise();
     const ticket = await store.create(actor, {
-      title: 'Lifecycle', baseBranch: 'general-dev', baseCommit: 'a'.repeat(40), files: [file],
+      title: 'Lifecycle',
+      baseBranch: 'general-dev',
+      baseCommit: 'a'.repeat(40),
+      files: [file],
     });
     const ticketRoom = new FakeRoom('l_russian:\n key:0 "Тикет"\n');
     const mainRoom = new FakeRoom('l_russian:\n key:0 "База"\n');
@@ -47,12 +69,16 @@ test('ticket lifecycle applies verified text, records events, archives, and dele
     assert.equal(snapshot.files[0].ticketInitialised, true);
     assert.equal(snapshot.files[0].mainInitialised, true);
     await assert.rejects(store.update(actor, ticket.id, { status: 'applied' }), /controlled/u);
-    const applied = await service.apply(actor, ticket.id, { results: [{
-      path: file,
-      ticketHash: snapshot.files[0].ticketHash,
-      mainHash: snapshot.files[0].mainHash,
-      textBase64: Buffer.from('l_russian:\n key:0 "Итог"\n').toString('base64'),
-    }] });
+    const applied = await service.apply(actor, ticket.id, {
+      results: [
+        {
+          path: file,
+          ticketHash: snapshot.files[0].ticketHash,
+          mainHash: snapshot.files[0].mainHash,
+          textBase64: Buffer.from('l_russian:\n key:0 "Итог"\n').toString('base64'),
+        },
+      ],
+    });
     assert.equal(mainRoom.text, 'l_russian:\n key:0 "Итог"\n');
     assert.equal(applied.ticket.status, 'applied');
     assert.equal(applied.ticket.events.at(-1).type, 'applied');
@@ -72,11 +98,20 @@ test('ticket rebase replaces isolated documents and advances the recorded Git ba
   const actor = { id: 'translator-1', displayName: 'Translator' };
   const file = 'localisation/russian/test_l_russian.yml';
   const rooms = new Map();
-  const registry = { async get(id) { return rooms.get(id); }, assertBatchStateBudget() {}, async deleteDocuments() {} };
+  const registry = {
+    async get(id) {
+      return rooms.get(id);
+    },
+    assertBatchStateBudget() {},
+    async deleteDocuments() {},
+  };
   try {
     const store = new TicketStore(temporary, atomicWrite);
     const ticket = await store.create(actor, {
-      title: 'Rebase', baseBranch: 'old', baseCommit: 'b'.repeat(40), files: [file],
+      title: 'Rebase',
+      baseBranch: 'old',
+      baseCommit: 'b'.repeat(40),
+      files: [file],
     });
     const room = new FakeRoom('old');
     rooms.set(`ticket-${ticket.id}:${file}`, room);
@@ -84,10 +119,16 @@ test('ticket rebase replaces isolated documents and advances the recorded Git ba
     const service = new TicketService(store, registry);
     const snapshot = await service.snapshot(ticket.id);
     const result = await service.rebase(actor, ticket.id, {
-      baseBranch: 'general-dev', baseCommit: 'c'.repeat(40), results: [{
-        path: file, ticketHash: snapshot.files[0].ticketHash,
-        mainHash: snapshot.files[0].mainHash, textBase64: Buffer.from('rebased').toString('base64'),
-      }],
+      baseBranch: 'general-dev',
+      baseCommit: 'c'.repeat(40),
+      results: [
+        {
+          path: file,
+          ticketHash: snapshot.files[0].ticketHash,
+          mainHash: snapshot.files[0].mainHash,
+          textBase64: Buffer.from('rebased').toString('base64'),
+        },
+      ],
     });
     assert.equal(room.text, 'rebased');
     assert.equal(result.ticket.baseBranch, 'general-dev');

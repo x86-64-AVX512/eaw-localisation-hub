@@ -54,8 +54,11 @@ function splitLines(text: string): LineRecord[] {
 }
 
 function structureSignature(records: LineRecord[], keys: ReadonlySet<string> | null = null): string {
-  return JSON.stringify(records.filter(({ key }) => !key || !keys || keys.has(key))
-    .map(({ key, content, eol }) => key ? ['key', key, Boolean(eol)] : ['text', content, Boolean(eol)]));
+  return JSON.stringify(
+    records
+      .filter(({ key }) => !key || !keys || keys.has(key))
+      .map(({ key, content, eol }) => (key ? ['key', key, Boolean(eol)] : ['text', content, Boolean(eol)])),
+  );
 }
 
 function analyse(text: string): Analysis {
@@ -139,21 +142,22 @@ function singleLineVariant(previousText: string, currentText: string): Localisat
   let start = 0;
   while (start < shortest && previousText[start] === currentText[start]) start += 1;
   if (start === previousText.length && start === currentText.length) return new Map();
-  let previousEnd = previousText.length; let currentEnd = currentText.length;
-  while (previousEnd > start && currentEnd > start
-    && previousText[previousEnd - 1] === currentText[currentEnd - 1]) {
-    previousEnd -= 1; currentEnd -= 1;
+  let previousEnd = previousText.length;
+  let currentEnd = currentText.length;
+  while (previousEnd > start && currentEnd > start && previousText[previousEnd - 1] === currentText[currentEnd - 1]) {
+    previousEnd -= 1;
+    currentEnd -= 1;
   }
-  if (/[\r\n]/u.test(previousText.slice(start, previousEnd))
-    || /[\r\n]/u.test(currentText.slice(start, currentEnd))) return null;
+  if (/[\r\n]/u.test(previousText.slice(start, previousEnd)) || /[\r\n]/u.test(currentText.slice(start, currentEnd)))
+    return null;
   const previousLineStart = previousText.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
   const currentLineStart = currentText.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
   let previousLineEnd = previousText.indexOf('\n', start);
   let currentLineEnd = currentText.indexOf('\n', start);
   previousLineEnd = previousLineEnd < 0 ? previousText.length : previousLineEnd + 1;
   currentLineEnd = currentLineEnd < 0 ? currentText.length : currentLineEnd + 1;
-  if (previousLineStart !== currentLineStart
-    || previousEnd > previousLineEnd || currentEnd > currentLineEnd) return null;
+  if (previousLineStart !== currentLineStart || previousEnd > previousLineEnd || currentEnd > currentLineEnd)
+    return null;
   const previousRaw = previousText.slice(previousLineStart, previousLineEnd);
   const currentRaw = currentText.slice(currentLineStart, currentLineEnd);
   const previousEol = previousRaw.endsWith('\n');
@@ -162,15 +166,23 @@ function singleLineVariant(previousText: string, currentText: string): Localisat
   const currentLine = currentRaw.replace(/\r?\n$/u, '');
   const previousKey = declarationKey(previousLine);
   const currentKey = declarationKey(currentLine);
-  if (!previousKey || previousKey !== currentKey || previousEol !== currentEol
-    || earlierKeyExists(previousText, previousLineStart, previousKey)
-    || earlierKeyExists(currentText, currentLineStart, currentKey)
-    || laterKeyExists(previousText, previousLineEnd, previousKey)
-    || laterKeyExists(currentText, currentLineEnd, currentKey)) return null;
+  if (
+    !previousKey ||
+    previousKey !== currentKey ||
+    previousEol !== currentEol ||
+    earlierKeyExists(previousText, previousLineStart, previousKey) ||
+    earlierKeyExists(currentText, currentLineStart, currentKey) ||
+    laterKeyExists(previousText, previousLineEnd, previousKey) ||
+    laterKeyExists(currentText, currentLineEnd, currentKey)
+  )
+    return null;
   return previousLine === currentLine ? new Map() : new Map([[currentKey, currentLine]]);
 }
 
-function resolutionFor(resolutions: ReadonlyMap<string, string> | Record<string, string>, key: string): string | undefined {
+function resolutionFor(
+  resolutions: ReadonlyMap<string, string> | Record<string, string>,
+  key: string,
+): string | undefined {
   if (resolutions instanceof Map) return resolutions.get(key);
   return (resolutions as Record<string, string>)[key];
 }
@@ -179,9 +191,13 @@ function lineEnding(records: LineRecord[]): string {
   return records.find(({ eol }) => eol)?.eol ?? '\r\n';
 }
 
-function renderWithChoices(templateText: string, choices: ReadonlyMap<string, string | null>,
-  preferredOrder: string[], preserveKeys: ReadonlySet<string> = new Set(),
-  duplicateKeys: ReadonlySet<string> = new Set()): string {
+function renderWithChoices(
+  templateText: string,
+  choices: ReadonlyMap<string, string | null>,
+  preferredOrder: string[],
+  preserveKeys: ReadonlySet<string> = new Set(),
+  duplicateKeys: ReadonlySet<string> = new Set(),
+): string {
   const records = occurrenceAware(analyse(templateText), duplicateKeys).records;
   const eol = lineEnding(records);
   let first: LinkedRecord | null = null;
@@ -226,9 +242,11 @@ function renderWithChoices(templateText: string, choices: ReadonlyMap<string, st
     const chosen = preserveKeys.has(key) ? null : choices.get(key);
     if (chosen == null) continue;
     const present = firstByKey.get(key);
-    if (present) { preceding = present; continue; }
-    const node = insertBefore({ content: chosen, eol, key },
-      nextOriginal[index] ?? preceding?.next ?? null);
+    if (present) {
+      preceding = present;
+      continue;
+    }
+    const node = insertBefore({ content: chosen, eol, key }, nextOriginal[index] ?? preceding?.next ?? null);
     firstByKey.set(key, node);
     preceding = node;
   }
@@ -242,29 +260,55 @@ function renderWithChoices(templateText: string, choices: ReadonlyMap<string, st
 // in the local Git file. Restore the key's position relative to genuine blank
 // lines as well, including when an earlier projection removed the placeholder.
 // Only a proven single extra blank is removed; comments stay intact.
-function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
-  projectedText: string, key: string): string {
+function removeRestoredKeyPlaceholder(
+  gitText: string,
+  templateText: string,
+  projectedText: string,
+  key: string,
+): string {
   const git = analyse(gitText);
   const template = analyse(templateText);
   const projected = analyse(projectedText);
-  if (git.duplicates.has(key) || template.duplicates.has(key) || projected.duplicates.has(key)
-    || template.lines.has(key)) return projectedText;
+  if (
+    git.duplicates.has(key) ||
+    template.duplicates.has(key) ||
+    projected.duplicates.has(key) ||
+    template.lines.has(key)
+  )
+    return projectedText;
   const keyIndex = git.records.findIndex((record) => record.key === key);
   if (keyIndex < 0) return projectedText;
-  const anchorIndex = (candidate: string, records: LineRecord[]) => records.findIndex((record) => record.key === candidate);
+  const anchorIndex = (candidate: string, records: LineRecord[]) =>
+    records.findIndex((record) => record.key === candidate);
   let before = '';
   let after = '';
   for (let index = keyIndex - 1; index >= 0; index -= 1) {
     const candidate = git.records[index].key;
-    if (candidate && !git.duplicates.has(candidate) && !template.duplicates.has(candidate)
-      && !projected.duplicates.has(candidate) && anchorIndex(candidate, template.records) >= 0
-      && anchorIndex(candidate, projected.records) >= 0) { before = candidate; break; }
+    if (
+      candidate &&
+      !git.duplicates.has(candidate) &&
+      !template.duplicates.has(candidate) &&
+      !projected.duplicates.has(candidate) &&
+      anchorIndex(candidate, template.records) >= 0 &&
+      anchorIndex(candidate, projected.records) >= 0
+    ) {
+      before = candidate;
+      break;
+    }
   }
   for (let index = keyIndex + 1; index < git.records.length; index += 1) {
     const candidate = git.records[index].key;
-    if (candidate && !git.duplicates.has(candidate) && !template.duplicates.has(candidate)
-      && !projected.duplicates.has(candidate) && anchorIndex(candidate, template.records) >= 0
-      && anchorIndex(candidate, projected.records) >= 0) { after = candidate; break; }
+    if (
+      candidate &&
+      !git.duplicates.has(candidate) &&
+      !template.duplicates.has(candidate) &&
+      !projected.duplicates.has(candidate) &&
+      anchorIndex(candidate, template.records) >= 0 &&
+      anchorIndex(candidate, projected.records) >= 0
+    ) {
+      after = candidate;
+      break;
+    }
   }
   const gap = (records: LineRecord[]) => {
     const start = before ? anchorIndex(before, records) : -1;
@@ -280,8 +324,8 @@ function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
   const raw = (record: LineRecord) => record.content + record.eol;
   const sameRecord = (left: LineRecord, right: LineRecord) =>
     left.content === right.content && Boolean(left.eol) === Boolean(right.eol);
-  const sameRecords = (left: LineRecord[], right: LineRecord[]) => left.length === right.length
-    && left.every((record, index) => sameRecord(record, right[index]));
+  const sameRecords = (left: LineRecord[], right: LineRecord[]) =>
+    left.length === right.length && left.every((record, index) => sameRecord(record, right[index]));
   const groupKeys = gitGap.filter((record) => record.key).map((record) => record.key!);
   const groupKeySet = new Set(groupKeys);
   // A deleted group can contain blank separators of its own. Anchor the whole
@@ -289,29 +333,42 @@ function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
   // than appending restored keys at the next keyed line after that suffix.
   // Only repair a proven deletion footprint: unchanged prefix/suffix, no new
   // keys, no ambiguous occurrences, and at most one blank editor placeholder.
-  if (groupKeys.length && groupKeys.every((candidate) => !template.lines.has(candidate)
-    && !git.duplicates.has(candidate) && !projected.duplicates.has(candidate))
-    && templateGap.every((record) => !record.key)
-    && projectedGap.every((record) => !record.key || groupKeySet.has(record.key))) {
+  if (
+    groupKeys.length &&
+    groupKeys.every(
+      (candidate) =>
+        !template.lines.has(candidate) && !git.duplicates.has(candidate) && !projected.duplicates.has(candidate),
+    ) &&
+    templateGap.every((record) => !record.key) &&
+    projectedGap.every((record) => !record.key || groupKeySet.has(record.key))
+  ) {
     const firstKey = gitGap.findIndex((record) => record.key);
     const lastKey = gitGap.findLastIndex((record) => record.key);
     const prefix = gitGap.slice(0, firstKey);
     const suffix = gitGap.slice(lastKey + 1);
     const middle = templateGap.slice(prefix.length, templateGap.length - suffix.length);
-    const untouchedEdges = templateGap.length >= prefix.length + suffix.length
-      && sameRecords(templateGap.slice(0, prefix.length), prefix)
-      && sameRecords(suffix.length ? templateGap.slice(-suffix.length) : [], suffix);
-    const onlyDeletedSpacing = gitGap.slice(firstKey, lastKey + 1)
+    const untouchedEdges =
+      templateGap.length >= prefix.length + suffix.length &&
+      sameRecords(templateGap.slice(0, prefix.length), prefix) &&
+      sameRecords(suffix.length ? templateGap.slice(-suffix.length) : [], suffix);
+    const onlyDeletedSpacing = gitGap
+      .slice(firstKey, lastKey + 1)
       .every((record) => record.key || !record.content.trim());
-    if (untouchedEdges && onlyDeletedSpacing && middle.length <= 1
-      && middle.every((record) => !record.content.trim())
-      && (sameRecords(projectedNonKeys, templateNonKeys) || sameRecords(projectedNonKeys, gitNonKeys))) {
+    if (
+      untouchedEdges &&
+      onlyDeletedSpacing &&
+      middle.length <= 1 &&
+      middle.every((record) => !record.content.trim()) &&
+      (sameRecords(projectedNonKeys, templateNonKeys) || sameRecords(projectedNonKeys, gitNonKeys))
+    ) {
       const restored = new Map(projectedGap.filter((record) => record.key).map((record) => [record.key!, record]));
-      const replacement = restored.size ? gitGap.flatMap((record) => {
-        if (!record.key) return [record];
-        const chosen = restored.get(record.key);
-        return chosen ? [chosen] : [];
-      }) : [...prefix, ...suffix];
+      const replacement = restored.size
+        ? gitGap.flatMap((record) => {
+            if (!record.key) return [record];
+            const chosen = restored.get(record.key);
+            return chosen ? [chosen] : [];
+          })
+        : [...prefix, ...suffix];
       const start = before ? anchorIndex(before, projected.records) + 1 : 0;
       const end = after ? anchorIndex(after, projected.records) : projected.records.length;
       projected.records.splice(start, end - start, ...replacement);
@@ -319,16 +376,24 @@ function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
     }
   }
   if (!projected.lines.has(key)) return projectedText;
-  const spacingMatchesGit = projectedNonKeys.length === gitNonKeys.length
-    && projectedNonKeys.every((record, index) => sameRecord(record, gitNonKeys[index]));
+  const spacingMatchesGit =
+    projectedNonKeys.length === gitNonKeys.length &&
+    projectedNonKeys.every((record, index) => sameRecord(record, gitNonKeys[index]));
   let extraIndex = -1;
   if (!spacingMatchesGit) {
-    if (templateNonKeys.length !== gitNonKeys.length + 1
-      || projectedNonKeys.length !== templateNonKeys.length
-      || !projectedNonKeys.every((record, index) => sameRecord(record, templateNonKeys[index]))) return projectedText;
-    extraIndex = templateNonKeys.findIndex((record, index) =>
-      !record.content.trim() && templateNonKeys.filter((_, other) => other !== index)
-        .every((other, position) => sameRecord(other, gitNonKeys[position])));
+    if (
+      templateNonKeys.length !== gitNonKeys.length + 1 ||
+      projectedNonKeys.length !== templateNonKeys.length ||
+      !projectedNonKeys.every((record, index) => sameRecord(record, templateNonKeys[index]))
+    )
+      return projectedText;
+    extraIndex = templateNonKeys.findIndex(
+      (record, index) =>
+        !record.content.trim() &&
+        templateNonKeys
+          .filter((_, other) => other !== index)
+          .every((other, position) => sameRecord(other, gitNonKeys[position])),
+    );
     if (extraIndex < 0) return projectedText;
   }
   const projectedStart = before ? anchorIndex(before, projected.records) + 1 : 0;
@@ -348,8 +413,8 @@ function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
   const gitKeyIndex = gitGap.findIndex((record) => record.key === key);
   const projectedBefore = before ? anchorIndex(before, projected.records) : -1;
   const projectedEnd = after ? anchorIndex(after, projected.records) : projected.records.length;
-  const nonKeyPositions = projected.records.map((record, position) =>
-    position > projectedBefore && position < projectedEnd && !record.key ? position : -1)
+  const nonKeyPositions = projected.records
+    .map((record, position) => (position > projectedBefore && position < projectedEnd && !record.key ? position : -1))
     .filter((position) => position >= 0);
   let insertionIndex = projectedBefore;
   let nonKeyOrdinal = 0;
@@ -358,8 +423,10 @@ function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
     if (record.key) {
       const ordinal = keyOrdinals.get(record.key) ?? 0;
       keyOrdinals.set(record.key, ordinal + 1);
-      const found = projected.records.map((candidate, position) =>
-        position > projectedBefore && position < projectedEnd && candidate.key === record.key ? position : -1)
+      const found = projected.records
+        .map((candidate, position) =>
+          position > projectedBefore && position < projectedEnd && candidate.key === record.key ? position : -1,
+        )
         .filter((position) => position >= 0)[ordinal];
       if (found !== undefined) insertionIndex = Math.max(insertionIndex, found);
     } else {
@@ -371,8 +438,12 @@ function removeRestoredKeyPlaceholder(gitText: string, templateText: string,
   return projected.records.map(raw).join('');
 }
 
-export function mergeLocalisationThreeWay(baseText: string, collaborativeText: string, externalText: string,
-  resolutions: ReadonlyMap<string, string> | Record<string, string> = {}) {
+export function mergeLocalisationThreeWay(
+  baseText: string,
+  collaborativeText: string,
+  externalText: string,
+  resolutions: ReadonlyMap<string, string> | Record<string, string> = {},
+) {
   if (collaborativeText === externalText) {
     return { text: collaborativeText, conflicts: [], changed: false };
   }
@@ -382,8 +453,13 @@ export function mergeLocalisationThreeWay(baseText: string, collaborativeText: s
   const externalRaw = analyse(externalText);
   const conflicts: LocalisationConflict[] = [];
   const duplicateKeys = allDuplicateKeys(baseRaw, collaborativeRaw, externalRaw);
-  if ([...duplicateKeys].some((key) => duplicateCount(baseRaw, key) !== duplicateCount(collaborativeRaw, key)
-    || duplicateCount(baseRaw, key) !== duplicateCount(externalRaw, key))) {
+  if (
+    [...duplicateKeys].some(
+      (key) =>
+        duplicateCount(baseRaw, key) !== duplicateCount(collaborativeRaw, key) ||
+        duplicateCount(baseRaw, key) !== duplicateCount(externalRaw, key),
+    )
+  ) {
     const duplicateResolution = resolutionFor(resolutions, '__duplicate_keys__');
     if (duplicateResolution === 'external') {
       return { text: externalText, conflicts: [], changed: externalText !== collaborativeText };
@@ -416,9 +492,9 @@ export function mergeLocalisationThreeWay(baseText: string, collaborativeText: s
   if (externalStructureChanged && !collaborativeStructureChanged) {
     templateText = externalText;
   } else if (
-    externalStructureChanged
-    && collaborativeStructureChanged
-    && externalStructure !== collaborativeStructure
+    externalStructureChanged &&
+    collaborativeStructureChanged &&
+    externalStructure !== collaborativeStructure
   ) {
     const structureResolution = resolutionFor(resolutions, '__file_structure__');
     if (structureResolution === 'external') templateText = externalText;
@@ -433,11 +509,7 @@ export function mergeLocalisationThreeWay(baseText: string, collaborativeText: s
     }
   }
 
-  const allKeys = new Set([
-    ...base.lines.keys(),
-    ...collaborative.lines.keys(),
-    ...external.lines.keys(),
-  ]);
+  const allKeys = new Set([...base.lines.keys(), ...collaborative.lines.keys(), ...external.lines.keys()]);
   const choices = new Map<string, string | null>();
   for (const key of allKeys) {
     const baseLine = base.lines.get(key) ?? null;
@@ -512,14 +584,18 @@ function sourceKey(key: string): string {
 // A delta uses the occurrence shape of the two edited snapshots; an accumulated
 // variant must instead use the shape of Git and the resulting file. Migrate the
 // whole affected group when its count changes, while retaining unrelated edits.
-export function accumulateLocalisationVariant(gitText: string, variant: ReadonlyMap<string, string | null>,
-  previousText: string, currentText: string, changes = captureLocalisationVariant(previousText, currentText)): LocalisationVariant {
+export function accumulateLocalisationVariant(
+  gitText: string,
+  variant: ReadonlyMap<string, string | null>,
+  previousText: string,
+  currentText: string,
+  changes = captureLocalisationVariant(previousText, currentText),
+): LocalisationVariant {
   const next = new Map(variant);
   const touched = new Set([...changes.keys()].filter((key) => key !== '__file_structure__').map(sourceKey));
   const occurrenceChange = [...changes.keys(), ...variant.keys()].some((key) => key.startsWith('occ:'));
   const git = analyse(gitText);
-  if (!changes.has('__file_structure__') && !occurrenceChange
-    && ![...touched].some((key) => git.duplicates.has(key))) {
+  if (!changes.has('__file_structure__') && !occurrenceChange && ![...touched].some((key) => git.duplicates.has(key))) {
     for (const [key, line] of changes) next.set(key, line);
     return next;
   }
@@ -549,7 +625,10 @@ export function accumulateLocalisationVariant(gitText: string, variant: Readonly
   return next;
 }
 
-export function projectLocalisationVariant(gitText: string, variant: ReadonlyMap<string, string | null> | null): string {
+export function projectLocalisationVariant(
+  gitText: string,
+  variant: ReadonlyMap<string, string | null> | null,
+): string {
   const gitRaw = analyse(gitText);
   const structure = variant?.get('__file_structure__');
   const template = typeof structure === 'string' ? structure : gitText;
@@ -584,9 +663,11 @@ export function projectLocalisationVariant(gitText: string, variant: ReadonlyMap
   return projected;
 }
 
-export function localisationVariantConflicts(gitText: string,
+export function localisationVariantConflicts(
+  gitText: string,
   variants: Iterable<[string, ReadonlyMap<string, string | null>]> | null,
-  ownerNames: ReadonlyMap<string, string> = new Map()) {
+  ownerNames: ReadonlyMap<string, string> = new Map(),
+) {
   const variantEntries = [...(variants ?? [])];
   const gitRaw = analyse(gitText);
   const duplicateKeys = new Set(gitRaw.duplicates);
@@ -613,8 +694,12 @@ export function localisationVariantConflicts(gitText: string,
     .map(([key, items]) => ({ key, baseLine: git.lines.get(key) ?? null, variants: items }));
 }
 
-export function projectLocalisationOwnership(gitText: string, currentText: string,
-  ownership: ReadonlyMap<string, string>, userId: string): string {
+export function projectLocalisationOwnership(
+  gitText: string,
+  currentText: string,
+  ownership: ReadonlyMap<string, string>,
+  userId: string,
+): string {
   const gitRaw = analyse(gitText);
   const currentRaw = analyse(currentText);
   const duplicateKeys = allDuplicateKeys(gitRaw, currentRaw);
@@ -622,9 +707,7 @@ export function projectLocalisationOwnership(gitText: string, currentText: strin
   const current = occurrenceAware(currentRaw, duplicateKeys);
   const choices = new Map<string, string | null>();
   for (const key of new Set([...git.lines.keys(), ...current.lines.keys()])) {
-    choices.set(key, ownership.get(key) === userId
-      ? (current.lines.get(key) ?? null)
-      : (git.lines.get(key) ?? null));
+    choices.set(key, ownership.get(key) === userId ? (current.lines.get(key) ?? null) : (git.lines.get(key) ?? null));
   }
   const template = ownership.get('__file_structure__') === userId ? currentText : gitText;
   const order = [...git.order, ...current.order.filter((key) => !git.lines.has(key))];
@@ -692,12 +775,14 @@ export function localisationSelectionChanges(gitText: string, sharedText: string
         const localLine = localItems[index].line;
         if (sameLine(gitLine, sharedLine) && sameLine(localLine, gitLine)) continue;
         entries.push({
-          id: occurrenceId(key, index), key,
+          id: occurrenceId(key, index),
+          key,
           label: `${key} · вхождение ${index + 1}/${gitItems.length}`,
           lineNumber: Math.max(1, Math.min(maximumLine, sharedItems[index].lineNumber)),
-          gitLine, sharedLine, localLine,
-          state: sameLine(localLine, sharedLine) ? 'included'
-            : sameLine(localLine, gitLine) ? 'excluded' : 'custom',
+          gitLine,
+          sharedLine,
+          localLine,
+          state: sameLine(localLine, sharedLine) ? 'included' : sameLine(localLine, gitLine) ? 'excluded' : 'custom',
           kind: sameLine(gitLine, sharedLine) ? 'local-only' : 'modified',
         });
       }
@@ -707,8 +792,7 @@ export function localisationSelectionChanges(gitText: string, sharedText: string
     const sharedLine = shared.lines.get(key) ?? null;
     const localLine = local.lines.get(key) ?? null;
     if (sameLine(gitLine, sharedLine) && sameLine(localLine, gitLine)) continue;
-    const state = sameLine(localLine, sharedLine)
-      ? 'included' : sameLine(localLine, gitLine) ? 'excluded' : 'custom';
+    const state = sameLine(localLine, sharedLine) ? 'included' : sameLine(localLine, gitLine) ? 'excluded' : 'custom';
     const sourceLine = sharedRecords.get(key)?.lineNumber ?? gitRecords.get(key)?.lineNumber ?? 1;
     entries.push({
       id: `key:${key}`,
@@ -719,16 +803,26 @@ export function localisationSelectionChanges(gitText: string, sharedText: string
       sharedLine,
       localLine: localRecords.get(key)?.line ?? localLine,
       state,
-      kind: sameLine(gitLine, sharedLine) ? 'local-only'
-        : gitLine == null ? 'added' : sharedLine == null ? 'deleted' : 'modified',
+      kind: sameLine(gitLine, sharedLine)
+        ? 'local-only'
+        : gitLine == null
+          ? 'added'
+          : sharedLine == null
+            ? 'deleted'
+            : 'modified',
     });
   }
   entries.sort((left, right) => left.lineNumber - right.lineNumber);
-  const duplicateCountsMatch = duplicateKeys.every((key) => duplicateCount(git, key) === duplicateCount(shared, key)
-    && duplicateCount(git, key) === duplicateCount(local, key));
+  const duplicateCountsMatch = duplicateKeys.every(
+    (key) =>
+      duplicateCount(git, key) === duplicateCount(shared, key) &&
+      duplicateCount(git, key) === duplicateCount(local, key),
+  );
   const localOnlyStructure = gitStructure === sharedStructure && localStructure !== gitStructure;
-  if ((duplicateKeys.length === 0 && (gitStructure !== sharedStructure || localOnlyStructure))
-    || (localOnlyStructure && duplicateCountsMatch)) {
+  if (
+    (duplicateKeys.length === 0 && (gitStructure !== sharedStructure || localOnlyStructure)) ||
+    (localOnlyStructure && duplicateCountsMatch)
+  ) {
     entries.unshift({
       id: '__file_structure__',
       key: '__file_structure__',
@@ -737,8 +831,13 @@ export function localisationSelectionChanges(gitText: string, sharedText: string
       gitLine: null,
       sharedLine: null,
       localLine: null,
-      state: localOnlyStructure ? 'custom' : localStructure === sharedStructure
-        ? 'included' : localStructure === gitStructure ? 'excluded' : 'custom',
+      state: localOnlyStructure
+        ? 'custom'
+        : localStructure === sharedStructure
+          ? 'included'
+          : localStructure === gitStructure
+            ? 'excluded'
+            : 'custom',
       kind: 'structure',
     });
   }
@@ -752,8 +851,13 @@ export function localisationSelectionChanges(gitText: string, sharedText: string
   };
 }
 
-export function setLocalisationSelection(gitText: string, sharedText: string, localText: string,
-  changeId: string, include: boolean): string {
+export function setLocalisationSelection(
+  gitText: string,
+  sharedText: string,
+  localText: string,
+  changeId: string,
+  include: boolean,
+): string {
   const git = analyse(gitText);
   const shared = analyse(sharedText);
   const local = analyse(localText);
@@ -767,10 +871,12 @@ export function setLocalisationSelection(gitText: string, sharedText: string, lo
     const gitItems = occurrences(git).get(key) ?? [];
     const sharedItems = occurrences(shared).get(key) ?? [];
     const localItems = occurrences(local).get(key) ?? [];
-    if (gitItems.length !== sharedItems.length || gitItems.length !== localItems.length
-      || index >= gitItems.length) throw new Error('Local-file occurrences cannot be matched');
-    if (sameLine(gitItems[index].line, sharedItems[index].line)
-      && sameLine(localItems[index].line, gitItems[index].line)) {
+    if (gitItems.length !== sharedItems.length || gitItems.length !== localItems.length || index >= gitItems.length)
+      throw new Error('Local-file occurrences cannot be matched');
+    if (
+      sameLine(gitItems[index].line, sharedItems[index].line) &&
+      sameLine(localItems[index].line, gitItems[index].line)
+    ) {
       throw new Error('The shared change is no longer current');
     }
     const records = local.records;
@@ -785,8 +891,13 @@ export function setLocalisationSelection(gitText: string, sharedText: string, lo
     const localStructure = structureSignature(local.records, structuralKeys);
     if (gitStructure === sharedStructure) {
       if (localStructure === gitStructure) throw new Error('The local structure already matches Git');
-      if ([...duplicateKeys].some((key) => duplicateCount(git, key) !== duplicateCount(shared, key)
-        || duplicateCount(git, key) !== duplicateCount(local, key))) {
+      if (
+        [...duplicateKeys].some(
+          (key) =>
+            duplicateCount(git, key) !== duplicateCount(shared, key) ||
+            duplicateCount(git, key) !== duplicateCount(local, key),
+        )
+      ) {
         throw new Error('File structure is ambiguous because a localisation key is repeated');
       }
       const variant = captureLocalisationVariant(gitText, localText);
@@ -802,8 +913,10 @@ export function setLocalisationSelection(gitText: string, sharedText: string, lo
   if (!String(changeId).startsWith('key:')) throw new Error('Unknown local-file change');
   const key = String(changeId).slice(4);
   if (duplicateKeys.has(key)) throw new Error('The selected localisation key is repeated');
-  if (sameLine(git.lines.get(key) ?? null, shared.lines.get(key) ?? null)
-    && sameLine(local.lines.get(key) ?? null, git.lines.get(key) ?? null)) {
+  if (
+    sameLine(git.lines.get(key) ?? null, shared.lines.get(key) ?? null) &&
+    sameLine(local.lines.get(key) ?? null, git.lines.get(key) ?? null)
+  ) {
     throw new Error('The shared change is no longer current');
   }
   const choices = new Map<string, string | null>(local.lines);
@@ -815,5 +928,6 @@ export function setLocalisationSelection(gitText: string, sharedText: string, lo
   // Preserve repeated declarations verbatim while toggling an unrelated key.
   const projected = renderWithChoices(localText, choices, [...new Set(preferred)], duplicateKeys);
   return git.lines.has(key) && !shared.lines.has(key)
-    ? removeRestoredKeyPlaceholder(gitText, sharedText, projected, key) : projected;
+    ? removeRestoredKeyPlaceholder(gitText, sharedText, projected, key)
+    : projected;
 }

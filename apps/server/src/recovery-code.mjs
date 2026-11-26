@@ -28,15 +28,20 @@ function checksum(payload) {
 
 export function generateRecoveryCode() {
   const payload = base32(crypto.randomBytes(SECRET_BYTES));
-  return `${PREFIX}-${[...payload, ...checksum(payload)].reduce((groups, character, index) => {
-    const group = Math.floor(index / 4);
-    groups[group] = `${groups[group] ?? ''}${character}`;
-    return groups;
-  }, []).join('-')}`;
+  return `${PREFIX}-${[...payload, ...checksum(payload)]
+    .reduce((groups, character, index) => {
+      const group = Math.floor(index / 4);
+      groups[group] = `${groups[group] ?? ''}${character}`;
+      return groups;
+    }, [])
+    .join('-')}`;
 }
 
 export function normaliseRecoveryCode(value) {
-  const compact = String(value ?? '').trim().toUpperCase().replaceAll('-', '');
+  const compact = String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replaceAll('-', '');
   const compactPrefix = PREFIX.replaceAll('-', '');
   if (!compact.startsWith(compactPrefix)) return '';
   const encoded = compact.slice(compactPrefix.length);

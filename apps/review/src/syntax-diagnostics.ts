@@ -34,22 +34,42 @@ export function diagnosticsToMarkers(
 ): Monaco.editor.IMarkerData[] {
   return diagnostics.map((issue) => ({
     code: issue.code,
-    source: uiText("Синтаксис локализации"),
-    severity: issue.severity === 'error' ? monaco.MarkerSeverity.Error
-      : issue.severity === 'info' ? monaco.MarkerSeverity.Info : monaco.MarkerSeverity.Warning,
+    source: uiText('Синтаксис локализации'),
+    severity:
+      issue.severity === 'error'
+        ? monaco.MarkerSeverity.Error
+        : issue.severity === 'info'
+          ? monaco.MarkerSeverity.Info
+          : monaco.MarkerSeverity.Warning,
     message: diagnosticText(issue),
-    startLineNumber: issue.lineNumber, endLineNumber: issue.lineNumber,
-    startColumn: issue.startColumn, endColumn: issue.endColumn,
-    ...(issue.related ? { relatedInformation: [{
-      resource: model.uri,
-      message: uiText("Первое объявление ключа"),
-      startLineNumber: issue.related.lineNumber, endLineNumber: issue.related.lineNumber,
-      startColumn: issue.related.startColumn, endColumn: issue.related.endColumn,
-    }] } : {}),
+    startLineNumber: issue.lineNumber,
+    endLineNumber: issue.lineNumber,
+    startColumn: issue.startColumn,
+    endColumn: issue.endColumn,
+    ...(issue.related
+      ? {
+          relatedInformation: [
+            {
+              resource: model.uri,
+              message: uiText('Первое объявление ключа'),
+              startLineNumber: issue.related.lineNumber,
+              endLineNumber: issue.related.lineNumber,
+              startColumn: issue.related.startColumn,
+              endColumn: issue.related.endColumn,
+            },
+          ],
+        }
+      : {}),
   }));
 }
 
-export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getFilePath = null }: SyntaxDiagnosticsOptions) {
+export function createSyntaxDiagnostics({
+  monaco,
+  editor,
+  token,
+  showToast,
+  getFilePath = null,
+}: SyntaxDiagnosticsOptions) {
   const worker = new Worker('/syntax-worker.js', { type: 'module' });
   const button = requiredElement<HTMLButtonElement>('#syntax-problems-open');
   const count = requiredElement<HTMLElement>('#syntax-problems-count');
@@ -57,8 +77,11 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
   const list = requiredElement<HTMLElement>('#syntax-problems-list');
   const empty = requiredElement<HTMLElement>('#syntax-problems-empty');
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let revision = 0; let issues: LocalisationDiagnostic[] = []; let failed = false;
-  let markedModel: Monaco.editor.ITextModel | null = null; let markerSignature = '';
+  let revision = 0;
+  let issues: LocalisationDiagnostic[] = [];
+  let failed = false;
+  let markedModel: Monaco.editor.ITextModel | null = null;
+  let markerSignature = '';
   let indexError = '';
 
   function jumpTo(lineNumber: number, column: number): void {
@@ -76,14 +99,15 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
       row.className = `syntax-problem ${issue.severity}`;
       const jump = document.createElement('button');
       jump.type = 'button';
-      jump.textContent = uiText("Строка {0}: {1}", issue.lineNumber, diagnosticText(issue));
+      jump.textContent = uiText('Строка {0}: {1}', issue.lineNumber, diagnosticText(issue));
       jump.addEventListener('click', () => jumpTo(issue.lineNumber, issue.startColumn));
       row.append(jump);
       if (issue.related) {
         const related = issue.related;
         const first = document.createElement('button');
-        first.type = 'button'; first.className = 'syntax-related';
-        first.textContent = uiText("Первое объявление: строка {0}", related.lineNumber);
+        first.type = 'button';
+        first.className = 'syntax-related';
+        first.textContent = uiText('Первое объявление: строка {0}', related.lineNumber);
         first.addEventListener('click', () => jumpTo(related.lineNumber, related.startColumn));
         row.append(first);
       }
@@ -105,9 +129,13 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
   }
 
   worker.onmessage = ({ data }: MessageEvent<SyntaxWorkerResult>) => {
-    if (data.type === 'key-index-ready' || data.type === 'disk-diagnostics-ready') { indexError = ''; schedule(); return; }
+    if (data.type === 'key-index-ready' || data.type === 'disk-diagnostics-ready') {
+      indexError = '';
+      schedule();
+      return;
+    }
     if (data.type === 'key-index-error') {
-      if (indexError !== data.error) showToast(uiText("Индекс ссылок локализации недоступен: {0}", data.error), true);
+      if (indexError !== data.error) showToast(uiText('Индекс ссылок локализации недоступен: {0}', data.error), true);
       indexError = data.error ?? '';
       return;
     }
@@ -115,7 +143,7 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
     const model = editor.getModel();
     if (!model || model.getVersionId() !== data.version) return;
     if (data.error) {
-      if (!failed) showToast(uiText("Проверка синтаксиса недоступна: {0}", data.error), true);
+      if (!failed) showToast(uiText('Проверка синтаксиса недоступна: {0}', data.error), true);
       failed = true;
       return;
     }
@@ -123,7 +151,7 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
     if (Array.isArray(data.diagnostics)) publish(model, data.diagnostics);
   };
   worker.onerror = () => {
-    if (!failed) showToast(uiText("Фоновая проверка синтаксиса завершилась с ошибкой."), true);
+    if (!failed) showToast(uiText('Фоновая проверка синтаксиса завершилась с ошибкой.'), true);
     failed = true;
   };
 
@@ -144,19 +172,31 @@ export function createSyntaxDiagnostics({ monaco, editor, token, showToast, getF
   const content = editor.onDidChangeModelContent(schedule);
   const modelChange = editor.onDidChangeModel(() => {
     if (markedModel) monaco.editor.setModelMarkers(markedModel, MARKER_OWNER, []);
-    markedModel = null; markerSignature = ''; issues = []; count.textContent = '0'; button.hidden = true;
+    markedModel = null;
+    markerSignature = '';
+    issues = [];
+    count.textContent = '0';
+    button.hidden = true;
     if (dialog.open) renderList();
     schedule();
   });
-  button.addEventListener('click', () => { renderList(); dialog.showModal(); });
+  button.addEventListener('click', () => {
+    renderList();
+    dialog.showModal();
+  });
   requiredElement<HTMLButtonElement>('#syntax-problems-close').addEventListener('click', () => dialog.close());
   schedule();
   if (token) worker.postMessage({ type: 'init-key-index', token });
 
-  return { refresh: schedule, dispose() {
-    if (timer !== null) clearTimeout(timer);
-    worker.terminate(); content.dispose(); modelChange.dispose();
-    if (markedModel) monaco.editor.setModelMarkers(markedModel, MARKER_OWNER, []);
-  } };
+  return {
+    refresh: schedule,
+    dispose() {
+      if (timer !== null) clearTimeout(timer);
+      worker.terminate();
+      content.dispose();
+      modelChange.dispose();
+      if (markedModel) monaco.editor.setModelMarkers(markedModel, MARKER_OWNER, []);
+    },
+  };
 }
 import { isWorkspaceVisible } from './workspace-runtime.ts';

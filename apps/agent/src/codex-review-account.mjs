@@ -33,9 +33,13 @@ export class CodexReviewAccount {
   async read(worker, signal) {
     const { account } = await worker.call('account/read', { refreshToken: false }, signal, 5000);
     const signedIn = account?.type === 'chatgpt';
-    return { model: LOCALISATION_AI_MODEL, signedIn,
+    return {
+      model: LOCALISATION_AI_MODEL,
+      signedIn,
       email: signedIn && typeof account.email === 'string' ? account.email : '',
-      loginPending: Boolean(this.pending), loginFailed: this.failed && !signedIn };
+      loginPending: Boolean(this.pending),
+      loginFailed: this.failed && !signedIn,
+    };
   }
 
   finish(attempt, failed = false) {
@@ -51,17 +55,24 @@ export class CodexReviewAccount {
     const state = await this.read(worker);
     if (state.signedIn || this.pending) return state;
     this.failed = false;
-    const attempt = { worker, id: null, timer: null, completed: null, receive: message => {
-      if (message.method === 'local/closed') this.finish(attempt, true);
-      if (message.method !== 'account/login/completed') return;
-      if (attempt.id === null) attempt.completed = message.params;
-      else if (message.params?.loginId === attempt.id) this.finish(attempt, !message.params.success);
-    } };
+    const attempt = {
+      worker,
+      id: null,
+      timer: null,
+      completed: null,
+      receive: (message) => {
+        if (message.method === 'local/closed') this.finish(attempt, true);
+        if (message.method !== 'account/login/completed') return;
+        if (attempt.id === null) attempt.completed = message.params;
+        else if (message.params?.loginId === attempt.id) this.finish(attempt, !message.params.success);
+      },
+    };
     this.pending = attempt;
     worker.listeners.add(attempt.receive);
     try {
       const result = await worker.call('account/login/start', { type: 'chatgpt' });
-      if (result?.type !== 'chatgpt' || typeof result.loginId !== 'string' || !result.authUrl) throw new Error(LOGIN_ERROR);
+      if (result?.type !== 'chatgpt' || typeof result.loginId !== 'string' || !result.authUrl)
+        throw new Error(LOGIN_ERROR);
       attempt.id = result.loginId;
       if (attempt.completed?.loginId === attempt.id) this.finish(attempt, !attempt.completed.success);
       if (this.pending !== attempt) return this.read(worker);

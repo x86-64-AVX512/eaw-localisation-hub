@@ -2,8 +2,14 @@ import { safeColor } from './review-utilities.ts';
 import { avatarElement } from './avatar-view.ts';
 
 // Shared rows for the presence, reservation and conflict lists in the side panel.
-export function listButton(title: string, subtitle: string, color: unknown, selected: boolean,
-  action: () => void, avatarBase64 = ''): HTMLButtonElement {
+export function listButton(
+  title: string,
+  subtitle: string,
+  color: unknown,
+  selected: boolean,
+  action: () => void,
+  avatarBase64 = '',
+): HTMLButtonElement {
   const button = document.createElement('button');
   button.className = `list-item${selected ? ' selected' : ''}`;
   button.style.setProperty('--item-color', safeColor(color));

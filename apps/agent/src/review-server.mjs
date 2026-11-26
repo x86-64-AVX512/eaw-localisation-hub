@@ -47,8 +47,7 @@ const STATIC_FILES = new Map([
 function tokenMatches(actual, expected) {
   const actualBytes = Buffer.from(String(actual ?? ''), 'utf8');
   const expectedBytes = Buffer.from(expected, 'utf8');
-  return actualBytes.length === expectedBytes.length
-    && crypto.timingSafeEqual(actualBytes, expectedBytes);
+  return actualBytes.length === expectedBytes.length && crypto.timingSafeEqual(actualBytes, expectedBytes);
 }
 
 function bearerToken(request) {
@@ -60,8 +59,11 @@ function normaliseEnglishPath(repository, absolutePath) {
   const root = path.resolve(repository);
   const file = path.resolve(absolutePath);
   const relative = path.relative(root, file).replaceAll('\\', '/');
-  if (!/^localisation\/(?:english|replace\/english)\/.+\.ya?ml$/iu.test(relative)
-    || relative.startsWith('../') || path.isAbsolute(relative)) {
+  if (
+    !/^localisation\/(?:english|replace\/english)\/.+\.ya?ml$/iu.test(relative) ||
+    relative.startsWith('../') ||
+    path.isAbsolute(relative)
+  ) {
     throw new Error('English file is outside the supported English localisation folders');
   }
   const canonicalRoot = fs.realpathSync.native(root);
@@ -77,8 +79,12 @@ async function listLocalisationFiles(repository) {
   const result = [];
   async function visit(directory) {
     let entries = [];
-    try { entries = await fsPromises.readdir(directory, { withFileTypes: true }); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; return; }
+    try {
+      entries = await fsPromises.readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return;
+    }
     for (const entry of entries) {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) await visit(absolute);
@@ -86,7 +92,9 @@ async function listLocalisationFiles(repository) {
         try {
           const relativePath = normaliseTrackedPath(repository, absolute);
           result.push({ path: absolute, relativePath });
-        } catch { /* A file outside the canonical repository is omitted. */ }
+        } catch {
+          /* A file outside the canonical repository is omitted. */
+        }
       }
       if (result.length >= 10_000) return;
     }
@@ -103,7 +111,9 @@ async function writeLastReview(options, value) {
     await fsPromises.writeFile(temporary, `${JSON.stringify(value)}\n`, { encoding: 'utf8', mode: 0o600 });
     await fsPromises.rename(temporary, target);
     await fsPromises.chmod(target, 0o600).catch(() => {});
-  } finally { await fsPromises.rm(temporary, { force: true }).catch(() => {}); }
+  } finally {
+    await fsPromises.rm(temporary, { force: true }).catch(() => {});
+  }
 }
 
 async function readJsonBody(request, maximumBytes = 64 * 1024, tooLargeMessage = 'Request body is too large') {
@@ -125,20 +135,23 @@ function secureHeaders(response, contentType) {
   response.setHeader('Referrer-Policy', 'no-referrer');
   response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   response.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  response.setHeader('Content-Security-Policy', [
-    "default-src 'self'",
-    "script-src 'self'",
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
-    "font-src 'self' data:",
-    "worker-src 'self' blob:",
-    `connect-src 'self'${loopbackSocket}`,
-    "object-src 'none'",
-    "base-uri 'none'",
-    "form-action 'self'",
-    "frame-src 'self'",
-    "frame-ancestors 'self'",
-  ].join('; '));
+  response.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "font-src 'self' data:",
+      "worker-src 'self' blob:",
+      `connect-src 'self'${loopbackSocket}`,
+      "object-src 'none'",
+      "base-uri 'none'",
+      "form-action 'self'",
+      "frame-src 'self'",
+      "frame-ancestors 'self'",
+    ].join('; '),
+  );
 }
 
 export function queueMaterialisation(binding, operation) {
@@ -146,8 +159,9 @@ export function queueMaterialisation(binding, operation) {
   const current = previous.then(async () => {
     binding.materialisationActive = true;
     binding.materialisationEpoch = (binding.materialisationEpoch ?? 0) + 1;
-    try { return await operation(); }
-    finally {
+    try {
+      return await operation();
+    } finally {
       binding.materialisationActive = false;
       binding.materialisationEpoch += 1;
     }
@@ -187,13 +201,30 @@ class ReviewClient {
       this.hub.receiveClientMessage(this, message);
       if (message.type === 'activate' && typeof message.path === 'string') {
         const state = this.documents.get(path.resolve(message.path));
-        if (state) void writeLastReview(this.hub.options, {
-          schema:1,path:path.resolve(message.path),relativePath:state.binding.relativePath,
-          ticket:state.binding.ticketId ?? '',updatedAt:new Date().toISOString(),
-        }).catch(() => {});
+        if (state)
+          void writeLastReview(this.hub.options, {
+            schema: 1,
+            path: path.resolve(message.path),
+            relativePath: state.binding.relativePath,
+            ticket: state.binding.ticketId ?? '',
+            updatedAt: new Date().toISOString(),
+          }).catch(() => {});
       }
-      if (typeof message.path === 'string' && typeof message.type === 'string'
-        && ['edit', 'snapshot', 'reviewUpdate', 'undo', 'redo', 'suggestionAccept', 'suggestionRevert', 'historyRestore', 'externalConflictResolve'].includes(message.type)) {
+      if (
+        typeof message.path === 'string' &&
+        typeof message.type === 'string' &&
+        [
+          'edit',
+          'snapshot',
+          'reviewUpdate',
+          'undo',
+          'redo',
+          'suggestionAccept',
+          'suggestionRevert',
+          'historyRestore',
+          'externalConflictResolve',
+        ].includes(message.type)
+      ) {
         this.scheduleMaterialisation(message.path);
       }
     } catch {
@@ -221,22 +252,31 @@ class ReviewClient {
       // Several projection refreshes (or Review windows) can request the same
       // file at once. Serialise writes so an older save cannot finish last.
       const binding = state.binding;
-      void queueMaterialisation(binding, () => this.materialiseNow(absolutePath, state))
-        .catch(() => this.send({ type: 'error', message: 'Не удалось безопасно сохранить локальный файл.' }));
+      void queueMaterialisation(binding, () => this.materialiseNow(absolutePath, state)).catch(() =>
+        this.send({ type: 'error', message: 'Не удалось безопасно сохранить локальный файл.' }),
+      );
     }, 500);
     timer.unref();
     this.materialisationTimers.set(absolutePath, timer);
   }
 
   async materialiseNow(absolutePath, state) {
-    if (this.closed || this.documents.get(path.resolve(absolutePath)) !== state
-      || !state.initialised || state.binding.gitWritable === false || state.pendingExternal
-      || state.binding.ticketId || this.hub.workspaceBlocked || this.hub.gitOperationInProgress?.()) return;
+    if (
+      this.closed ||
+      this.documents.get(path.resolve(absolutePath)) !== state ||
+      !state.initialised ||
+      state.binding.gitWritable === false ||
+      state.pendingExternal ||
+      state.binding.ticketId ||
+      this.hub.workspaceBlocked ||
+      this.hub.gitOperationInProgress?.()
+    )
+      return;
     const materialisationMode = state.binding.personalMaterialisationMode;
     const expectedGitBlob = state.binding.gitState?.localBlob;
     if (!canEditDocument(this.hub.identity, state.binding.relativePath)) return;
-    const materialised = typeof state.binding.localFileText === 'function'
-      ? state.binding.localFileText() : state.binding.text.toString();
+    const materialised =
+      typeof state.binding.localFileText === 'function' ? state.binding.localFileText() : state.binding.text.toString();
     if (materialised === null || !state.binding.synced) return;
     state.materialisationExpected = materialised;
     state.materialisationDeadline = Date.now() + 5000;
@@ -247,17 +287,24 @@ class ReviewClient {
       await writeTrackedTextFile(this.hub.options.repo, absolutePath, withUtf8Bom(materialised), {
         expectedText: state.diskBase,
         isCurrent: async () => {
-          const stillCurrent = () => !this.closed && state.binding.synced && state.binding.gitWritable !== false
-            && canEditDocument(this.hub.identity, state.binding.relativePath)
-            && !this.hub.workspaceBlocked && !state.pendingExternal && !this.hub.gitOperationInProgress?.()
-            && state.binding.gitState?.localBlob === expectedGitBlob
-            && state.binding.personalMaterialisationMode === materialisationMode
-            && ((materialisationMode === 'git' && Boolean(expectedGitBlob))
-              || (typeof state.binding.localFileText === 'function'
-                ? state.binding.localFileText() : state.binding.text.toString()) === materialised);
-          const gitMatches = stillCurrent() && (!expectedGitBlob || await currentGitFileBlobAsync(
-            this.hub.options.repo, state.binding.relativePath,
-          ) === expectedGitBlob);
+          const stillCurrent = () =>
+            !this.closed &&
+            state.binding.synced &&
+            state.binding.gitWritable !== false &&
+            canEditDocument(this.hub.identity, state.binding.relativePath) &&
+            !this.hub.workspaceBlocked &&
+            !state.pendingExternal &&
+            !this.hub.gitOperationInProgress?.() &&
+            state.binding.gitState?.localBlob === expectedGitBlob &&
+            state.binding.personalMaterialisationMode === materialisationMode &&
+            ((materialisationMode === 'git' && Boolean(expectedGitBlob)) ||
+              (typeof state.binding.localFileText === 'function'
+                ? state.binding.localFileText()
+                : state.binding.text.toString()) === materialised);
+          const gitMatches =
+            stillCurrent() &&
+            (!expectedGitBlob ||
+              (await currentGitFileBlobAsync(this.hub.options.repo, state.binding.relativePath)) === expectedGitBlob);
           const current = gitMatches && stillCurrent();
           materialisationInvalidated = !current;
           return current;
@@ -276,8 +323,8 @@ class ReviewClient {
     }
     // State can advance while the temporary file is being flushed. A later
     // projection may already be ready, so retry instead of losing the save.
-    const latest = typeof state.binding.localFileText === 'function'
-      ? state.binding.localFileText() : state.binding.text.toString();
+    const latest =
+      typeof state.binding.localFileText === 'function' ? state.binding.localFileText() : state.binding.text.toString();
     if (!this.closed && (materialisationInvalidated || (latest !== null && latest !== materialised))) {
       this.scheduleMaterialisation(absolutePath);
     }
@@ -314,8 +361,11 @@ export async function startReviewServer(hub, options) {
   const diffCache = hub.diffCache ?? new DiffCache(path.join(options.state, 'diff-cache'));
   await diffCache.initialise();
   let spellingDictionaryPromise = null;
-  const localisationAssistant = new CodexLocalisationAssistant({ profileDirectory: path.resolve(options.state, 'review-codex') });
-  let keyIndexSnapshot = null; let keyIndexTag = '';
+  const localisationAssistant = new CodexLocalisationAssistant({
+    profileDirectory: path.resolve(options.state, 'review-codex'),
+  });
+  let keyIndexSnapshot = null;
+  let keyIndexTag = '';
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'review-web');
   const server = http.createServer(async (request, response) => {
     const { token } = endpoint;
@@ -334,8 +384,13 @@ export async function startReviewServer(hub, options) {
     }
     if (respondToReviewOwnerProbe(request, response, requestUrl, token)) return;
     if (requestUrl.pathname === '/api/review-access' && ['GET', 'POST'].includes(request.method)) {
-      if ((request.headers.origin && request.headers.origin !== `http://127.0.0.1:${port}`)
-        || !tokenMatches(bearerToken(request), token)) { response.writeHead(403).end(); return; }
+      if (
+        (request.headers.origin && request.headers.origin !== `http://127.0.0.1:${port}`) ||
+        !tokenMatches(bearerToken(request), token)
+      ) {
+        response.writeHead(403).end();
+        return;
+      }
       try {
         await hub.requireReviewAccess?.();
         secureHeaders(response, 'application/json; charset=utf-8');
@@ -346,48 +401,75 @@ export async function startReviewServer(hub, options) {
       }
       return;
     }
-    if (hub.reviewAccess === 'denied'
-      && requestUrl.pathname.startsWith('/api/') && requestUrl.pathname !== '/api/ui-language') {
+    if (
+      hub.reviewAccess === 'denied' &&
+      requestUrl.pathname.startsWith('/api/') &&
+      requestUrl.pathname !== '/api/ui-language'
+    ) {
       response.writeHead(401).end();
       return;
     }
     if (requestUrl.pathname === '/api/review-open-result' && request.method === 'POST') {
-      if (request.headers.origin !== `http://127.0.0.1:${port}`
-        || !tokenMatches(bearerToken(request), token)) { response.writeHead(403).end(); return; }
+      if (request.headers.origin !== `http://127.0.0.1:${port}` || !tokenMatches(bearerToken(request), token)) {
+        response.writeHead(403).end();
+        return;
+      }
       const result = requestUrl.searchParams.get('result');
-      const reported = (result === 'opened' || result === 'failed')
-        && reviewHost.report(requestUrl.searchParams.get('launch'), result === 'opened');
+      const reported =
+        (result === 'opened' || result === 'failed') &&
+        reviewHost.report(requestUrl.searchParams.get('launch'), result === 'opened');
       response.writeHead(reported ? 204 : 404).end();
       return;
     }
     if (requestUrl.pathname.startsWith('/api/ai-localisation/')) {
-      if ((request.headers.origin && request.headers.origin !== `http://127.0.0.1:${port}`)
-        || !tokenMatches(bearerToken(request), token)) { response.writeHead(403).end(); return; }
+      if (
+        (request.headers.origin && request.headers.origin !== `http://127.0.0.1:${port}`) ||
+        !tokenMatches(bearerToken(request), token)
+      ) {
+        response.writeHead(403).end();
+        return;
+      }
       await handleAiReviewApi(request, response, requestUrl, {
-        assistant: localisationAssistant, readJsonBody, secureHeaders,
+        assistant: localisationAssistant,
+        readJsonBody,
+        secureHeaders,
       });
       return;
     }
     if (requestUrl.pathname === '/api/ui-language') {
       if (request.headers.origin && request.headers.origin !== `http://127.0.0.1:${port}`) {
-        response.writeHead(403).end(); return;
+        response.writeHead(403).end();
+        return;
       }
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       await handleUiLanguageApi({ request, response, requestUrl, stateDirectory: options.state });
       return;
     }
     if (requestUrl.pathname === '/api/repository-sync') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       await handleRepositorySyncApi(request, response, { hub, readJsonBody, secureHeaders });
       return;
     }
     if (requestUrl.pathname === '/api/diff-cache') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         let payload;
         if (request.method === 'GET') payload = await diffCache.stats();
-        else if (request.method === 'DELETE') payload = { cleared: await diffCache.clear(), ...(await diffCache.stats()) };
-        else { response.writeHead(405).end(); return; }
+        else if (request.method === 'DELETE')
+          payload = { cleared: await diffCache.clear(), ...(await diffCache.stats()) };
+        else {
+          response.writeHead(405).end();
+          return;
+        }
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify(payload));
       } catch (error) {
@@ -397,7 +479,10 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname === '/api/localisation-files' && request.method === 'GET') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const files = await listLocalisationFiles(options.repo);
         secureHeaders(response, 'application/json; charset=utf-8');
@@ -408,10 +493,14 @@ export async function startReviewServer(hub, options) {
       }
       return;
     }
-    if (request.method === 'GET' && [
-      '/api/deleted-branches', '/api/deleted-branches/document',
-    ].includes(requestUrl.pathname)) {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+    if (
+      request.method === 'GET' &&
+      ['/api/deleted-branches', '/api/deleted-branches/document'].includes(requestUrl.pathname)
+    ) {
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const route = `${requestUrl.pathname}${requestUrl.search}`;
         const payload = await hub.authRequest(route, { method: 'GET' });
@@ -424,7 +513,10 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname === '/api/localisation-key-index' && request.method === 'GET') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const index = await getLocalisationKeyIndex(options.repo);
         if (index !== keyIndexSnapshot) {
@@ -433,7 +525,10 @@ export async function startReviewServer(hub, options) {
         }
         secureHeaders(response, 'application/json; charset=utf-8');
         response.setHeader('ETag', keyIndexTag);
-        if (request.headers['if-none-match'] === keyIndexTag) { response.writeHead(304).end(); return; }
+        if (request.headers['if-none-match'] === keyIndexTag) {
+          response.writeHead(304).end();
+          return;
+        }
         response.end(JSON.stringify(index));
       } catch (error) {
         response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -442,7 +537,10 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname === '/api/localisation-file-diagnostics' && request.method === 'GET') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const payload = await inspectLocalisationFile(options.repo, requestUrl.searchParams.get('path') ?? '');
         secureHeaders(response, 'application/json; charset=utf-8');
@@ -454,22 +552,35 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname.startsWith('/api/spelling/')) {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
-      if (!['GET', 'PUT'].includes(request.method)) { response.writeHead(405).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
+      if (!['GET', 'PUT'].includes(request.method)) {
+        response.writeHead(405).end();
+        return;
+      }
       try {
         const body = request.method === 'GET' ? undefined : await readJsonBody(request, 128 * 1024);
-        const fetchRemote = () => hub.authRequest(requestUrl.pathname, {
-          method: request.method, body: body === undefined ? undefined : JSON.stringify(body),
-        });
-        if (request.method === 'GET' && requestUrl.pathname === '/api/spelling/dictionary'
-          && !spellingDictionaryPromise) {
+        const fetchRemote = () =>
+          hub.authRequest(requestUrl.pathname, {
+            method: request.method,
+            body: body === undefined ? undefined : JSON.stringify(body),
+          });
+        if (
+          request.method === 'GET' &&
+          requestUrl.pathname === '/api/spelling/dictionary' &&
+          !spellingDictionaryPromise
+        ) {
           spellingDictionaryPromise = fetchRemote().catch((error) => {
             spellingDictionaryPromise = null;
             throw error;
           });
         }
-        const payload = request.method === 'GET' && requestUrl.pathname === '/api/spelling/dictionary'
-          ? await spellingDictionaryPromise : await fetchRemote();
+        const payload =
+          request.method === 'GET' && requestUrl.pathname === '/api/spelling/dictionary'
+            ? await spellingDictionaryPromise
+            : await fetchRemote();
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify(payload));
       } catch (error) {
@@ -497,41 +608,55 @@ export async function startReviewServer(hub, options) {
           const commit = requestUrl.searchParams.get('commit');
           if (!/^[0-9a-f]{40,64}$/iu.test(commit)) throw new Error('Invalid English commit');
           const shown = runGitSync(['show', `${commit}:${relativePath}`], {
-            cwd: options.repo, encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024,
+            cwd: options.repo,
+            encoding: 'utf8',
+            windowsHide: true,
+            maxBuffer: 16 * 1024 * 1024,
           });
           if (shown.status !== 0) throw new Error('English file is unavailable in the selected commit');
           text = withoutUtf8Bom(shown.stdout);
         } else {
           text = englishReadOnly
             ? withoutUtf8Bom(await fsPromises.readFile(absolutePath, 'utf8'))
-            : ticketBootstrap?.text ?? withoutUtf8Bom(await readTrackedTextFile(options.repo, absolutePath));
+            : (ticketBootstrap?.text ?? withoutUtf8Bom(await readTrackedTextFile(options.repo, absolutePath)));
         }
         if (!englishReadOnly && requestUrl.searchParams.get('workspace') !== '1') {
           await writeLastReview(options, {
-            schema: 1, path: absolutePath, relativePath,
-            ticket: ticketBootstrap?.ticket?.id ?? '', updatedAt: new Date().toISOString(),
+            schema: 1,
+            path: absolutePath,
+            relativePath,
+            ticket: ticketBootstrap?.ticket?.id ?? '',
+            updatedAt: new Date().toISOString(),
           }).catch(() => {});
         }
         secureHeaders(response, 'application/json; charset=utf-8');
-        response.end(JSON.stringify({
-          path: absolutePath,
-          relativePath,
-          workspace: options.workspace,
-          ticket: ticketBootstrap?.ticket ?? null,
-          user: options.user,
-          color: options.color,
-          readOnly: englishReadOnly,
-          textBase64: Buffer.from(text, 'utf8').toString('base64'),
-        }));
+        response.end(
+          JSON.stringify({
+            path: absolutePath,
+            relativePath,
+            workspace: options.workspace,
+            ticket: ticketBootstrap?.ticket ?? null,
+            user: options.user,
+            color: options.color,
+            readOnly: englishReadOnly,
+            textBase64: Buffer.from(text, 'utf8').toString('base64'),
+          }),
+        );
       } catch (error) {
         response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        response.end(JSON.stringify({ error: error.message
-          || 'Файл не входит в поддерживаемые папки localisation текущего репозитория.' }));
+        response.end(
+          JSON.stringify({
+            error: error.message || 'Файл не входит в поддерживаемые папки localisation текущего репозитория.',
+          }),
+        );
       }
       return;
     }
     if (requestUrl.pathname === '/api/git-history/head' && request.method === 'GET') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const requested = requestUrl.searchParams.get('path') ?? '';
         normaliseTrackedPath(options.repo, path.resolve(options.repo, requested));
@@ -545,7 +670,10 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname === '/api/git-history' && request.method === 'GET') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const requested = requestUrl.searchParams.get('path') ?? '';
         const absolutePath = path.resolve(options.repo, requested);
@@ -565,37 +693,44 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname === '/api/git-history/diff' && request.method === 'GET') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const requested = requestUrl.searchParams.get('path') ?? '';
         const absolutePath = path.resolve(options.repo, requested);
         const relativePath = normaliseTrackedPath(options.repo, absolutePath);
-        const fromCommit = requestUrl.searchParams.get('from')
-          ?? requestUrl.searchParams.get('commit') ?? '';
+        const fromCommit = requestUrl.searchParams.get('from') ?? requestUrl.searchParams.get('commit') ?? '';
         const toCommit = requestUrl.searchParams.get('to') ?? 'HEAD';
-        const fromPath = requestUrl.searchParams.get('fromPath')
-          ?? requestUrl.searchParams.get('historicalPath') ?? relativePath;
+        const fromPath =
+          requestUrl.searchParams.get('fromPath') ?? requestUrl.searchParams.get('historicalPath') ?? relativePath;
         const toPath = requestUrl.searchParams.get('toPath') ?? relativePath;
         const headCommit = await hub.currentGitCommitAsync();
         const selectedFrom = fromCommit === 'HEAD' ? headCommit : fromCommit;
         const selectedTo = toCommit === 'HEAD' ? headCommit : toCommit;
         const cacheKey = JSON.stringify([
-          path.resolve(options.repo), headCommit, relativePath,
-          fromCommit, fromPath, toCommit, toPath,
+          path.resolve(options.repo),
+          headCommit,
+          relativePath,
+          fromCommit,
+          fromPath,
+          toCommit,
+          toPath,
         ]);
-        const payload = await diffCache.getOrCreate('git-history-diff', cacheKey, async () => (
-          fileHistoryDiff(
-            options.repo, relativePath, selectedFrom, fromPath, selectedTo, toPath,
-          )
-        ));
+        const payload = await diffCache.getOrCreate('git-history-diff', cacheKey, async () =>
+          fileHistoryDiff(options.repo, relativePath, selectedFrom, fromPath, selectedTo, toPath),
+        );
         secureHeaders(response, 'application/json; charset=utf-8');
-        response.end(JSON.stringify({
-          ...payload,
-          baseText: undefined,
-          headText: undefined,
-          baseBase64: Buffer.from(payload.baseText, 'utf8').toString('base64'),
-          headBase64: Buffer.from(payload.headText, 'utf8').toString('base64'),
-        }));
+        response.end(
+          JSON.stringify({
+            ...payload,
+            baseText: undefined,
+            headText: undefined,
+            baseBase64: Buffer.from(payload.baseText, 'utf8').toString('base64'),
+            headBase64: Buffer.from(payload.headText, 'utf8').toString('base64'),
+          }),
+        );
       } catch (error) {
         response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ error: error.message }));
@@ -603,7 +738,10 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname === '/api/localisation-audit' && request.method === 'GET') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const requested = requestUrl.searchParams.get('path') ?? '';
         const prepared = await prepareLocalisationAudit(options.repo, requested);
@@ -621,11 +759,15 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname === '/api/training' && request.method === 'PUT') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const body = await readJsonBody(request);
         const payload = await hub.authRequest('/api/auth/training', {
-          method: 'PUT', body: JSON.stringify(body),
+          method: 'PUT',
+          body: JSON.stringify(body),
         });
         hub.updateIdentity(payload.user);
         secureHeaders(response, 'application/json; charset=utf-8');
@@ -637,7 +779,10 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname === '/api/events' && request.method === 'GET') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const after = encodeURIComponent(requestUrl.searchParams.get('after') ?? '0');
         const payload = await hub.authRequest(`/api/events?after=${after}&limit=500`, { method: 'GET' });
@@ -649,20 +794,34 @@ export async function startReviewServer(hub, options) {
       }
       return;
     }
-    if (await handleTicketReviewApi({
-      request, requestUrl, response,
-      authorised: () => tokenMatches(bearerToken(request), token),
-      hub, options, readJsonBody, secureHeaders,
-    })) return;
+    if (
+      await handleTicketReviewApi({
+        request,
+        requestUrl,
+        response,
+        authorised: () => tokenMatches(bearerToken(request), token),
+        hub,
+        options,
+        readJsonBody,
+        secureHeaders,
+      })
+    )
+      return;
     if (requestUrl.pathname === '/api/english-open' && request.method === 'POST') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
         const body = await readJsonBody(request);
         const payload = await hub.englishOriginal(body.key ?? '', body.ticket ?? '');
         const match = payload.matches?.[0];
         if (!match) throw new Error('В английской локализации этот ключ не найден.');
         await options.reviewOpen(match.file, {
-          readOnly: 'english', commit: payload.commit, pair: String(body.pair ?? ''), line: match.line,
+          readOnly: 'english',
+          commit: payload.commit,
+          pair: String(body.pair ?? ''),
+          line: match.line,
         });
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify({ file: match.file, line: match.line }));
@@ -673,10 +832,21 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname === '/api/key-replacements/preview' && request.method === 'POST') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
-        const body = await readJsonBody(request, MAX_KEY_REPLACEMENT_REQUEST_BYTES, 'Общий размер запроса замены превышает 1 МиБ.');
-        const payload = await hub.keyReplacementWorkflow.preview(body.input ?? '', body.language ?? 'russian', body.mode ?? 'classic');
+        const body = await readJsonBody(
+          request,
+          MAX_KEY_REPLACEMENT_REQUEST_BYTES,
+          'Общий размер запроса замены превышает 1 МиБ.',
+        );
+        const payload = await hub.keyReplacementWorkflow.preview(
+          body.input ?? '',
+          body.language ?? 'russian',
+          body.mode ?? 'classic',
+        );
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify(payload));
       } catch (error) {
@@ -686,11 +856,21 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (requestUrl.pathname === '/api/key-replacements/apply' && request.method === 'POST') {
-      if (!tokenMatches(bearerToken(request), token)) { response.writeHead(401).end(); return; }
+      if (!tokenMatches(bearerToken(request), token)) {
+        response.writeHead(401).end();
+        return;
+      }
       try {
-        const body = await readJsonBody(request, MAX_KEY_REPLACEMENT_REQUEST_BYTES, 'Общий размер запроса замены превышает 1 МиБ.');
+        const body = await readJsonBody(
+          request,
+          MAX_KEY_REPLACEMENT_REQUEST_BYTES,
+          'Общий размер запроса замены превышает 1 МиБ.',
+        );
         const payload = await hub.keyReplacementWorkflow.apply(
-          body.input ?? '', body.files, body.language ?? 'russian', body.mode ?? 'classic',
+          body.input ?? '',
+          body.files,
+          body.language ?? 'russian',
+          body.mode ?? 'classic',
         );
         secureHeaders(response, 'application/json; charset=utf-8');
         response.end(JSON.stringify(payload));
@@ -734,7 +914,7 @@ export async function startReviewServer(hub, options) {
     }
   });
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
-  const closeForSession = websocket => websocket.close(REVIEW_SESSION_CLOSED, 'Hub session ended');
+  const closeForSession = (websocket) => websocket.close(REVIEW_SESSION_CLOSED, 'Hub session ended');
   const onReviewAccessLost = () => {
     for (const websocket of websocketServer.clients) closeForSession(websocket);
   };
@@ -751,10 +931,12 @@ export async function startReviewServer(hub, options) {
       return;
     }
     const correctOrigin = request.headers.origin === `http://127.0.0.1:${port}`;
-    if (!requestIsLoopback(request, port)
-      || requestUrl.pathname !== '/review-socket'
-      || !correctOrigin
-      || !tokenMatches(requestUrl.searchParams.get('token'), token)) {
+    if (
+      !requestIsLoopback(request, port) ||
+      requestUrl.pathname !== '/review-socket' ||
+      !correctOrigin ||
+      !tokenMatches(requestUrl.searchParams.get('token'), token)
+    ) {
       socket.destroy();
       return;
     }
@@ -766,7 +948,7 @@ export async function startReviewServer(hub, options) {
       }
       if (websocket.readyState !== WebSocket.OPEN) return;
       if (requestUrl.searchParams.get('multiplex') === '1') {
-        attachReviewMultiplexer(websocket, hub, channel => new ReviewClient(channel, hub));
+        attachReviewMultiplexer(websocket, hub, (channel) => new ReviewClient(channel, hub));
         return;
       }
       const client = new ReviewClient(websocket, hub);
@@ -820,7 +1002,8 @@ export async function startReviewServer(hub, options) {
     const host = candidates.find((candidate) => fs.existsSync(candidate));
     if (!host) throw new Error('EaWReview.exe is missing');
     const hash = new URLSearchParams({ token, path: absolutePath });
-    for (const [name, value] of Object.entries(openOptions)) if (value !== undefined && value !== '') hash.set(name, String(value));
+    for (const [name, value] of Object.entries(openOptions))
+      if (value !== undefined && value !== '') hash.set(name, String(value));
     await reviewHost.open(host, `http://127.0.0.1:${port}`, hash);
   };
   return {

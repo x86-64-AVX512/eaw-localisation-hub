@@ -32,17 +32,30 @@ async function waitForHealth(port) {
 test('ticket HTTP metadata gates its isolated WebSocket document namespace', { timeout: 15000 }, async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-ticket-server-'));
   const port = await freePort();
-  const child = spawn(process.execPath, [
-    'apps/server/src/main.mjs', '--host', '127.0.0.1', '--port', String(port),
-    '--data', temporary, '--auth', 'disabled',
-  ], { cwd: path.resolve(import.meta.dirname, '..'), stdio: 'ignore', windowsHide: true });
+  const child = spawn(
+    process.execPath,
+    [
+      'apps/server/src/main.mjs',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(port),
+      '--data',
+      temporary,
+      '--auth',
+      'disabled',
+    ],
+    { cwd: path.resolve(import.meta.dirname, '..'), stdio: 'ignore', windowsHide: true },
+  );
   const file = 'localisation/russian/ticket_l_russian.yml';
   let observer;
   try {
     await waitForHealth(port);
     observer = new WebSocket(`ws://127.0.0.1:${port}/?document=${encodeURIComponent(`general-dev:${file}`)}`);
     const observed = [];
-    observer.on('message', (data, binary) => { if (!binary) observed.push(JSON.parse(data.toString())); });
+    observer.on('message', (data, binary) => {
+      if (!binary) observed.push(JSON.parse(data.toString()));
+    });
     await once(observer, 'open');
     for (let attempt = 0; attempt < 100 && !observed.some(({ type }) => type === 'synced'); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -51,7 +64,10 @@ test('ticket HTTP metadata gates its isolated WebSocket document namespace', { t
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: 'Server ticket', baseBranch: 'general-dev', baseCommit: 'd'.repeat(40), files: [file],
+        title: 'Server ticket',
+        baseBranch: 'general-dev',
+        baseCommit: 'd'.repeat(40),
+        files: [file],
       }),
     });
     assert.equal(created.status, 201);
@@ -61,20 +77,35 @@ test('ticket HTTP metadata gates its isolated WebSocket document namespace', { t
     for (let attempt = 0; attempt < 100 && !observed.some(({ type }) => type === 'tickets-changed'); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    assert.equal(observed.some((message) => message.type === 'tickets-changed' && message.revision === listed.revision), true);
-    assert.equal((await (await fetch(`http://127.0.0.1:${port}/api/tickets/revision`)).json()).revision, listed.revision);
+    assert.equal(
+      observed.some((message) => message.type === 'tickets-changed' && message.revision === listed.revision),
+      true,
+    );
+    assert.equal(
+      (await (await fetch(`http://127.0.0.1:${port}/api/tickets/revision`)).json()).revision,
+      listed.revision,
+    );
 
-    const accepted = new WebSocket(`ws://127.0.0.1:${port}/?document=${encodeURIComponent(`ticket-${ticket.id}:${file}`)}`);
+    const accepted = new WebSocket(
+      `ws://127.0.0.1:${port}/?document=${encodeURIComponent(`ticket-${ticket.id}:${file}`)}`,
+    );
     const messages = [];
-    accepted.on('message', (data, binary) => { if (!binary) messages.push(JSON.parse(data.toString('utf8'))); });
+    accepted.on('message', (data, binary) => {
+      if (!binary) messages.push(JSON.parse(data.toString('utf8')));
+    });
     await once(accepted, 'open');
     for (let attempt = 0; attempt < 100 && !messages.some(({ type }) => type === 'synced'); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    assert.equal(messages.some(({ type }) => type === 'synced'), true);
+    assert.equal(
+      messages.some(({ type }) => type === 'synced'),
+      true,
+    );
     accepted.close();
 
-    const rejected = new WebSocket(`ws://127.0.0.1:${port}/?document=${encodeURIComponent(`ticket-${crypto.randomUUID()}:${file}`)}`);
+    const rejected = new WebSocket(
+      `ws://127.0.0.1:${port}/?document=${encodeURIComponent(`ticket-${crypto.randomUUID()}:${file}`)}`,
+    );
     await once(rejected, 'open');
     const [code] = await once(rejected, 'close');
     assert.equal(code, 1008);
@@ -85,10 +116,22 @@ test('ticket HTTP metadata gates its isolated WebSocket document namespace', { t
     for (let attempt = 0; attempt < 100 && !observed.some((message) => message.revision === revision); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    assert.equal(observed.some((message) => message.type === 'tickets-changed' && message.revision === revision), true);
+    assert.equal(
+      observed.some((message) => message.type === 'tickets-changed' && message.revision === revision),
+      true,
+    );
     const auditFiles = await fs.readdir(path.join(temporary, 'audit'));
-    const records = await Promise.all(auditFiles.filter((name) => name.endsWith('.json')).map(async (name) => JSON.parse(await fs.readFile(path.join(temporary, 'audit', name), 'utf8'))));
-    assert.equal(records.some((record) => record.action === 'ticket-delete' && record.target === ticket.id && record.outcome === 'completed'), true);
+    const records = await Promise.all(
+      auditFiles
+        .filter((name) => name.endsWith('.json'))
+        .map(async (name) => JSON.parse(await fs.readFile(path.join(temporary, 'audit', name), 'utf8'))),
+    );
+    assert.equal(
+      records.some(
+        (record) => record.action === 'ticket-delete' && record.target === ticket.id && record.outcome === 'completed',
+      ),
+      true,
+    );
   } finally {
     observer?.terminate();
     child.kill('SIGTERM');

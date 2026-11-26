@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as Y from 'yjs';
-import {
-  captureReviewAnchor,
-  repairReviewAnchors,
-  resolveReviewRange,
-} from '../apps/server/src/review-anchors.mjs';
+import { captureReviewAnchor, repairReviewAnchors, resolveReviewRange } from '../apps/server/src/review-anchors.mjs';
 
 function encoded(position) {
   return Buffer.from(Y.encodeRelativePosition(position)).toString('base64');

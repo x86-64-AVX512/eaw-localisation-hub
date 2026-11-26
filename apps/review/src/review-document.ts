@@ -43,18 +43,27 @@ export function createReviewDocument({ send, onText, beforeChange = () => {} }: 
     send({ type: 'reviewUpdate', path, documentId, updateBase64: encode(update) });
   }
   return {
-    resolveAnchors(encoded: string): {startByte:number;endByte:number} | null {
+    resolveAnchors(encoded: string): { startByte: number; endByte: number } | null {
       if (!document) return null;
       try {
         const anchors = JSON.parse(encoded);
         if (anchors.documentId !== documentId) return null;
         const text = document.getText('content');
         const source = text.toString();
-        const positions = ['startByte','endByte'].map(field => Y.createAbsolutePositionFromRelativePosition(
-          Y.decodeRelativePosition(decode(anchors.positions[field])),document!));
-        if (positions.some(position=>!position || position.type !== text)) return null;
-        return { startByte:utf16ToByte(source,positions[0]!.index),endByte:utf16ToByte(source,positions[1]!.index) };
-      } catch { return null; }
+        const positions = ['startByte', 'endByte'].map((field) =>
+          Y.createAbsolutePositionFromRelativePosition(
+            Y.decodeRelativePosition(decode(anchors.positions[field])),
+            document!,
+          ),
+        );
+        if (positions.some((position) => !position || position.type !== text)) return null;
+        return {
+          startByte: utf16ToByte(source, positions[0]!.index),
+          endByte: utf16ToByte(source, positions[1]!.index),
+        };
+      } catch {
+        return null;
+      }
     },
     anchor<T extends ReviewDocumentMessage>(message: T): T | (T & { reviewAnchors: string }) {
       if (!document || message.type === 'edit') return message;
@@ -65,17 +74,24 @@ export function createReviewDocument({ send, onText, beforeChange = () => {} }: 
         const value = message[field];
         if (typeof value !== 'number' || !Number.isSafeInteger(value)) continue;
         const offset = byteToUtf16(source, value);
-        const assoc = field === 'endByte' && typeof message.startByte === 'number'
-          && value > message.startByte ? -1 : 0;
+        const assoc =
+          field === 'endByte' && typeof message.startByte === 'number' && value > message.startByte ? -1 : 0;
         positions[field] = encode(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, offset, assoc)));
       }
       if (!Object.keys(positions).length) return message;
       const anchors: { documentId: string; positions: Record<string, string>; expectedText?: string } = {
-        documentId, positions,
+        documentId,
+        positions,
       };
-      if (['suggestionCreate', 'suggestionUpdate', 'reservationUpdate'].includes(message.type)
-        && typeof message.startByte === 'number' && typeof message.endByte === 'number') {
-        anchors.expectedText = source.slice(byteToUtf16(source, message.startByte), byteToUtf16(source, message.endByte));
+      if (
+        ['suggestionCreate', 'suggestionUpdate', 'reservationUpdate'].includes(message.type) &&
+        typeof message.startByte === 'number' &&
+        typeof message.endByte === 'number'
+      ) {
+        anchors.expectedText = source.slice(
+          byteToUtf16(source, message.startByte),
+          byteToUtf16(source, message.endByte),
+        );
       }
       return { ...message, reviewAnchors: JSON.stringify(anchors) };
     },
@@ -97,34 +113,51 @@ export function createReviewDocument({ send, onText, beforeChange = () => {} }: 
       if (!document) return false;
       const text = document.getText('content');
       const previous = text.toString();
-      const edits = Array.isArray(changes) && changes.length
-        ? [...changes].sort((a, b) => b.rangeOffset - a.rangeOffset)
-        : (() => {
-            const change = singleReplacement(previous, nextText);
-            return change ? [{ rangeOffset: change.start,
-              rangeLength: change.previousEnd - change.start, text: change.replacement }] : [];
-          })();
+      const edits =
+        Array.isArray(changes) && changes.length
+          ? [...changes].sort((a, b) => b.rangeOffset - a.rangeOffset)
+          : (() => {
+              const change = singleReplacement(previous, nextText);
+              return change
+                ? [
+                    {
+                      rangeOffset: change.start,
+                      rangeLength: change.previousEnd - change.start,
+                      text: change.replacement,
+                    },
+                  ]
+                : [];
+            })();
       // Monaco can queue several ordered content events while getValue() already
       // exposes the final model. Apply each event, not that future snapshot.
       for (const edit of edits) {
-        if (!Number.isSafeInteger(edit.rangeOffset) || !Number.isSafeInteger(edit.rangeLength)
-          || edit.rangeOffset < 0 || edit.rangeLength < 0
-          || edit.rangeOffset + edit.rangeLength > previous.length) {
+        if (
+          !Number.isSafeInteger(edit.rangeOffset) ||
+          !Number.isSafeInteger(edit.rangeLength) ||
+          edit.rangeOffset < 0 ||
+          edit.rangeLength < 0 ||
+          edit.rangeOffset + edit.rangeLength > previous.length
+        ) {
           throw new Error('Editor change is outside the CRDT document');
         }
       }
-      if (edits.length) document.transact(() => {
-        for (const edit of edits) {
-          if (edit.rangeLength) text.delete(edit.rangeOffset, edit.rangeLength);
-          if (edit.text) text.insert(edit.rangeOffset, edit.text);
-        }
-      });
+      if (edits.length)
+        document.transact(() => {
+          for (const edit of edits) {
+            if (edit.rangeLength) text.delete(edit.rangeOffset, edit.rangeLength);
+            if (edit.text) text.insert(edit.rangeOffset, edit.text);
+          }
+        });
       return true;
     },
     replay() {
       if (document) sendUpdate(Y.encodeStateAsUpdate(document));
     },
-    text() { return document?.getText('content').toString() ?? null; },
-    dispose() { document?.destroy(); },
+    text() {
+      return document?.getText('content').toString() ?? null;
+    },
+    dispose() {
+      document?.destroy();
+    },
   };
 }

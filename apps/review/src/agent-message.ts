@@ -3,28 +3,63 @@ import type { HistoryEntry } from './history-panel.ts';
 import type { ReviewCardMessage } from './review-card-elements.ts';
 import type { ReviewComment, ReviewSuggestion } from './review-card-types.ts';
 import type { ReviewDocumentUpdate } from './review-document.ts';
-import type { ReviewExternalConflict, ReviewPresence, ReviewReservation, ReviewReservationTarget, ReservationUpdateResult } from './review-state.ts';
+import type {
+  ReviewExternalConflict,
+  ReviewPresence,
+  ReviewReservation,
+  ReviewReservationTarget,
+  ReservationUpdateResult,
+} from './review-state.ts';
 
 type AgentMessageBody =
   | { type: 'ticketCatalogChanged'; revision?: string }
   | { type: 'ticketUnavailable'; ticketId: string; reason?: string }
-  | { type: 'agentHello'; user: string; userId?: string; color?: string; avatarBase64?: string;
-      recoveryStatus?: string; temporaryPassword?: boolean; workspace: string; version?: string; roles?: string[];
-      draftScope?: string; serverVersion?: string; trainingProgress?: Record<string, number>; trainingProgressConfirmed?: boolean }
-  | { type: 'documentStatus'; status: string; reason?: string; branch?: string; changedFiles?: string[]; message?: string }
+  | {
+      type: 'agentHello';
+      user: string;
+      userId?: string;
+      color?: string;
+      avatarBase64?: string;
+      recoveryStatus?: string;
+      temporaryPassword?: boolean;
+      workspace: string;
+      version?: string;
+      roles?: string[];
+      draftScope?: string;
+      serverVersion?: string;
+      trainingProgress?: Record<string, number>;
+      trainingProgressConfirmed?: boolean;
+    }
+  | {
+      type: 'documentStatus';
+      status: string;
+      reason?: string;
+      branch?: string;
+      changedFiles?: string[];
+      message?: string;
+    }
   | { type: 'documentReady' }
   | ({ type: 'documentSync' } & ReviewDocumentUpdate)
   | { type: 'replace'; positionByte: number; deleteBytes: number; insertBase64: string }
   | ({ type: 'documentVariants' } & DocumentVariantsPayload)
   | { type: 'documentVariant'; variantEpoch: string; authorId: string; textBase64: string }
   | { type: 'personalFileStatus'; message: string }
-  | { type: 'reviewBatchStart' | 'reviewBatchEnd' | 'presenceReset' | 'reservationReset'
-      | 'reservationTargetReset' | 'commentReset' | 'suggestionReset'; canUpdate?:boolean }
+  | {
+      type:
+        | 'reviewBatchStart'
+        | 'reviewBatchEnd'
+        | 'presenceReset'
+        | 'reservationReset'
+        | 'reservationTargetReset'
+        | 'commentReset'
+        | 'suggestionReset';
+      canUpdate?: boolean;
+    }
   | ({ type: 'presence' } & ReviewPresence)
   | { type: 'presenceSnapshot'; presences?: ReviewPresence[] }
   | ({ type: 'reservation' } & ReviewReservation)
   | { type: 'reservationSnapshot'; reservations?: ReviewReservation[]; canUpdate?: boolean }
-  | {type:'discussionResult';requestId:string;id:string;status:string;revision?:number;message?:string}
+  | { type: 'discussionResult'; requestId: string; id: string; status: string; revision?: number; message?: string }
   | ({ type: 'reservationUpdateResult' } & ReservationUpdateResult)
   | ({ type: 'reservationTarget' } & ReviewReservationTarget)
   | { type: 'reservationTargetSnapshot'; targets?: ReviewReservationTarget[] }
@@ -46,46 +81,114 @@ type FieldKind = 'string' | 'number' | 'boolean' | 'array';
 type Shape = Readonly<Record<string, FieldKind>>;
 
 const requiredFields: Readonly<Record<AgentMessage['type'], Shape>> = {
-  ticketCatalogChanged: {}, ticketUnavailable: { ticketId: 'string' },
+  ticketCatalogChanged: {},
+  ticketUnavailable: { ticketId: 'string' },
   agentHello: { user: 'string', workspace: 'string' },
-  documentStatus: { status: 'string' }, documentReady: {},
+  documentStatus: { status: 'string' },
+  documentReady: {},
   documentSync: { documentId: 'string', path: 'string', updateBase64: 'string' },
   replace: { positionByte: 'number', deleteBytes: 'number', insertBase64: 'string' },
-  documentVariants: {}, documentVariant: { variantEpoch: 'string', authorId: 'string', textBase64: 'string' },
+  documentVariants: {},
+  documentVariant: { variantEpoch: 'string', authorId: 'string', textBase64: 'string' },
   personalFileStatus: { message: 'string' },
-  reviewBatchStart: {}, reviewBatchEnd: {}, presenceReset: {},
+  reviewBatchStart: {},
+  reviewBatchEnd: {},
+  presenceReset: {},
   presence: { clientId: 'string', user: 'string', positionByte: 'number', anchorByte: 'number', color: 'string' },
-  presenceSnapshot: {}, reservationReset: {},
-  reservation: { id: 'string', startByte: 'number', endByte: 'number', keyCount: 'number', status: 'string', assignee: 'string', assigneeId: 'string', color: 'string' },
-  reservationSnapshot: {}, reservationTargetReset: {},
-  discussionResult: {requestId:'string',id:'string',status:'string'},
+  presenceSnapshot: {},
+  reservationReset: {},
+  reservation: {
+    id: 'string',
+    startByte: 'number',
+    endByte: 'number',
+    keyCount: 'number',
+    status: 'string',
+    assignee: 'string',
+    assigneeId: 'string',
+    color: 'string',
+  },
+  reservationSnapshot: {},
+  reservationTargetReset: {},
+  discussionResult: { requestId: 'string', id: 'string', status: 'string' },
   reservationUpdateResult: { requestId: 'string', id: 'string', status: 'string' },
   reservationTarget: { id: 'string', displayName: 'string', color: 'string' },
-  reservationTargetSnapshot: {}, externalConflictReset: {}, externalConflict: { key: 'string', label: 'string', conflictId: 'string' },
-  commentReset: {}, commentThread: { id: 'string', status: 'string', startByte: 'number', endByte: 'number', summaryBase64: 'string' },
-  commentMessage: { id: 'string' }, suggestionReset: {},
-  suggestion: { id: 'string', status: 'string', startByte: 'number', endByte: 'number', originalBase64: 'string', replacementBase64: 'string' },
-  suggestionMessage: { id: 'string' }, notice: { message: 'string' }, error: { message: 'string' },
-  history: {}, historyVersion: { id: 'string', textBase64: 'string' }, recoveryCode: { recoveryCode: 'string' },
+  reservationTargetSnapshot: {},
+  externalConflictReset: {},
+  externalConflict: { key: 'string', label: 'string', conflictId: 'string' },
+  commentReset: {},
+  commentThread: { id: 'string', status: 'string', startByte: 'number', endByte: 'number', summaryBase64: 'string' },
+  commentMessage: { id: 'string' },
+  suggestionReset: {},
+  suggestion: {
+    id: 'string',
+    status: 'string',
+    startByte: 'number',
+    endByte: 'number',
+    originalBase64: 'string',
+    replacementBase64: 'string',
+  },
+  suggestionMessage: { id: 'string' },
+  notice: { message: 'string' },
+  error: { message: 'string' },
+  history: {},
+  historyVersion: { id: 'string', textBase64: 'string' },
+  recoveryCode: { recoveryCode: 'string' },
   workspaceChanged: { phase: 'string', message: 'string' },
 };
 
 const optionalFields: Partial<Readonly<Record<AgentMessage['type'], Shape>>> = {
-  ticketCatalogChanged: { revision: 'string' }, ticketUnavailable: { reason: 'string' },
-  commentReset: {canUpdate:'boolean'},
-  discussionResult: {revision:'number',message:'string'},
-  commentMessage: {messageId:'string',authorId:'string',revision:'number',editedAt:'string',mergeConflict:'boolean'},
-  suggestionMessage: {messageId:'string',authorId:'string',revision:'number',editedAt:'string',mergeConflict:'boolean'},
-  agentHello: { draftScope:'string', userId: 'string', color: 'string', avatarBase64: 'string', recoveryStatus: 'string',
-    temporaryPassword: 'boolean', version: 'string', serverVersion: 'string', trainingProgressConfirmed: 'boolean', roles: 'array' },
+  ticketCatalogChanged: { revision: 'string' },
+  ticketUnavailable: { reason: 'string' },
+  commentReset: { canUpdate: 'boolean' },
+  discussionResult: { revision: 'number', message: 'string' },
+  commentMessage: {
+    messageId: 'string',
+    authorId: 'string',
+    revision: 'number',
+    editedAt: 'string',
+    mergeConflict: 'boolean',
+  },
+  suggestionMessage: {
+    messageId: 'string',
+    authorId: 'string',
+    revision: 'number',
+    editedAt: 'string',
+    mergeConflict: 'boolean',
+  },
+  agentHello: {
+    draftScope: 'string',
+    userId: 'string',
+    color: 'string',
+    avatarBase64: 'string',
+    recoveryStatus: 'string',
+    temporaryPassword: 'boolean',
+    version: 'string',
+    serverVersion: 'string',
+    trainingProgressConfirmed: 'boolean',
+    roles: 'array',
+  },
   documentStatus: { reason: 'string', branch: 'string', changedFiles: 'array', message: 'string' },
-  documentVariants: { sharedBase64: 'string', mineBase64: 'string', gitBase64: 'string',
-    mineFromGit: 'boolean', mineBaseRevision: 'string', mineRevision: 'string', contributors: 'array', conflicts: 'array',
-    gitConflicts: 'array', localSelections: 'array', localSelectionBlocked: 'string', localSelectionRevision: 'string' },
-  presenceSnapshot: { presences: 'array' }, reservationSnapshot: { reservations: 'array', canUpdate: 'boolean' },
+  documentVariants: {
+    sharedBase64: 'string',
+    mineBase64: 'string',
+    gitBase64: 'string',
+    mineFromGit: 'boolean',
+    mineBaseRevision: 'string',
+    mineRevision: 'string',
+    contributors: 'array',
+    conflicts: 'array',
+    gitConflicts: 'array',
+    localSelections: 'array',
+    localSelectionBlocked: 'string',
+    localSelectionRevision: 'string',
+  },
+  presenceSnapshot: { presences: 'array' },
+  reservationSnapshot: { reservations: 'array', canUpdate: 'boolean' },
   reservationUpdateResult: { revision: 'number', message: 'string' },
-  reservationTargetSnapshot: { targets: 'array' }, externalConflictReset: { source: 'string' },
-  history: { entries: 'array', headId: 'string' }, workspaceChanged: { workspace: 'string' },
+  reservationTargetSnapshot: { targets: 'array' },
+  externalConflictReset: { source: 'string' },
+  history: { entries: 'array', headId: 'string' },
+  workspaceChanged: { workspace: 'string' },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -94,17 +197,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function fieldsMatch(value: Record<string, unknown>, fields: Shape): boolean {
   return Object.entries(fields).every(([field, kind]) =>
-    kind === 'array' ? Array.isArray(value[field]) : typeof value[field] === kind);
+    kind === 'array' ? Array.isArray(value[field]) : typeof value[field] === kind,
+  );
 }
 
 function optionalFieldsMatch(value: Record<string, unknown>, fields: Shape): boolean {
-  return Object.entries(fields).every(([field, kind]) => value[field] === undefined
-    || (kind === 'array' ? Array.isArray(value[field]) : typeof value[field] === kind));
+  return Object.entries(fields).every(
+    ([field, kind]) =>
+      value[field] === undefined || (kind === 'array' ? Array.isArray(value[field]) : typeof value[field] === kind),
+  );
 }
 
 function optionalArray(value: Record<string, unknown>, field: string, fields: Shape): boolean {
   const items = value[field];
-  return items === undefined || (Array.isArray(items) && items.every((item) => isRecord(item) && fieldsMatch(item, fields)));
+  return (
+    items === undefined || (Array.isArray(items) && items.every((item) => isRecord(item) && fieldsMatch(item, fields)))
+  );
 }
 
 // The socket is a trust boundary: narrow the JSON envelope before it enters
@@ -112,32 +220,87 @@ function optionalArray(value: Record<string, unknown>, field: string, fields: Sh
 export function parseAgentMessage(value: unknown): AgentMessage | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
   const shape = requiredFields[value.type as AgentMessage['type']];
-  if (!shape || (value.path !== undefined && typeof value.path !== 'string') || !fieldsMatch(value, shape)
-    || !optionalFieldsMatch(value, optionalFields[value.type as AgentMessage['type']] ?? {})) return null;
-  if (value.type === 'agentHello' && value.trainingProgress !== undefined
-    && (!isRecord(value.trainingProgress) || !Object.values(value.trainingProgress).every((revision) => typeof revision === 'number'))) return null;
-  if (value.type === 'documentStatus' && value.changedFiles !== undefined
-    && !(value.changedFiles as unknown[]).every((file) => typeof file === 'string')) return null;
-  if (value.type === 'agentHello' && value.roles !== undefined
-    && !(value.roles as unknown[]).every((role) => typeof role === 'string')) return null;
+  if (
+    !shape ||
+    (value.path !== undefined && typeof value.path !== 'string') ||
+    !fieldsMatch(value, shape) ||
+    !optionalFieldsMatch(value, optionalFields[value.type as AgentMessage['type']] ?? {})
+  )
+    return null;
+  if (
+    value.type === 'agentHello' &&
+    value.trainingProgress !== undefined &&
+    (!isRecord(value.trainingProgress) ||
+      !Object.values(value.trainingProgress).every((revision) => typeof revision === 'number'))
+  )
+    return null;
+  if (
+    value.type === 'documentStatus' &&
+    value.changedFiles !== undefined &&
+    !(value.changedFiles as unknown[]).every((file) => typeof file === 'string')
+  )
+    return null;
+  if (
+    value.type === 'agentHello' &&
+    value.roles !== undefined &&
+    !(value.roles as unknown[]).every((role) => typeof role === 'string')
+  )
+    return null;
   if (value.type === 'presenceSnapshot' && !optionalArray(value, 'presences', requiredFields.presence)) return null;
-  if (value.type === 'reservationSnapshot' && !optionalArray(value, 'reservations', requiredFields.reservation)) return null;
-  if (value.type === 'reservationSnapshot' && (value.reservations as Record<string, unknown>[] | undefined)?.some((item) =>
-    item.revision !== undefined && (!Number.isSafeInteger(item.revision) || Number(item.revision) < 0))) return null;
-  if (value.type === 'reservationUpdateResult' && !['saved', 'stale', 'deleted', 'error'].includes(String(value.status))) return null;
-  if (value.type === 'discussionResult' && (!['saved','stale','deleted','error'].includes(String(value.status))
-    || (value.revision !== undefined && (!Number.isSafeInteger(value.revision) || Number(value.revision)<0)))) return null;
-  if (value.type === 'reservationUpdateResult' && (value.status === 'saved' || value.revision !== undefined)
-    && (!Number.isSafeInteger(value.revision) || Number(value.revision) < 0)) return null;
-  if (value.type === 'reservationTargetSnapshot' && !optionalArray(value, 'targets', requiredFields.reservationTarget)) return null;
-  if (value.type === 'history' && !optionalArray(value, 'entries', {
-    id: 'string', reason: 'string', author: 'string', createdAt: 'string',
-  })) return null;
-  if (value.type === 'documentVariants' && value.mineFromGit === true
-    && (value.minePatch !== undefined || value.mineBase64 !== undefined)) return null;
-  if (value.type === 'documentVariants' && value.minePatch !== undefined
-    && (!isRecord(value.minePatch) || !fieldsMatch(value.minePatch, {
-      positionByte: 'number', deleteBytes: 'number', insertBase64: 'string',
-    }))) return null;
+  if (value.type === 'reservationSnapshot' && !optionalArray(value, 'reservations', requiredFields.reservation))
+    return null;
+  if (
+    value.type === 'reservationSnapshot' &&
+    (value.reservations as Record<string, unknown>[] | undefined)?.some(
+      (item) => item.revision !== undefined && (!Number.isSafeInteger(item.revision) || Number(item.revision) < 0),
+    )
+  )
+    return null;
+  if (
+    value.type === 'reservationUpdateResult' &&
+    !['saved', 'stale', 'deleted', 'error'].includes(String(value.status))
+  )
+    return null;
+  if (
+    value.type === 'discussionResult' &&
+    (!['saved', 'stale', 'deleted', 'error'].includes(String(value.status)) ||
+      (value.revision !== undefined && (!Number.isSafeInteger(value.revision) || Number(value.revision) < 0)))
+  )
+    return null;
+  if (
+    value.type === 'reservationUpdateResult' &&
+    (value.status === 'saved' || value.revision !== undefined) &&
+    (!Number.isSafeInteger(value.revision) || Number(value.revision) < 0)
+  )
+    return null;
+  if (value.type === 'reservationTargetSnapshot' && !optionalArray(value, 'targets', requiredFields.reservationTarget))
+    return null;
+  if (
+    value.type === 'history' &&
+    !optionalArray(value, 'entries', {
+      id: 'string',
+      reason: 'string',
+      author: 'string',
+      createdAt: 'string',
+    })
+  )
+    return null;
+  if (
+    value.type === 'documentVariants' &&
+    value.mineFromGit === true &&
+    (value.minePatch !== undefined || value.mineBase64 !== undefined)
+  )
+    return null;
+  if (
+    value.type === 'documentVariants' &&
+    value.minePatch !== undefined &&
+    (!isRecord(value.minePatch) ||
+      !fieldsMatch(value.minePatch, {
+        positionByte: 'number',
+        deleteBytes: 'number',
+        insertBase64: 'string',
+      }))
+  )
+    return null;
   return value as AgentMessage;
 }

@@ -21,17 +21,23 @@ interface RecoveryBannerOptions {
 }
 
 function safeFileName(value: string | undefined): string {
-  const name = String(value ?? 'user').replace(/[<>:"/\\|?*\u0000-\u001f]/gu, '_').trim();
+  const name = String(value ?? 'user')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, '_')
+    .trim();
   return `EaW-Hub-Recovery-${name || 'user'}.txt`;
 }
 
 function recoveryFile(user: string | undefined, code: string): string {
   return [
-    uiText("EaW Localisation Hub – код восстановления"), '',
-    uiText("Пользователь: {0}", user), uiText("Код: {0}", code), '',
-    uiText("Храните этот файл отдельно и не отправляйте его другим людям."),
-    uiText("Код одноразовый: после восстановления пароля потребуется новый."),
-    uiText("Администратор и сервер не могут показать этот код повторно."), '',
+    uiText('EaW Localisation Hub – код восстановления'),
+    '',
+    uiText('Пользователь: {0}', user),
+    uiText('Код: {0}', code),
+    '',
+    uiText('Храните этот файл отдельно и не отправляйте его другим людям.'),
+    uiText('Код одноразовый: после восстановления пароля потребуется новый.'),
+    uiText('Администратор и сервер не могут показать этот код повторно.'),
+    '',
   ].join('\r\n');
 }
 
@@ -54,23 +60,27 @@ export function createRecoveryBanner({ state, send, showToast }: RecoveryBannerO
     action.hidden = status === 'admin_authorization_required';
     action.disabled = busy !== null;
     if (status === 'setup_required') {
-      message.textContent = uiText("У аккаунта нет сохранённого кода восстановления.");
-      action.textContent = uiText("Получить код");
+      message.textContent = uiText('У аккаунта нет сохранённого кода восстановления.');
+      action.textContent = uiText('Получить код');
     } else if (status === 'pending_confirmation') {
       if (code) {
         message.textContent = written
-          ? uiText("Файл сохранён. Подтвердите сохранение кода на сервере.")
-          : uiText("Код получен. Сохраните его в файл.");
-        action.textContent = written ? uiText("Подтвердить сохранение") : uiText("Сохранить код");
+          ? uiText('Файл сохранён. Подтвердите сохранение кода на сервере.')
+          : uiText('Код получен. Сохраните его в файл.');
+        action.textContent = written ? uiText('Подтвердить сохранение') : uiText('Сохранить код');
       } else {
-        message.textContent = uiText("Сохранение кода не было подтверждено. Несохранённый код необходимо аннулировать.");
-        action.textContent = uiText("Аннулировать код");
+        message.textContent = uiText(
+          'Сохранение кода не было подтверждено. Несохранённый код необходимо аннулировать.',
+        );
+        action.textContent = uiText('Аннулировать код');
       }
     } else if (status === 'admin_authorization_required') {
-      message.textContent = uiText("Код восстановления использован или сброшен. Обратитесь к администратору за разрешением на новый.");
+      message.textContent = uiText(
+        'Код восстановления использован или сброшен. Обратитесь к администратору за разрешением на новый.',
+      );
     } else if (status === 'issuance_authorized') {
-      message.textContent = uiText("Администратор разрешил выдачу нового кода восстановления.");
-      action.textContent = uiText("Получить код");
+      message.textContent = uiText('Администратор разрешил выдачу нового кода восстановления.');
+      action.textContent = uiText('Получить код');
     }
   }
 
@@ -83,7 +93,7 @@ export function createRecoveryBanner({ state, send, showToast }: RecoveryBannerO
     busy = 'confirm';
     if (!send({ type: 'recoveryConfirm', recoveryCode: code })) {
       retry();
-      showToast(uiText("Не удалось подтвердить сохранение кода восстановления."), true);
+      showToast(uiText('Не удалось подтвердить сохранение кода восстановления.'), true);
     }
     refresh();
   }
@@ -99,14 +109,14 @@ export function createRecoveryBanner({ state, send, showToast }: RecoveryBannerO
       return;
     }
     if (!window.showSaveFilePicker) {
-      showToast(uiText("Системный диалог сохранения недоступен. Обновите Microsoft Edge WebView2 Runtime."), true);
+      showToast(uiText('Системный диалог сохранения недоступен. Обновите Microsoft Edge WebView2 Runtime.'), true);
       return;
     }
     if (!code) {
       busy = 'issue';
       if (!send({ type: 'recoveryIssue' })) {
         retry();
-        showToast(uiText("Desktop Agent отключён – ожидается автоматическое переподключение…"), true);
+        showToast(uiText('Desktop Agent отключён – ожидается автоматическое переподключение…'), true);
       }
       refresh();
       return;
@@ -118,7 +128,7 @@ export function createRecoveryBanner({ state, send, showToast }: RecoveryBannerO
     try {
       const destination = await window.showSaveFilePicker({
         suggestedName: safeFileName(state.user),
-        types: [{ description: uiText("Текстовый файл"), accept: { 'text/plain': ['.txt'] } }],
+        types: [{ description: uiText('Текстовый файл'), accept: { 'text/plain': ['.txt'] } }],
       });
       if (code !== recoveryCode) return;
       const writable = await destination.createWritable();
@@ -131,7 +141,7 @@ export function createRecoveryBanner({ state, send, showToast }: RecoveryBannerO
       busy = null;
       refresh();
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        showToast(uiText("Не удалось записать код восстановления. Попробуйте сохранить его снова."), true);
+        showToast(uiText('Не удалось записать код восстановления. Попробуйте сохранить его снова.'), true);
       }
     }
   });
@@ -144,8 +154,11 @@ export function createRecoveryBanner({ state, send, showToast }: RecoveryBannerO
   }
 
   function handleError(message: string) {
-    if (message === 'Не удалось выпустить код восстановления.'
-      || message === 'Не удалось подтвердить сохранение кода восстановления.') retry();
+    if (
+      message === 'Не удалось выпустить код восстановления.' ||
+      message === 'Не удалось подтвердить сохранение кода восстановления.'
+    )
+      retry();
   }
 
   return { refresh, receive, retry, handleError, hasDraft: () => Boolean(code || busy) };

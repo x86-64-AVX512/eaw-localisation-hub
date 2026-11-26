@@ -25,7 +25,11 @@ function createEntry(repository) {
     clearTimeout(pending.timer);
     entry.pending = null;
     worker.unref();
-    if (error) { fail(new Error(error)); pending.reject(new Error(error)); return; }
+    if (error) {
+      fail(new Error(error));
+      pending.reject(new Error(error));
+      return;
+    }
     if (!unchanged) entry.result = result;
     pending.resolve(entry.result);
   });
@@ -39,15 +43,22 @@ function createEntry(repository) {
 export function getLocalisationKeyIndex(repository, { forceRefresh = false } = {}) {
   const key = path.resolve(repository);
   let entry = cache.get(key);
-  if (!entry) { entry = createEntry(key); cache.set(key, entry); }
+  if (!entry) {
+    entry = createEntry(key);
+    cache.set(key, entry);
+  }
   if (entry.pending) return entry.pending.promise;
   if (!forceRefresh && entry.result && Date.now() - entry.startedAt < MAX_AGE_MS) {
     return Promise.resolve(entry.result);
   }
   const id = ++entry.nextId;
   entry.startedAt = Date.now();
-  let resolvePending; let rejectPending;
-  const promise = new Promise((resolve, reject) => { resolvePending = resolve; rejectPending = reject; });
+  let resolvePending;
+  let rejectPending;
+  const promise = new Promise((resolve, reject) => {
+    resolvePending = resolve;
+    rejectPending = reject;
+  });
   const timer = setTimeout(() => {
     const pending = entry.pending;
     if (!pending || pending.id !== id) return;

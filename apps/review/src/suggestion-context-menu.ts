@@ -22,11 +22,14 @@ export function createSuggestionContextMenu(editor: Monaco.editor.IStandaloneCod
   const onContextMenu = (event: MouseEvent) => {
     const target = editor.getTargetAtClientPoint(event.clientX, event.clientY);
     if (!target || !isSuggestionMouseTarget(target)) return;
-    event.preventDefault(); event.stopImmediatePropagation();
+    event.preventDefault();
+    event.stopImmediatePropagation();
     // Preserve selection and the active draft; moving the caret to an
     // artificial view-zone position could finish it before the menu opens.
     editor.focus();
-    editor.getContribution<ContextMenuContribution>('editor.contrib.contextmenu')?.showContextMenu({ x: event.pageX, y: event.pageY });
+    editor
+      .getContribution<ContextMenuContribution>('editor.contrib.contextmenu')
+      ?.showContextMenu({ x: event.pageX, y: event.pageY });
   };
   // Capture before Monaco discards zone/injected-text targets, not after it.
   dom?.addEventListener('contextmenu', onContextMenu, true);

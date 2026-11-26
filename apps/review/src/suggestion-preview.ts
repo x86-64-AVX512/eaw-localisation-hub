@@ -1,6 +1,9 @@
 import type * as Monaco from 'monaco-editor';
 
-export function activeSuggestionPreview(original: string, replacement: string): { zoneText: string; inlineTail: string } {
+export function activeSuggestionPreview(
+  original: string,
+  replacement: string,
+): { zoneText: string; inlineTail: string } {
   // Monaco's Windows model may use CRLF. Normalize only the DOM preview, never
   // the projection offsets or the document sent to the server.
   original = original.replace(/\r\n|\r/gu, '\n');
@@ -19,8 +22,13 @@ export function activeSuggestionPreview(original: string, replacement: string): 
 
 // Monaco sets the outer view-zone width itself. Measure and constrain an inner
 // element so wrapping stays identical before and after the zone is mounted.
-export function suggestionPreview(monaco: typeof Monaco, editor: Monaco.editor.IStandaloneCodeEditor,
-  text: string, className: string, color: string): Pick<Monaco.editor.IViewZone, 'domNode' | 'heightInPx'> {
+export function suggestionPreview(
+  monaco: typeof Monaco,
+  editor: Monaco.editor.IStandaloneCodeEditor,
+  text: string,
+  className: string,
+  color: string,
+): Pick<Monaco.editor.IViewZone, 'domNode' | 'heightInPx'> {
   text = text.replace(/\r\n|\r/gu, '\n');
   const font = editor.getOption(monaco.editor.EditorOption.fontInfo);
   const layout = editor.getLayoutInfo();
@@ -29,10 +37,15 @@ export function suggestionPreview(monaco: typeof Monaco, editor: Monaco.editor.I
   domNode.style.setProperty('--author-color', color);
   const content = document.createElement('div');
   Object.assign(content.style, {
-    fontFamily: font.fontFamily, fontSize: `${font.fontSize}px`, fontWeight: font.fontWeight,
-    lineHeight: `${font.lineHeight}px`, letterSpacing: `${font.letterSpacing}px`,
+    fontFamily: font.fontFamily,
+    fontSize: `${font.fontSize}px`,
+    fontWeight: font.fontWeight,
+    lineHeight: `${font.lineHeight}px`,
+    letterSpacing: `${font.letterSpacing}px`,
     width: `${Math.max(1, layout.contentWidth - layout.verticalScrollbarWidth)}px`,
-    whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', minHeight: `${font.lineHeight}px`,
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
+    minHeight: `${font.lineHeight}px`,
   });
   content.textContent = text;
   if (text.endsWith('\n')) {

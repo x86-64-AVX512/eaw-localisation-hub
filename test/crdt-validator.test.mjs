@@ -1,10 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Y from 'yjs';
-import {
-  CrdtUpdateValidator,
-  CrdtValidationError,
-} from '../apps/server/src/crdt-validator.mjs';
+import { CrdtUpdateValidator, CrdtValidationError } from '../apps/server/src/crdt-validator.mjs';
 
 function sampleUpdate() {
   const document = new Y.Doc();
@@ -44,6 +41,7 @@ test('CRDT validator has a bounded global queue', async (t) => {
   const update = sampleUpdate();
   const jobs = Array.from({ length: 80 }, () => validator.validate(update).catch((error) => error));
   const results = await Promise.all(jobs);
-  assert.ok(results.some((result) => result instanceof CrdtValidationError
-    && result.code === 'crdt-validation-overloaded'));
+  assert.ok(
+    results.some((result) => result instanceof CrdtValidationError && result.code === 'crdt-validation-overloaded'),
+  );
 });

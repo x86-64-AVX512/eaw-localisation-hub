@@ -60,11 +60,18 @@ export function controlledString(
   return result;
 }
 
-export function controlledText(value: unknown, label: string, maximumBytes: number,
-  { required = false }: { required?: boolean } = {}): string {
+export function controlledText(
+  value: unknown,
+  label: string,
+  maximumBytes: number,
+  { required = false }: { required?: boolean } = {},
+): string {
   const result = String(value ?? '');
-  if ((required && !result) || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(result)
-      || byteLength(result) > maximumBytes) {
+  if (
+    (required && !result) ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(result) ||
+    byteLength(result) > maximumBytes
+  ) {
     throw new ProtocolLimitError(`${label} is missing or exceeds the protocol limit`);
   }
   return result;
@@ -76,14 +83,23 @@ export function validDocumentId(documentId: string): boolean {
   if (separator < 1 || separator > 255 || documentId.indexOf(':', separator + 1) >= 0) return false;
   const workspace = documentId.slice(0, separator);
   const relativePath = documentId.slice(separator + 1);
-  if (workspace.startsWith('.') || workspace.startsWith('-') || workspace.endsWith('.')
-      || workspace.includes('..') || workspace.includes('@{')) return false;
+  if (
+    workspace.startsWith('.') ||
+    workspace.startsWith('-') ||
+    workspace.endsWith('.') ||
+    workspace.includes('..') ||
+    workspace.includes('@{')
+  )
+    return false;
   if (!TRACKED_PATH_PATTERN.test(relativePath) || relativePath.includes('//')) return false;
   return !relativePath.split('/').some((part) => !part || part === '.' || part === '..');
 }
 
-export function sendWithBackpressure(socket: BackpressureSocket,
-  value: string | Uint8Array, options: unknown = undefined): boolean {
+export function sendWithBackpressure(
+  socket: BackpressureSocket,
+  value: string | Uint8Array,
+  options: unknown = undefined,
+): boolean {
   if (socket.readyState !== SOCKET_OPEN) return false;
   const outgoingBytes = byteLength(value);
   if (outgoingBytes > MAX_MESSAGE_BYTES || socket.bufferedAmount + outgoingBytes > MAX_SOCKET_BUFFERED_BYTES) {

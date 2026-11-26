@@ -9,8 +9,12 @@ function json(response, status, payload, secureHeaders) {
 // a recovery copy of text the user has just discarded.
 async function removingTicketRooms(hub, documentIds, closeReason, request) {
   const withdraw = hub.expectTicketRemoval(documentIds, closeReason);
-  try { return await request(); }
-  catch (error) { withdraw(); throw error; }
+  try {
+    return await request();
+  } catch (error) {
+    withdraw();
+    throw error;
+  }
 }
 
 function openTicketDocuments(hub, id) {
@@ -18,9 +22,7 @@ function openTicketDocuments(hub, id) {
 }
 
 export async function handleTicketReviewApi(context) {
-  const {
-    request, requestUrl, response, authorised, hub, options, readJsonBody, secureHeaders,
-  } = context;
+  const { request, requestUrl, response, authorised, hub, options, readJsonBody, secureHeaders } = context;
   if (!requestUrl.pathname.startsWith('/api/tickets')) return false;
   if (!authorised()) {
     response.writeHead(401).end();
@@ -32,20 +34,23 @@ export async function handleTicketReviewApi(context) {
       return true;
     }
     if (requestUrl.pathname === '/api/tickets') {
-      const payload = request.method === 'POST'
-        ? await hub.ticketRequest('/api/tickets', {
-          method: 'POST', body: JSON.stringify({
-            ...(await readJsonBody(request)),
-            baseBranch: options.workspace,
-            baseCommit: hub.currentGitCommit(),
-          }),
-        })
-        : await hub.ticketRequest(`/api/tickets${requestUrl.search}`, { method: 'GET' });
+      const payload =
+        request.method === 'POST'
+          ? await hub.ticketRequest('/api/tickets', {
+              method: 'POST',
+              body: JSON.stringify({
+                ...(await readJsonBody(request)),
+                baseBranch: options.workspace,
+                baseCommit: hub.currentGitCommit(),
+              }),
+            })
+          : await hub.ticketRequest(`/api/tickets${requestUrl.search}`, { method: 'GET' });
       json(response, 200, payload, secureHeaders);
       return true;
     }
-    const match = /^\/api\/tickets\/([0-9a-f-]{36})(?:\/(summary|diff|apply|rebase|archive|files))?$/u
-      .exec(requestUrl.pathname);
+    const match = /^\/api\/tickets\/([0-9a-f-]{36})(?:\/(summary|diff|apply|rebase|archive|files))?$/u.exec(
+      requestUrl.pathname,
+    );
     if (!match) return false;
     const id = match[1];
     const action = match[2] ?? '';
@@ -53,8 +58,7 @@ export async function handleTicketReviewApi(context) {
     if (action === 'summary' && request.method === 'GET') payload = await hub.ticketWorkflow.summary(id);
     else if (action === 'diff' && request.method === 'GET') {
       payload = await hub.ticketWorkflow.diff(id, requestUrl.searchParams.get('file') ?? '');
-    }
-    else if (action === 'apply' && request.method === 'POST') payload = await hub.ticketWorkflow.apply(id);
+    } else if (action === 'apply' && request.method === 'POST') payload = await hub.ticketWorkflow.apply(id);
     else if (action === 'rebase' && request.method === 'POST') payload = await hub.ticketWorkflow.rebase(id);
     else if (action === 'archive' && request.method === 'POST') {
       payload = await hub.ticketRequest(`/api/tickets/${id}/archive`, { method: 'POST', body: '{}' });
@@ -63,18 +67,25 @@ export async function handleTicketReviewApi(context) {
       // Match the server's path separator normalization. Kept and added files
       // must never inherit an intent to discard another file's pending edits.
       const remaining = Array.isArray(input.files)
-        ? new Set(input.files.map((file) => String(file ?? '').replaceAll('\\', '/'))) : new Set();
-      const removed = remaining.size ? openTicketDocuments(hub, id)
-        .filter((binding) => !remaining.has(binding.relativePath)).map((binding) => binding.documentId) : [];
-      payload = await removingTicketRooms(hub, removed, 'Ticket file removed',
-        () => hub.ticketRequest(`/api/tickets/${id}/files`, { method: 'PUT', body: JSON.stringify(input) }));
+        ? new Set(input.files.map((file) => String(file ?? '').replaceAll('\\', '/')))
+        : new Set();
+      const removed = remaining.size
+        ? openTicketDocuments(hub, id)
+            .filter((binding) => !remaining.has(binding.relativePath))
+            .map((binding) => binding.documentId)
+        : [];
+      payload = await removingTicketRooms(hub, removed, 'Ticket file removed', () =>
+        hub.ticketRequest(`/api/tickets/${id}/files`, { method: 'PUT', body: JSON.stringify(input) }),
+      );
     } else if (!action && request.method === 'DELETE') {
       const removed = openTicketDocuments(hub, id).map((binding) => binding.documentId);
-      payload = await removingTicketRooms(hub, removed, 'Ticket deleted',
-        () => hub.ticketRequest(`/api/tickets/${id}`, { method: 'DELETE' }));
+      payload = await removingTicketRooms(hub, removed, 'Ticket deleted', () =>
+        hub.ticketRequest(`/api/tickets/${id}`, { method: 'DELETE' }),
+      );
     } else if (!action && request.method === 'PATCH') {
       payload = await hub.ticketRequest(`/api/tickets/${id}`, {
-        method: 'PATCH', body: JSON.stringify(await readJsonBody(request)),
+        method: 'PATCH',
+        body: JSON.stringify(await readJsonBody(request)),
       });
     } else if (!action && request.method === 'GET') {
       payload = await hub.ticketRequest(`/api/tickets/${id}`, { method: 'GET' });

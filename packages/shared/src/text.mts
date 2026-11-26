@@ -69,8 +69,11 @@ async function gitOutput(repositoryRoot: string, args: string[]): Promise<string
   }
 }
 
-async function preferredTrackedLineEnding(repositoryRoot: string, absolutePath: string,
-  currentText: string): Promise<string> {
+async function preferredTrackedLineEnding(
+  repositoryRoot: string,
+  absolutePath: string,
+  currentText: string,
+): Promise<string> {
   const currentEnding = dominantLineEnding(currentText);
   if (currentEnding && currentEnding !== '\n') return currentEnding;
   const relativePath = path.relative(repositoryRoot, absolutePath).replaceAll('\\', '/');
@@ -78,9 +81,7 @@ async function preferredTrackedLineEnding(repositoryRoot: string, absolutePath: 
   const cached = lineEndingPreferenceCache.get(cacheKey);
   if (cached) return cached;
   const preference = (async () => {
-    const attributes = await gitOutput(repositoryRoot, [
-      'check-attr', '-z', 'eol', 'text', '--', relativePath,
-    ]);
+    const attributes = await gitOutput(repositoryRoot, ['check-attr', '-z', 'eol', 'text', '--', relativePath]);
     const fields = attributes.split('\0');
     const values = new Map<string, string>();
     for (let index = 0; index + 2 < fields.length; index += 3) {
@@ -89,12 +90,10 @@ async function preferredTrackedLineEnding(repositoryRoot: string, absolutePath: 
     if (values.get('eol') === 'crlf') return '\r\n';
     if (values.get('eol') === 'lf') return '\n';
     if (!['set', 'auto'].includes(values.get('text') ?? '')) return currentEnding;
-    const autoCrlf = (await gitOutput(repositoryRoot, ['config', '--get', 'core.autocrlf']))
-      .trim().toLowerCase();
+    const autoCrlf = (await gitOutput(repositoryRoot, ['config', '--get', 'core.autocrlf'])).trim().toLowerCase();
     if (autoCrlf === 'true') return '\r\n';
     if (autoCrlf === 'input') return '\n';
-    const coreEol = (await gitOutput(repositoryRoot, ['config', '--get', 'core.eol']))
-      .trim().toLowerCase();
+    const coreEol = (await gitOutput(repositoryRoot, ['config', '--get', 'core.eol'])).trim().toLowerCase();
     if (coreEol === 'crlf') return '\r\n';
     if (coreEol === 'lf') return '\n';
     return os.EOL;
@@ -153,8 +152,12 @@ export function utf16IndexToUtf8ByteOffset(text: string, utf16Index: number): nu
   return Buffer.byteLength(text.slice(0, utf16Index), 'utf8');
 }
 
-export function applyUtf8ByteEdit(text: string, positionByte: number,
-  deleteBytes: number, insertedText: string): string {
+export function applyUtf8ByteEdit(
+  text: string,
+  positionByte: number,
+  deleteBytes: number,
+  insertedText: string,
+): string {
   assertInteger(deleteBytes, 'deleteBytes');
   if (deleteBytes < 0) {
     throw new RangeError('deleteBytes must not be negative');
@@ -186,18 +189,11 @@ export function computeSingleReplace(previous: string, next: string) {
   while (prefix < shortest && previous[prefix] === next[prefix]) {
     prefix += 1;
   }
-  prefix = Math.min(
-    retreatFromSplitSurrogate(previous, prefix),
-    retreatFromSplitSurrogate(next, prefix),
-  );
+  prefix = Math.min(retreatFromSplitSurrogate(previous, prefix), retreatFromSplitSurrogate(next, prefix));
 
   let previousEnd = previous.length;
   let nextEnd = next.length;
-  while (
-    previousEnd > prefix &&
-    nextEnd > prefix &&
-    previous[previousEnd - 1] === next[nextEnd - 1]
-  ) {
+  while (previousEnd > prefix && nextEnd > prefix && previous[previousEnd - 1] === next[nextEnd - 1]) {
     previousEnd -= 1;
     nextEnd -= 1;
   }
@@ -264,9 +260,15 @@ export async function readTrackedTextFile(repositoryRoot: string, absolutePath: 
   }
 }
 
-export async function writeTrackedTextFile(repositoryRoot: string, absolutePath: string, text: string, {
-  isCurrent = () => true, expectedText,
-}: { isCurrent?: () => boolean | Promise<boolean>; expectedText?: string } = {}): Promise<boolean> {
+export async function writeTrackedTextFile(
+  repositoryRoot: string,
+  absolutePath: string,
+  text: string,
+  {
+    isCurrent = () => true,
+    expectedText,
+  }: { isCurrent?: () => boolean | Promise<boolean>; expectedText?: string } = {},
+): Promise<boolean> {
   const { resolvedRoot, resolvedFile } = resolveTrackedPath(repositoryRoot, absolutePath);
   let handle;
   let temporary;
@@ -284,17 +286,12 @@ export async function writeTrackedTextFile(repositoryRoot: string, absolutePath:
       throw new Error(`File changed identity during secure write: ${absolutePath}`);
     }
     const current = await handle.readFile({ encoding: 'utf8' });
-    if (expectedText !== undefined
-      && normaliseLineEndings(withoutUtf8Bom(current)) !== expectedText) {
+    if (expectedText !== undefined && normaliseLineEndings(withoutUtf8Bom(current)) !== expectedText) {
       throw Object.assign(new Error(`File changed before materialisation: ${absolutePath}`), {
         code: 'EAW_EXTERNAL_CHANGE',
       });
     }
-    const preferredEnding = await preferredTrackedLineEnding(
-      resolvedRoot,
-      resolvedFile,
-      current,
-    );
+    const preferredEnding = await preferredTrackedLineEnding(resolvedRoot, resolvedFile, current);
     const materialised = preserveLineEndings(text, current, preferredEnding);
     if (materialised === current) return false;
     const output = Buffer.from(materialised, 'utf8');
@@ -309,7 +306,7 @@ export async function writeTrackedTextFile(repositoryRoot: string, absolutePath:
     await staged.sync();
     await staged.close();
     staged = null;
-    if (!await isCurrent()) return false;
+    if (!(await isCurrent())) return false;
     await handle.close();
     handle = null;
     // An asynchronous freshness callback can yield while an external process
@@ -317,10 +314,15 @@ export async function writeTrackedTextFile(repositoryRoot: string, absolutePath:
     const latestPath = await fs.promises.realpath(resolvedFile);
     const latestStat = await fs.promises.stat(latestPath, { bigint: true });
     assertCanonicalContainment(await fs.promises.realpath(resolvedRoot), latestPath, absolutePath);
-    if (latestPath !== canonicalFile || latestStat.dev !== openedStat.dev
-      || latestStat.ino !== openedStat.ino || latestStat.mtimeNs !== openedStat.mtimeNs
-      || latestStat.ctimeNs !== openedStat.ctimeNs
-      || latestStat.size !== openedStat.size) throw new Error(`File changed during atomic write: ${absolutePath}`);
+    if (
+      latestPath !== canonicalFile ||
+      latestStat.dev !== openedStat.dev ||
+      latestStat.ino !== openedStat.ino ||
+      latestStat.mtimeNs !== openedStat.mtimeNs ||
+      latestStat.ctimeNs !== openedStat.ctimeNs ||
+      latestStat.size !== openedStat.size
+    )
+      throw new Error(`File changed during atomic write: ${absolutePath}`);
     // Never unlink the destination as a fallback: failed replacement keeps the old file intact.
     await fs.promises.rename(temporary, canonicalFile);
     temporary = null;

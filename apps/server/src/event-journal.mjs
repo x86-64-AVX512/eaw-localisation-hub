@@ -20,16 +20,24 @@ export class EventJournal {
       if (loaded.schema !== 1 || !Array.isArray(loaded.events)) throw new Error('Unsupported event journal');
       this.events = loaded.events.slice(-MAX_EVENTS);
       this.nextSequence = Math.max(0, ...this.events.map(({ sequence }) => Number(sequence) || 0)) + 1;
-    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
   append(type, actor, recipients, details = {}) {
-    const recipientIds = [...new Set((recipients ?? []).map(String).filter(Boolean))]
-      .filter((id) => id !== String(actor?.id ?? ''));
+    const recipientIds = [...new Set((recipients ?? []).map(String).filter(Boolean))].filter(
+      (id) => id !== String(actor?.id ?? ''),
+    );
     if (!recipientIds.length) return null;
     const event = {
-      id: crypto.randomUUID(), sequence: this.nextSequence++, type,
-      at: new Date().toISOString(), actorId: String(actor?.id ?? ''),
-      actor: String(actor?.displayName ?? actor?.actor ?? 'Unknown'), recipientIds, details,
+      id: crypto.randomUUID(),
+      sequence: this.nextSequence++,
+      type,
+      at: new Date().toISOString(),
+      actorId: String(actor?.id ?? ''),
+      actor: String(actor?.displayName ?? actor?.actor ?? 'Unknown'),
+      recipientIds,
+      details,
     };
     this.events.push(event);
     if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
@@ -40,25 +48,35 @@ export class EventJournal {
   schedulePersistence() {
     if (this.persistenceScheduled) return;
     this.persistenceScheduled = true;
-    this.persistence = this.persistence.catch(() => {}).then(async () => {
-      try {
-        while (this.persistenceDirty) {
-          this.persistenceDirty = false;
-          const snapshot = `${JSON.stringify({ schema: 1, events: this.events })}\n`;
-          await this.atomicWrite(this.target, snapshot);
+    this.persistence = this.persistence
+      .catch(() => {})
+      .then(async () => {
+        try {
+          while (this.persistenceDirty) {
+            this.persistenceDirty = false;
+            const snapshot = `${JSON.stringify({ schema: 1, events: this.events })}\n`;
+            await this.atomicWrite(this.target, snapshot);
+          }
+        } finally {
+          this.persistenceScheduled = false;
         }
-      } finally {
-        this.persistenceScheduled = false;
-      }
-    });
+      });
   }
   list(userId, after = 0, limit = 500) {
     const floor = this.events[0]?.sequence ?? this.nextSequence;
     const requested = Math.max(0, Number(after) || 0);
-    const scanned = this.events.filter((event) => event.sequence > requested)
+    const scanned = this.events
+      .filter((event) => event.sequence > requested)
       .slice(0, Math.min(1000, Math.max(1, Number(limit) || 500)));
     const events = scanned.filter((event) => event.recipientIds.includes(String(userId)));
-    return { events, cursor: scanned.at(-1)?.sequence ?? Math.max(requested, floor - 1), truncated: requested > 0 && requested < floor - 1 };
+    return {
+      events,
+      cursor: scanned.at(-1)?.sequence ?? Math.max(requested, floor - 1),
+      truncated: requested > 0 && requested < floor - 1,
+    };
   }
-  async flush() { if (this.persistenceDirty) this.schedulePersistence(); await this.persistence; }
+  async flush() {
+    if (this.persistenceDirty) this.schedulePersistence();
+    await this.persistence;
+  }
 }

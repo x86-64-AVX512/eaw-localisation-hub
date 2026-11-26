@@ -26,8 +26,5 @@ test('management sessions are memory-only, short-lived, and require freshness fo
   assert.equal((await sessions.authenticate(issued.token)).id, actor.id);
 
   now += 8 * 60 * 1000;
-  await assert.rejects(
-    sessions.authenticate(issued.token),
-    (error) => error.code === 'invalid_management_session',
-  );
+  await assert.rejects(sessions.authenticate(issued.token), (error) => error.code === 'invalid_management_session');
 });

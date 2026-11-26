@@ -22,8 +22,17 @@ export interface AiEntry {
   text: string;
 }
 export type ProofreadingLanguage = 'russian' | 'english';
-export interface AiRequest { mode: 'review'; language: ProofreadingLanguage; entries: AiEntry[]; automatic?: true }
-export interface AiSuggestion { key: string; text: string; reason: string }
+export interface AiRequest {
+  mode: 'review';
+  language: ProofreadingLanguage;
+  entries: AiEntry[];
+  automatic?: true;
+}
+export interface AiSuggestion {
+  key: string;
+  text: string;
+  reason: string;
+}
 
 const sentenceSegmenters = {
   russian: new Intl.Segmenter('ru', { granularity: 'sentence' }),
@@ -33,7 +42,12 @@ const languageLetters = { russian: /\p{Script=Cyrillic}/u, english: /\p{Script=L
 
 // Keep offsets aligned with the raw value. Punctuation inside a getter or a
 // format code must not become a sentence boundary, and \\n starts a new line.
-export function aiSentencesInRange(text: string, start: number, end: number, language: ProofreadingLanguage = 'russian') {
+export function aiSentencesInRange(
+  text: string,
+  start: number,
+  end: number,
+  language: ProofreadingLanguage = 'russian',
+) {
   const parts: string[] = [];
   let offset = 0;
   for (const token of technicalInsertions(text)) {
@@ -41,7 +55,7 @@ export function aiSentencesInRange(text: string, start: number, end: number, lan
     offset = token.end;
   }
   parts.push(text.slice(offset));
-  const visible = parts.join('').replace(/§[^\r\n]|\\[^\r\n]/gu, code => {
+  const visible = parts.join('').replace(/§[^\r\n]|\\[^\r\n]/gu, (code) => {
     if (/^\\[nN]$/u.test(code)) return '\n\n';
     if (/^\\[tT]$/u.test(code)) return '  ';
     if (code === '\\"') return '\u2060"';
@@ -68,11 +82,20 @@ export function aiSentenceAt(text: string, start: number, end: number, language:
 }
 
 export const AI_OUTPUT_SCHEMA = {
-  type: 'object', additionalProperties: false, required: ['suggestions'],
-  properties: { suggestions: { type: 'array', items: {
-    type: 'object', additionalProperties: false, required: ['key', 'text', 'reason'],
-    properties: { key: { type: 'string' }, text: { type: 'string' }, reason: { type: 'string' } },
-  } } },
+  type: 'object',
+  additionalProperties: false,
+  required: ['suggestions'],
+  properties: {
+    suggestions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['key', 'text', 'reason'],
+        properties: { key: { type: 'string' }, text: { type: 'string' }, reason: { type: 'string' } },
+      },
+    },
+  },
 };
 
 export function aiRequest(value: unknown): AiRequest {
@@ -91,9 +114,15 @@ export function aiRequest(value: unknown): AiRequest {
   }
   const keys = new Set<string>();
   let size = 0;
-  const entries = input.entries.map(entry => {
-    if (!entry || typeof entry.key !== 'string' || !/^[^\s:#"]{1,512}$/u.test(entry.key)
-      || typeof entry.text !== 'string' || /[\r\n\u0000]/u.test(entry.text) || keys.has(entry.key)) {
+  const entries = input.entries.map((entry) => {
+    if (
+      !entry ||
+      typeof entry.key !== 'string' ||
+      !/^[^\s:#"]{1,512}$/u.test(entry.key) ||
+      typeof entry.text !== 'string' ||
+      /[\r\n\u0000]/u.test(entry.text) ||
+      keys.has(entry.key)
+    ) {
       throw new Error('Для ИИ нужны однозначные ключи и однострочные значения.');
     }
     keys.add(entry.key);
@@ -101,15 +130,19 @@ export function aiRequest(value: unknown): AiRequest {
     if (size > MAX_AI_REQUEST_CHARS) throw new Error('Для теста ИИ выберите не более 12 000 символов.');
     return { key: entry.key, text: entry.text };
   });
-  if (input.automatic === true
-    && entries.some(({ text }) => aiSentenceAt(text, 0, text.length, language)?.text !== text)) {
+  if (
+    input.automatic === true &&
+    entries.some(({ text }) => aiSentenceAt(text, 0, text.length, language)?.text !== text)
+  ) {
     throw new Error('В каждом элементе фоновой проверки должен быть один фрагмент на выбранном языке.');
   }
   return { mode: 'review', language, entries, ...(input.automatic === true ? { automatic: true } : {}) };
 }
 
 function protectedParts(text: string): string {
-  const insertions = technicalInsertions(text).map(token => text.slice(token.start, token.end)).sort();
+  const insertions = technicalInsertions(text)
+    .map((token) => text.slice(token.start, token.end))
+    .sort();
   const formatting = text.match(/§[^\r\n]|\\[^\r\n]/gu) ?? [];
   return JSON.stringify([insertions, formatting]);
 }
@@ -119,18 +152,26 @@ export function aiSuggestions(value: unknown, request: AiRequest): AiSuggestion[
   if (!Array.isArray(suggestions) || suggestions.length > request.entries.length) {
     throw new Error('ИИ вернул некорректный список предложений.');
   }
-  const entries = new Map(request.entries.map(entry => [entry.key, entry]));
+  const entries = new Map(request.entries.map((entry) => [entry.key, entry]));
   const seen = new Set<string>();
   const result: AiSuggestion[] = [];
   for (const item of suggestions) {
     const original = entries.get(item?.key);
-    if (!original || seen.has(item.key) || typeof item.text !== 'string' || item.text.length > 16_000
-      || /[\r\n\u0000]/u.test(item.text) || typeof item.reason !== 'string' || item.reason.length > 2000) {
+    if (
+      !original ||
+      seen.has(item.key) ||
+      typeof item.text !== 'string' ||
+      item.text.length > 16_000 ||
+      /[\r\n\u0000]/u.test(item.text) ||
+      typeof item.reason !== 'string' ||
+      item.reason.length > 2000
+    ) {
       throw new Error('ИИ вернул некорректное предложение.');
     }
     seen.add(item.key);
     const parsed = parseKeyReplacementBatch(`${item.key}:0 "${item.text}"`);
-    if (parsed.errors.length || parsed.entries.length !== 1) throw new Error('Не удалось проверить текст предложения ИИ.');
+    if (parsed.errors.length || parsed.entries.length !== 1)
+      throw new Error('Не удалось проверить текст предложения ИИ.');
     const text = parsed.entries[0].text;
     if (protectedParts(text) !== protectedParts(original.text)) {
       throw new Error('Предложение ИИ изменяет технические вставки или форматирование.');
@@ -160,6 +201,9 @@ export function aiCorrectionRange(original: string, corrected: string) {
     end += 1;
     afterEnd += 1;
   }
-  return { start: before.slice(0, start).join('').length, end: before.slice(0, end).join('').length,
-    text: after.slice(start, afterEnd).join('') };
+  return {
+    start: before.slice(0, start).join('').length,
+    end: before.slice(0, end).join('').length,
+    text: after.slice(start, afterEnd).join(''),
+  };
 }

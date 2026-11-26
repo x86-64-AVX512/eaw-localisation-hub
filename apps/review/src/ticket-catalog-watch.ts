@@ -8,7 +8,12 @@ interface TicketCatalogWatchOptions {
   interval?: number;
 }
 
-export function createTicketCatalogWatch({ refresh, revision, currentRevision, interval = 15000 }: TicketCatalogWatchOptions) {
+export function createTicketCatalogWatch({
+  refresh,
+  revision,
+  currentRevision,
+  interval = 15000,
+}: TicketCatalogWatchOptions) {
   let running: Promise<void> | null = null;
   let pending = false;
   let disposed = false;
@@ -17,13 +22,22 @@ export function createTicketCatalogWatch({ refresh, revision, currentRevision, i
     pending = true;
     if (running) return running;
     running = (async () => {
-      while (pending && !disposed) { pending = false; await refresh(); }
-    })().finally(() => { running = null; });
+      while (pending && !disposed) {
+        pending = false;
+        await refresh();
+      }
+    })().finally(() => {
+      running = null;
+    });
     return running;
   }
   async function check() {
     if (disposed || document.hidden || !isWorkspaceVisible()) return;
-    try { await changed((await revision()).revision); } catch { /* retry on next tick or focus */ }
+    try {
+      await changed((await revision()).revision);
+    } catch {
+      /* retry on next tick or focus */
+    }
   }
   const timer = setInterval(check, interval);
   window.addEventListener('focus', check);
@@ -31,7 +45,8 @@ export function createTicketCatalogWatch({ refresh, revision, currentRevision, i
   return {
     changed,
     dispose() {
-      disposed = true; clearInterval(timer);
+      disposed = true;
+      clearInterval(timer);
       window.removeEventListener('focus', check);
       document.removeEventListener('visibilitychange', check);
     },

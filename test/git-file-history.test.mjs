@@ -34,7 +34,10 @@ test('local Git history follows a renamed localisation file back to its first co
     git(repository, 'commit', '-m', 'Update English text');
 
     const pinnedHistory = listFileHistory(repository, oldRelative, { headCommit: secondCommit });
-    assert.deepEqual(pinnedHistory.entries.map(({ commit }) => commit), [secondCommit, firstCommit]);
+    assert.deepEqual(
+      pinnedHistory.entries.map(({ commit }) => commit),
+      [secondCommit, firstCommit],
+    );
 
     const history = listFileHistory(repository, currentRelative, { limit: 2 });
     assert.equal(history.entries.length, 2);
@@ -46,9 +49,7 @@ test('local Git history follows a renamed localisation file back to its first co
     assert.equal(firstEntry.historicalPath, oldRelative);
     assert.equal(secondEntry.historicalPath, oldRelative);
 
-    const comparison = fileHistoryDiff(
-      repository, currentRelative, firstEntry.commit, firstEntry.historicalPath,
-    );
+    const comparison = fileHistoryDiff(repository, currentRelative, firstEntry.commit, firstEntry.historicalPath);
     assert.match(comparison.baseText, /"First"/u);
     assert.match(comparison.headText, /"Today"/u);
 
@@ -71,7 +72,11 @@ test('local Git history follows a renamed localisation file back to its first co
 
 test('Git history rejects paths outside supported localisation folders', () => {
   assert.throws(() => listFileHistory(process.cwd(), '../secret.yml'), /вне репозитория/u);
-  assert.throws(() => listFileHistory(process.cwd(), 'localisation/russian/test.yml', {
-    headCommit: 'not-a-commit',
-  }), /Git HEAD/u);
+  assert.throws(
+    () =>
+      listFileHistory(process.cwd(), 'localisation/russian/test.yml', {
+        headCommit: 'not-a-commit',
+      }),
+    /Git HEAD/u,
+  );
 });

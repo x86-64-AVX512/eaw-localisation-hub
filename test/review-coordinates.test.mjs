@@ -7,7 +7,8 @@ const decoder = new TextDecoder();
 
 test('cached Review byte coordinates match whole-text conversion across Unicode and checkpoint boundaries', () => {
   for (const text of [
-    '', 'ASCII §YПривет§! 👑\n[Root.GetName]',
+    '',
+    'ASCII §YПривет§! 👑\n[Root.GetName]',
     `${'а'.repeat(4095)}👑${'б'.repeat(4200)}\n`,
     `${'x'.repeat(4095)}👑${'y'.repeat(4098)}`,
   ]) {

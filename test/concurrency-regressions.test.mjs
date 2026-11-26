@@ -14,17 +14,16 @@ import { attachDocumentSocket } from '../apps/server/src/document-socket.mts';
 import { createInboundBudget } from '../apps/server/src/protocol-limits.mts';
 import { checkDiskChange } from '../apps/agent/src/disk-reconciliation.mjs';
 import { DiffCache } from '../apps/agent/src/diff-cache.mjs';
-import {
-  localisationAuditCacheKey,
-  prepareLocalisationAudit,
-} from '../apps/agent/src/localisation-audit.mjs';
+import { localisationAuditCacheKey, prepareLocalisationAudit } from '../apps/agent/src/localisation-audit.mjs';
 
 const hash = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const b64 = (text) => Buffer.from(text).toString('base64');
 const actor = { id: 'tester', displayName: 'Tester' };
 const deferred = () => {
   let resolve;
-  const promise = new Promise((done) => { resolve = done; });
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 };
 async function write(target, value) {
@@ -32,11 +31,22 @@ async function write(target, value) {
   await fs.writeFile(target, value);
 }
 class Room {
-  constructor(text) { this.text = text; this.messageQueue = Promise.resolve(); }
-  currentText() { return this.text; }
-  prepareReplacement(text) { return { value: text, stateBytes: text.length }; }
-  replacePrepared(prepared) { this.text = prepared.value; }
-  async flush() { await this.messageQueue; }
+  constructor(text) {
+    this.text = text;
+    this.messageQueue = Promise.resolve();
+  }
+  currentText() {
+    return this.text;
+  }
+  prepareReplacement(text) {
+    return { value: text, stateBytes: text.length };
+  }
+  replacePrepared(prepared) {
+    this.text = prepared.value;
+  }
+  async flush() {
+    await this.messageQueue;
+  }
 }
 
 test('ticket apply rechecks every room after all rooms are acquired and locked', async () => {
@@ -49,27 +59,39 @@ test('ticket apply rechecks every room after all rooms are acquired and locked',
   const gate = deferred();
   const entered = deferred();
   const rooms = new Map([
-    [`ticket-ticket:${files[0]}`, ticketA], [`main:${files[0]}`, mainA],
-    [`ticket-ticket:${files[1]}`, ticketB], [`main:${files[1]}`, mainB],
+    [`ticket-ticket:${files[0]}`, ticketA],
+    [`main:${files[0]}`, mainA],
+    [`ticket-ticket:${files[1]}`, ticketB],
+    [`main:${files[1]}`, mainB],
   ]);
   const registry = {
     withRoomsLocked: RoomRegistry.prototype.withRoomsLocked,
     assertBatchStateBudget() {},
     async get(id) {
-      if (id === `ticket-ticket:${files[1]}`) { entered.resolve(); await gate.promise; }
+      if (id === `ticket-ticket:${files[1]}`) {
+        entered.resolve();
+        await gate.promise;
+      }
       return rooms.get(id);
     },
   };
-  const service = new TicketService({
-    get: () => ticket,
-    async systemStatus() { throw new Error('must not apply'); },
-  }, registry);
-  const pending = service.apply(actor, ticket.id, { results: files.map((file, index) => ({
-    path: file,
-    ticketHash: hash(index ? 'ticket-b' : 'ticket-a'),
-    mainHash: hash(index ? 'base-b' : 'base-a'),
-    textBase64: b64(index ? 'merged-b' : 'merged-a'),
-  })) });
+  const service = new TicketService(
+    {
+      get: () => ticket,
+      async systemStatus() {
+        throw new Error('must not apply');
+      },
+    },
+    registry,
+  );
+  const pending = service.apply(actor, ticket.id, {
+    results: files.map((file, index) => ({
+      path: file,
+      ticketHash: hash(index ? 'ticket-b' : 'ticket-a'),
+      mainHash: hash(index ? 'base-b' : 'base-a'),
+      textBase64: b64(index ? 'merged-b' : 'merged-a'),
+    })),
+  });
   await entered.promise;
   mainA.text = 'new concurrent edit';
   gate.resolve();
@@ -83,20 +105,36 @@ test('ticket rebase verifies the new Git base before replacing room text', async
     const file = 'localisation/russian/a.yml';
     const store = new TicketStore(temporary, write);
     const ticket = await store.create(actor, {
-      title: 'Test', baseBranch: 'main', baseCommit: 'a'.repeat(40), files: [file],
+      title: 'Test',
+      baseBranch: 'main',
+      baseCommit: 'a'.repeat(40),
+      files: [file],
     });
-    store.commitVerifier = { async verify() { throw new Error('Git verifier unavailable'); } };
+    store.commitVerifier = {
+      async verify() {
+        throw new Error('Git verifier unavailable');
+      },
+    };
     const room = new Room('old text');
     const service = new TicketService(store, {
-      async get() { return room; }, assertBatchStateBudget() {},
+      async get() {
+        return room;
+      },
+      assertBatchStateBudget() {},
     });
-    await assert.rejects(service.rebase(actor, ticket.id, {
-      baseBranch: 'main', baseCommit: 'b'.repeat(40),
-      results: [{ path: file, ticketHash: hash('old text'), textBase64: b64('rebased text') }],
-    }), /Git verifier unavailable/u);
+    await assert.rejects(
+      service.rebase(actor, ticket.id, {
+        baseBranch: 'main',
+        baseCommit: 'b'.repeat(40),
+        results: [{ path: file, ticketHash: hash('old text'), textBase64: b64('rebased text') }],
+      }),
+      /Git verifier unavailable/u,
+    );
     assert.equal(room.text, 'old text');
     assert.equal(store.get(ticket.id).baseCommit, 'a'.repeat(40));
-  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+  } finally {
+    await fs.rm(temporary, { recursive: true, force: true });
+  }
 });
 
 test('deleting a room wins over an already running persistence write', async () => {
@@ -111,8 +149,12 @@ test('deleting a room wins over an already running persistence write', async () 
     await write(target, value);
   });
   const room = {
-    hash: digest, clients: new Set(), destroyed: false,
-    destroy() { this.destroyed = true; },
+    hash: digest,
+    clients: new Set(),
+    destroyed: false,
+    destroy() {
+      this.destroyed = true;
+    },
     updatePath: path.join(temporary, 'documents', `${digest}.update`),
     metadataPath: path.join(temporary, 'documents', `${digest}.json`),
     historyPath: path.join(temporary, 'documents', `${digest}.history.json`),
@@ -146,10 +188,10 @@ function roomPersistenceFixture(t, writeUpdate) {
   return room;
 }
 
-test('room persistence reaches its deadline during continuous edits', async t => {
+test('room persistence reaches its deadline during continuous edits', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const snapshots = [];
-  const room = roomPersistenceFixture(t, data => snapshots.push(data));
+  const room = roomPersistenceFixture(t, (data) => snapshots.push(data));
   const content = room.document.getText('content');
   for (let index = 0; index < 20; index++) {
     content.insert(content.length, 'x');
@@ -163,7 +205,7 @@ test('room persistence reaches its deadline during continuous edits', async t =>
   assert.equal(restored.getText('content').toString(), 'x'.repeat(20));
 });
 
-test('room persistence retries a failed write without waiting for further edits', async t => {
+test('room persistence retries a failed write without waiting for further edits', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let attempts = 0;
   const room = roomPersistenceFixture(t, () => {
@@ -178,7 +220,7 @@ test('room persistence retries a failed write without waiting for further edits'
   assert.equal(attempts, 2);
 });
 
-test('a Git refresh keeps the anchors of delayed edits between disjoint changes', async t => {
+test('a Git refresh keeps the anchors of delayed edits between disjoint changes', async (t) => {
   const room = roomPersistenceFixture(t, () => {});
   const original = 'l_russian:\n a:0 "Один"\n b:0 "Два лишнее"\n c:0 "Три"\n';
   const next = original.replace('Один', 'Один из Git').replace('Три', 'Три из Git');
@@ -203,11 +245,13 @@ test('a Git refresh keeps the anchors of delayed edits between disjoint changes'
   assert.equal(peerContent.toString(), room.currentText());
 });
 
-test('prepared replacements preserve unchanged text within edited lines and budget the applied update', t => {
+test('prepared replacements preserve unchanged text within edited lines and budget the applied update', (t) => {
   const room = roomPersistenceFixture(t, () => {});
   const original = 'l_russian:\r\n obsolete:0 "Old"\r\n key:0 "Старое 😀 конец"\r\n last:0 "End"';
-  const next = original.replace(' obsolete:0 "Old"\r\n', '')
-    .replace('Старое', 'Новое').replace(' last:0', ' added:0 "New"\r\n last:0');
+  const next = original
+    .replace(' obsolete:0 "Old"\r\n', '')
+    .replace('Старое', 'Новое')
+    .replace(' last:0', ' added:0 "New"\r\n last:0');
   room.replaceText(original, null);
   const peer = new Y.Doc();
   t.after(() => peer.destroy());
@@ -236,12 +280,17 @@ test('a detached binding ignores a disk read that completes late', async () => {
   const client = { documents: new Map([[absolutePath, state]]), send() {} };
   let merged = false;
   const binding = {
-    ticketId: '', paused: false, synced: true, gitWritable: true,
+    ticketId: '',
+    paused: false,
+    synced: true,
+    gitWritable: true,
     hub: { gitOperationInProgress: () => false, readGitHeadText: () => before },
     readDiskText: () => gate.promise,
     localFileText: () => before,
     text: { toString: () => before },
-    finishExternalMerge() { merged = true; },
+    finishExternalMerge() {
+      merged = true;
+    },
   };
   state.binding = binding;
   const pending = checkDiskChange(binding, client, absolutePath, state);
@@ -260,12 +309,18 @@ test('a closing binding ignores a disk read that completes after its recovery sn
   const client = { documents: new Map([[absolutePath, state]]), send() {} };
   let merged = false;
   const binding = {
-    ticketId: '', closing: false, paused: false, synced: true, gitWritable: true,
+    ticketId: '',
+    closing: false,
+    paused: false,
+    synced: true,
+    gitWritable: true,
     hub: { gitOperationInProgress: () => false, readGitHeadText: () => before },
     readDiskText: () => gate.promise,
     localFileText: () => before,
     text: { toString: () => before },
-    finishExternalMerge() { merged = true; },
+    finishExternalMerge() {
+      merged = true;
+    },
   };
   state.binding = binding;
   const pending = checkDiskChange(binding, client, absolutePath, state);
@@ -288,28 +343,46 @@ test('localisation audit value and cache key come from the same file snapshot', 
     await cache.set('localisation-audit', prepared.cacheKey, prepared.create());
     assert.equal((await cache.get('localisation-audit', prepared.cacheKey)).rows[0].english.text, 'original');
     assert.notEqual(await localisationAuditCacheKey(temporary, ru), prepared.cacheKey);
-  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+  } finally {
+    await fs.rm(temporary, { recursive: true, force: true });
+  }
 });
 
 test('queued CRDT updates are re-authorised immediately before application', async () => {
   const registry = { persistedBytesFor: () => 0, assertStateBudget() {} };
-  const room = new DocumentRoom(os.tmpdir(), 'ticket-test:localisation/russian/a.yml', 'test', { required: false }, registry);
+  const room = new DocumentRoom(
+    os.tmpdir(),
+    'ticket-test:localisation/russian/a.yml',
+    'test',
+    { required: false },
+    registry,
+  );
   const socket = new EventEmitter();
   Object.assign(socket, {
-    readyState: 1, bufferedAmount: 0, gitWritable: true,
-    inboundBudget: createInboundBudget(), send() {}, close() {},
+    readyState: 1,
+    bufferedAmount: 0,
+    gitWritable: true,
+    inboundBudget: createInboundBudget(),
+    send() {},
+    close() {},
   });
   let writable = true;
   attachDocumentSocket({
-    socket, documentId: room.documentId, room,
-    ticketStore: { documentWritable: () => writable }, isShuttingDown: () => false,
+    socket,
+    documentId: room.documentId,
+    room,
+    ticketStore: { documentWritable: () => writable },
+    isShuttingDown: () => false,
     authoriseSession() {},
   });
   const gate = deferred();
   const entered = deferred();
   room.enqueueMessage(() => gate.promise);
   const receiveBinary = room.receiveBinary.bind(room);
-  room.receiveBinary = (...args) => { entered.resolve(); return receiveBinary(...args); };
+  room.receiveBinary = (...args) => {
+    entered.resolve();
+    return receiveBinary(...args);
+  };
   const source = new Y.Doc();
   source.getText('content').insert(0, 'late edit');
   try {

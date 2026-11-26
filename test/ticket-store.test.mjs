@@ -50,11 +50,18 @@ test('ticket validation rejects unsafe input and makes terminal tickets read-onl
   try {
     const store = new TicketStore(temporary, atomicWrite);
     await store.initialise();
-    await assert.rejects(store.create(actor, {
-      title: 'Escape', baseBranch: '../secret', baseCommit: 'b'.repeat(40), files: ['../outside.yml'],
-    }));
+    await assert.rejects(
+      store.create(actor, {
+        title: 'Escape',
+        baseBranch: '../secret',
+        baseCommit: 'b'.repeat(40),
+        files: ['../outside.yml'],
+      }),
+    );
     const ticket = await store.create(actor, {
-      title: 'Closed ticket', baseBranch: 'country-dev', baseCommit: 'c'.repeat(40),
+      title: 'Closed ticket',
+      baseBranch: 'country-dev',
+      baseCommit: 'c'.repeat(40),
       files: ['localisation/russian/country_l_russian.yml'],
     });
     await store.update(actor, ticket.id, { status: 'closed' });

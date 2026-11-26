@@ -10,7 +10,8 @@ export async function publishReviewHostEndpoint(directory, { port, token }) {
   const origin = new URL(`http://127.0.0.1:${port}`).origin;
   // Native Review signs wide strings, whose Windows representation is UTF-16LE.
   const proof = createHmac('sha256', Buffer.from(token, 'utf16le'))
-    .update(`endpoint\n${origin}\n`, 'utf16le').digest('hex');
+    .update(`endpoint\n${origin}\n`, 'utf16le')
+    .digest('hex');
   try {
     await fs.writeFile(temporary, `${process.pid} ${proof}\n`, { mode: 0o600, flag: 'wx' });
     await fs.rename(temporary, destination);
@@ -35,7 +36,9 @@ export function createReviewHostLauncher({ start = spawn, timeout = 25_000 } = {
     const id = randomUUID();
     fragment.set('launch', id);
     const child = start(executable, [`${origin}/#${fragment}`], {
-      detached: true, stdio: 'ignore', windowsHide: false,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
     });
     child.unref();
     await new Promise((resolve, reject) => {

@@ -14,27 +14,34 @@ async function atomicWrite(target, content) {
 test('schema 1 authentication migrates without retaining personal audit metadata', { timeout: 30000 }, async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'eaw-hub-auth-migration-'));
   const token = 'old-session-token';
-  await fs.writeFile(path.join(directory, 'auth.json'), JSON.stringify({
-    schema: 1,
-    users: [{
-      id: 'legacy-admin',
-      displayName: 'Legacy Admin',
-      role: 'admin',
-      enabled: true,
-      createdAt: '2025-01-01T00:00:00.000Z',
-      lastSeenAt: '2025-01-02T00:00:00.000Z',
-      deviceName: 'Personal PC',
-      spellingWords: ['Эквестрия'],
-    }],
-    invites: [],
-    sessions: [{
-      id: 'legacy-session',
-      userId: 'legacy-admin',
-      tokenHash: crypto.createHash('sha256').update(token).digest('hex'),
-      createdAt: '2025-01-01T00:00:00.000Z',
-      deviceName: 'Personal PC',
-    }],
-  }));
+  await fs.writeFile(
+    path.join(directory, 'auth.json'),
+    JSON.stringify({
+      schema: 1,
+      users: [
+        {
+          id: 'legacy-admin',
+          displayName: 'Legacy Admin',
+          role: 'admin',
+          enabled: true,
+          createdAt: '2025-01-01T00:00:00.000Z',
+          lastSeenAt: '2025-01-02T00:00:00.000Z',
+          deviceName: 'Personal PC',
+          spellingWords: ['Эквестрия'],
+        },
+      ],
+      invites: [],
+      sessions: [
+        {
+          id: 'legacy-session',
+          userId: 'legacy-admin',
+          tokenHash: crypto.createHash('sha256').update(token).digest('hex'),
+          createdAt: '2025-01-01T00:00:00.000Z',
+          deviceName: 'Personal PC',
+        },
+      ],
+    }),
+  );
 
   const auth = new AuthStore(directory, atomicWrite, 'required');
   try {
@@ -45,7 +52,10 @@ test('schema 1 authentication migrates without retaining personal audit metadata
     const recovery = await auth.issueRecoveryCode(legacyAdmin);
     await auth.confirmRecoveryCode(legacyAdmin, recovery.code);
     const migratedLogin = await auth.recoverPassword(
-      legacyAdmin.displayName, recovery.code, 'Legacy-admin-new-password-932!', 'migration-test',
+      legacyAdmin.displayName,
+      recovery.code,
+      'Legacy-admin-new-password-932!',
+      'migration-test',
     );
     assert.equal((await auth.authenticate(migratedLogin.token)).displayName, 'Legacy Admin');
     await assert.rejects(fs.access(path.join(directory, 'bootstrap-invite.txt')), { code: 'ENOENT' });
@@ -55,8 +65,14 @@ test('schema 1 authentication migrates without retaining personal audit metadata
     assert.deepEqual(migratedState.spellingWords, ['эквестрия']);
     assert.equal('spellingWords' in migratedState.users[0], false);
     for (const forbidden of [
-      'createdAt', 'lastSeenAt', 'deviceName', 'displayNameKey', 'Personal PC',
-      bootstrapCode, recovery.code, 'Legacy-admin-new-password-932!',
+      'createdAt',
+      'lastSeenAt',
+      'deviceName',
+      'displayNameKey',
+      'Personal PC',
+      bootstrapCode,
+      recovery.code,
+      'Legacy-admin-new-password-932!',
     ]) {
       assert.equal(persisted.includes(forbidden), false, `migration retained ${forbidden}`);
     }

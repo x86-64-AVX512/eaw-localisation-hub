@@ -2,13 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRecoveryBanner } from '../apps/review/src/recovery-banner.ts';
 
-test('recovery opens the file picker after issuance and retries confirmation without rewriting the file', async t => {
+test('recovery opens the file picker after issuance and retries confirmation without rewriting the file', async (t) => {
   const calls = [];
   let click;
-  const action = { addEventListener(_event, listener) { click = listener; } };
-  const elements = new Map([['#recovery-action', action], ['#recovery-banner', {}], ['#recovery-message', {}]]);
+  const action = {
+    addEventListener(_event, listener) {
+      click = listener;
+    },
+  };
+  const elements = new Map([
+    ['#recovery-action', action],
+    ['#recovery-banner', {}],
+    ['#recovery-message', {}],
+  ]);
   const state = { recoveryStatus: 'setup_required', user: 'Translator' };
-  const document = { querySelector: selector => elements.get(selector) };
+  const document = { querySelector: (selector) => elements.get(selector) };
   let pickerCancelled = true;
   const window = {
     async showSaveFilePicker() {
@@ -17,20 +25,31 @@ test('recovery opens the file picker after issuance and retries confirmation wit
       return {
         async createWritable() {
           return {
-            async write(text) { assert.match(text, /fixture-code/u); calls.push('write'); },
-            async close() { calls.push('close'); },
+            async write(text) {
+              assert.match(text, /fixture-code/u);
+              calls.push('write');
+            },
+            async close() {
+              calls.push('close');
+            },
           };
         },
       };
     },
   };
   Object.assign(globalThis, { document, window });
-  t.after(() => { delete globalThis.document; delete globalThis.window; });
+  t.after(() => {
+    delete globalThis.document;
+    delete globalThis.window;
+  });
   let online = true;
   const banner = createRecoveryBanner({
     state,
     showToast() {},
-    send(message) { calls.push(message.type); return online; },
+    send(message) {
+      calls.push(message.type);
+      return online;
+    },
   });
   banner.refresh();
   await click();

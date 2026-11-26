@@ -21,7 +21,8 @@ export async function requestAgentJson(options, route, init = {}, lifetimeSignal
   arm(timeoutMilliseconds ?? idleMilliseconds);
   try {
     const response = await fetch(serverHttpUrl(options.server, route), {
-      ...request, signal: combined,
+      ...request,
+      signal: combined,
       headers: { Authorization: `Bearer ${options.token}`, 'Content-Type': 'application/json', ...(headers ?? {}) },
     });
     arm(idleMilliseconds);
@@ -34,11 +35,18 @@ export async function requestAgentJson(options, route, init = {}, lifetimeSignal
       arm(idleMilliseconds);
     }
     let payload;
-    try { payload = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-    catch { payload = {}; }
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new TypeError('Authentication API returned a non-object response');
-    if (!response.ok) throw Object.assign(new Error(String(payload.error || `Authentication API failed with HTTP ${response.status}`)),
-      { status: response.status, code: payload.code });
+    try {
+      payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    } catch {
+      payload = {};
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+      throw new TypeError('Authentication API returned a non-object response');
+    if (!response.ok)
+      throw Object.assign(
+        new Error(String(payload.error || `Authentication API failed with HTTP ${response.status}`)),
+        { status: response.status, code: payload.code },
+      );
     return payload;
   } catch (error) {
     if (deadline.signal.aborted) {

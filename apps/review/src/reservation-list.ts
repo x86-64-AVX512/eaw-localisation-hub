@@ -13,7 +13,7 @@ interface ReservationGroup {
   entries: HTMLElement;
 }
 
-const groupKey = (item: ReviewReservation) => item.assigneeId ? `id:${item.assigneeId}` : `name:${item.assignee}`;
+const groupKey = (item: ReviewReservation) => (item.assigneeId ? `id:${item.assigneeId}` : `name:${item.assignee}`);
 
 function orderChildren(container: HTMLElement, nodes: HTMLElement[]): void {
   nodes.forEach((node, index) => {
@@ -24,7 +24,11 @@ function orderChildren(container: HTMLElement, nodes: HTMLElement[]): void {
 }
 
 export function createReservationList({
-  state, jumpToBytes, showToast, deleteReservation, onSelect,
+  state,
+  jumpToBytes,
+  showToast,
+  deleteReservation,
+  onSelect,
 }: Pick<CollaborationPanelOptions, 'state' | 'jumpToBytes' | 'showToast'> & {
   deleteReservation: HTMLButtonElement;
   onSelect: () => void;
@@ -49,18 +53,27 @@ export function createReservationList({
         renderReservations();
         onSelect();
         if (current.status !== 'orphaned') {
-          try { jumpToBytes(current.startByte, current.endByte); }
-          catch { showToast(uiText("Границы брони обновляются."), true); }
+          try {
+            jumpToBytes(current.startByte, current.endByte);
+          } catch {
+            showToast(uiText('Границы брони обновляются.'), true);
+          }
         }
       });
       reservationNodes.set(item.id, button);
     }
     const label = [
-      uiText("Ключей: {0}", item.keyCount),
-      item.status === 'orphaned' ? uiText("границы потеряны") : item.status === 'empty' ? uiText("пустой диапазон") : '',
-      item.createdBy && item.createdBy !== item.assignee ? uiText("создал {0}", item.createdBy) : '',
+      uiText('Ключей: {0}', item.keyCount),
+      item.status === 'orphaned'
+        ? uiText('границы потеряны')
+        : item.status === 'empty'
+          ? uiText('пустой диапазон')
+          : '',
+      item.createdBy && item.createdBy !== item.assignee ? uiText('создал {0}', item.createdBy) : '',
       item.comment,
-    ].filter(Boolean).join(' · ');
+    ]
+      .filter(Boolean)
+      .join(' · ');
     if (button.textContent !== label) button.textContent = label;
     button.style.setProperty('--item-color', safeColor(item.color));
     button.setAttribute('aria-pressed', String(state.selectedReservation === item.id));
@@ -121,7 +134,7 @@ export function createReservationList({
         group.profile.replaceChildren(avatarElement(assignee, color, avatar, 'avatar-small'), name);
         group.profileKey = profileKey;
       }
-      group.count.textContent = uiText("Броней: {0}", items.length);
+      group.count.textContent = uiText('Броней: {0}', items.length);
       orderChildren(group.entries, items.map(reservationButton));
       groups.push(group.node);
     }
@@ -129,7 +142,8 @@ export function createReservationList({
     for (const id of reservationNodes.keys()) if (!state.reservations.has(id)) reservationNodes.delete(id);
     if (!groups.length) {
       if (!reservationList.firstElementChild?.classList.contains('empty-list')) {
-        reservationList.replaceChildren(); emptyList(reservationList, uiText("Броней нет."));
+        reservationList.replaceChildren();
+        emptyList(reservationList, uiText('Броней нет.'));
       }
     } else {
       orderChildren(reservationList, groups);

@@ -36,7 +36,8 @@ export function createScrollSync({ editor, initialPair = '' }: { editor: ScrollE
   let applying = false;
 
   function setPair(nextPair: string): void {
-    channel?.close(); channel = null;
+    channel?.close();
+    channel = null;
     pair = String(nextPair ?? '');
     control.hidden = !pair;
     if (!pair) return;
@@ -53,7 +54,9 @@ export function createScrollSync({ editor, initialPair = '' }: { editor: ScrollE
       if (!line) return;
       applying = true;
       editor.setScrollTop(editor.getTopForLineNumber(line));
-      requestAnimationFrame(() => { applying = false; });
+      requestAnimationFrame(() => {
+        applying = false;
+      });
     });
   }
 
@@ -66,5 +69,11 @@ export function createScrollSync({ editor, initialPair = '' }: { editor: ScrollE
     if (key) channel.postMessage({ type: 'scroll', key });
   });
   setPair(initialPair);
-  return { setPair, dispose() { subscription.dispose(); channel?.close(); } };
+  return {
+    setPair,
+    dispose() {
+      subscription.dispose();
+      channel?.close();
+    },
+  };
 }

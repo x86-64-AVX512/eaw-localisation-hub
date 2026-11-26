@@ -7,10 +7,25 @@ import { requiredElement } from './dom-elements.ts';
 import type { CollaborationPanelOptions, ReviewExternalConflict } from './review-state.ts';
 
 export function createCollaborationPanel({
-  state, editor, send, selectionBytes, jumpToBytes, showToast, openConflictDiff, canEditReservations, anchor,
+  state,
+  editor,
+  send,
+  selectionBytes,
+  jumpToBytes,
+  showToast,
+  openConflictDiff,
+  canEditReservations,
+  anchor,
 }: CollaborationPanelOptions) {
   const reservationEditor = createReservationEditor({
-    state, editor, send, selectionBytes, jumpToBytes, showToast, canEditReservations, anchor,
+    state,
+    editor,
+    send,
+    selectionBytes,
+    jumpToBytes,
+    showToast,
+    canEditReservations,
+    anchor,
   });
   const presenceList = requiredElement<HTMLElement>('#presence-list');
   const presenceCount = requiredElement<HTMLElement>('#presence-count');
@@ -21,7 +36,11 @@ export function createCollaborationPanel({
   const conflictCount = requiredElement<HTMLElement>('#conflict-count');
   const deleteReservation = requiredElement<HTMLButtonElement>('#reservation-delete');
   const renderReservations = createReservationList({
-    state, jumpToBytes, showToast, deleteReservation, onSelect: reservationEditor.refresh,
+    state,
+    jumpToBytes,
+    showToast,
+    deleteReservation,
+    onSelect: reservationEditor.refresh,
   });
   const keepCollaborative = requiredElement<HTMLButtonElement>('#conflict-collaborative');
   const useExternal = requiredElement<HTMLButtonElement>('#conflict-external');
@@ -31,7 +50,8 @@ export function createCollaborationPanel({
       editor.setPosition({ lineNumber: 1, column: 1 });
       editor.revealLineInCenter(1);
     } else {
-      const line = model?.getLinesContent().findIndex((value) => value.trimStart().startsWith(`${conflict.key}:`)) ?? -1;
+      const line =
+        model?.getLinesContent().findIndex((value) => value.trimStart().startsWith(`${conflict.key}:`)) ?? -1;
       if (line >= 0) {
         editor.setPosition({ lineNumber: line + 1, column: 1 });
         editor.revealLineInCenter(line + 1);
@@ -42,21 +62,43 @@ export function createCollaborationPanel({
 
   function renderPresences() {
     presenceList.replaceChildren();
-    presenceList.append(listButton(uiText("{0} (вы)", state.user), uiText("Текущий Review-клиент"), state.color,
-      false, () => editor.focus(), state.avatarBase64));
+    presenceList.append(
+      listButton(
+        uiText('{0} (вы)', state.user),
+        uiText('Текущий Review-клиент'),
+        state.color,
+        false,
+        () => editor.focus(),
+        state.avatarBase64,
+      ),
+    );
     const values = [...state.presences.values()].sort((left, right) => left.user.localeCompare(right.user, 'ru'));
     for (const presence of values) {
-      let line = uiText("позиция обновляется");
+      let line = uiText('позиция обновляется');
       try {
         const model = editor.getModel();
-        if (!model) throw new Error(uiText("Редактор ещё не открыл документ."));
+        if (!model) throw new Error(uiText('Редактор ещё не открыл документ.'));
         const position = model.getPositionAt(byteToUtf16(editor.getValue(), presence.positionByte));
-        line = uiText("строка {0}", position.lineNumber);
-      } catch { /* A following presence update will supply positions for the new text. */ }
-      presenceList.append(listButton(presence.user, line, presence.color, false, () => {
-        try { jumpToBytes(presence.positionByte, presence.anchorByte); }
-        catch { showToast(uiText("Позиция участника обновляется."), true); }
-      }, presence.avatarBase64));
+        line = uiText('строка {0}', position.lineNumber);
+      } catch {
+        /* A following presence update will supply positions for the new text. */
+      }
+      presenceList.append(
+        listButton(
+          presence.user,
+          line,
+          presence.color,
+          false,
+          () => {
+            try {
+              jumpToBytes(presence.positionByte, presence.anchorByte);
+            } catch {
+              showToast(uiText('Позиция участника обновляется.'), true);
+            }
+          },
+          presence.avatarBase64,
+        ),
+      );
     }
     presenceCount.textContent = String(values.length + 1);
   }
@@ -67,7 +109,7 @@ export function createCollaborationPanel({
     state.reservationTargets.forEach((target, index) => {
       const option = document.createElement('option');
       option.value = String(index);
-      option.textContent = `${target.displayName}${target.isSelf ? uiText(" (вы)") : ''}`;
+      option.textContent = `${target.displayName}${target.isSelf ? uiText(' (вы)') : ''}`;
       reservationTarget.append(option);
     });
     if ([...reservationTarget.options].some((option) => option.value === previous)) reservationTarget.value = previous;
@@ -80,14 +122,16 @@ export function createCollaborationPanel({
     conflictSection.hidden = values.length === 0;
     for (const item of values) {
       const identity = `${item.source || 'disk'}:${item.key}`;
-      conflictList.append(listButton(item.label, item.detail ?? '', '#ff9b57', state.selectedConflict === identity, () => {
-        state.selectedConflict = identity;
-        keepCollaborative.disabled = false;
-        useExternal.disabled = false;
-        renderConflicts();
-        jumpToConflict(item);
-        openConflictDiff?.(item);
-      }));
+      conflictList.append(
+        listButton(item.label, item.detail ?? '', '#ff9b57', state.selectedConflict === identity, () => {
+          state.selectedConflict = identity;
+          keepCollaborative.disabled = false;
+          useExternal.disabled = false;
+          renderConflicts();
+          jumpToConflict(item);
+          openConflictDiff?.(item);
+        }),
+      );
     }
     conflictCount.textContent = String(values.length);
     if (!state.externalConflicts.has(state.selectedConflict)) {
@@ -108,12 +152,17 @@ export function createCollaborationPanel({
 
   requiredElement<HTMLButtonElement>('#reservation-create').addEventListener('click', () => {
     const range = selectionBytes();
-    if (range.start === range.end) return showToast(uiText("Сначала выделите один или несколько ключей."), true);
+    if (range.start === range.end) return showToast(uiText('Сначала выделите один или несколько ключей.'), true);
     const target = state.reservationTargets[Number(reservationTarget.value)];
-    if (!target) return showToast(uiText("Не удалось определить владельца брони."), true);
+    if (!target) return showToast(uiText('Не удалось определить владельца брони.'), true);
     send({
-      type: 'reservationCreate', path: state.path, startByte: range.start, endByte: range.end,
-      assigneeId: target.id, assignee: target.displayName, assigneeColor: target.color,
+      type: 'reservationCreate',
+      path: state.path,
+      startByte: range.start,
+      endByte: range.end,
+      assigneeId: target.id,
+      assignee: target.displayName,
+      assigneeColor: target.color,
       comment: reservationComment.value.trim(),
     });
   });
@@ -122,8 +171,7 @@ export function createCollaborationPanel({
     const model = editor.getModel();
     if (!selection || !model) return;
     const offset = model.getOffsetAt(selection.getPosition());
-    send({ type: 'reservationDeleteAt', path: state.path,
-      positionByte: utf16ToByte(editor.getValue(), offset) });
+    send({ type: 'reservationDeleteAt', path: state.path, positionByte: utf16ToByte(editor.getValue(), offset) });
   });
   deleteReservation.addEventListener('click', () => {
     if (state.selectedReservation && renderReservations.selectedVisible()) {
@@ -132,10 +180,15 @@ export function createCollaborationPanel({
   });
   function resolveConflict(choice: 'collaborative' | 'external'): void {
     const conflict = state.externalConflicts.get(state.selectedConflict);
-    if (conflict) send({
-      type: 'externalConflictResolve', path: state.path,
-      key: conflict.key, source: conflict.source || 'disk', conflictId: conflict.conflictId, choice,
-    });
+    if (conflict)
+      send({
+        type: 'externalConflictResolve',
+        path: state.path,
+        key: conflict.key,
+        source: conflict.source || 'disk',
+        conflictId: conflict.conflictId,
+        choice,
+      });
   }
   keepCollaborative.addEventListener('click', () => resolveConflict('collaborative'));
   useExternal.addEventListener('click', () => resolveConflict('external'));

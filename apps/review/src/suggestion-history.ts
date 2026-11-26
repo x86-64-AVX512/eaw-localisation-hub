@@ -5,8 +5,7 @@ export interface SuggestionHistoryAction {
   [key: string]: unknown;
 }
 
-export type SuggestionHistoryCommand = SuggestionHistoryAction
-  | { type: 'suggestionDelete'; path: string; id: string };
+export type SuggestionHistoryCommand = SuggestionHistoryAction | { type: 'suggestionDelete'; path: string; id: string };
 
 export function createSuggestionHistory(send: (message: SuggestionHistoryCommand) => void) {
   let actions: SuggestionHistoryAction[] = [];

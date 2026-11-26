@@ -5,7 +5,8 @@ import { assertCanManageTicket } from './ticket-store.mjs';
 import { currentDocumentActor } from './document-actor.mjs';
 
 function requireDocumentEdit(actor, file) {
-  if (!canEditDocument(actor, file)) throw new AuthError('Mod contributors may edit English localisation files only', 403, 'document_edit_forbidden');
+  if (!canEditDocument(actor, file))
+    throw new AuthError('Mod contributors may edit English localisation files only', 403, 'document_edit_forbidden');
 }
 
 function digest(text) {
@@ -40,10 +41,12 @@ function assertSameMutableTicket(ticketStore, original) {
   if (current.archivedAt || ['applied', 'closed'].includes(current.status)) {
     throw new AuthError('Ticket is no longer writable', 409, 'ticket_read_only');
   }
-  if (current.baseBranch !== original.baseBranch
-      || current.baseCommit !== original.baseCommit
-      || current.files.length !== original.files.length
-      || current.files.some((file, index) => file !== original.files[index])) {
+  if (
+    current.baseBranch !== original.baseBranch ||
+    current.baseCommit !== original.baseCommit ||
+    current.files.length !== original.files.length ||
+    current.files.some((file, index) => file !== original.files[index])
+  ) {
     throw new AuthError('Ticket changed during operation', 409, 'ticket_revision_changed');
   }
   return current;
@@ -64,9 +67,7 @@ export class TicketService {
   }
 
   withRoomsLocked(rooms, operation) {
-    return this.roomRegistry.withRoomsLocked
-      ? this.roomRegistry.withRoomsLocked(rooms, operation)
-      : operation();
+    return this.roomRegistry.withRoomsLocked ? this.roomRegistry.withRoomsLocked(rooms, operation) : operation();
   }
 
   async snapshot(id, requestedFile = '') {
@@ -96,7 +97,8 @@ export class TicketService {
   async apply(actor, id, body) {
     actor = currentDocumentActor(this.roomRegistry.authStore, actor);
     const ticket = this.ticketStore.get(id);
-    if (isModContributorOnly(actor)) throw new AuthError('A translation role is required to apply tickets', 403, 'ticket_apply_forbidden');
+    if (isModContributorOnly(actor))
+      throw new AuthError('A translation role is required to apply tickets', 403, 'ticket_apply_forbidden');
     if (ticket.archivedAt || ['applied', 'closed'].includes(ticket.status)) {
       throw new AuthError('Ticket cannot be applied now', 409, 'ticket_read_only');
     }
@@ -109,30 +111,40 @@ export class TicketService {
     }
     let prepared;
     let applied;
-    await this.withRoomsLocked(roomPairs.flatMap(({ ticketRoom, mainRoom }) => [ticketRoom, mainRoom]), async () => {
-      actor = currentDocumentActor(this.roomRegistry.authStore, actor);
-      if (isModContributorOnly(actor)) throw new AuthError('A translation role is required to apply tickets', 403, 'ticket_apply_forbidden');
-      assertSameMutableTicket(this.ticketStore, ticket);
-      prepared = roomPairs.map(({ file, ticketRoom, mainRoom }) => {
-        const item = supplied.get(file);
-        if (digest(ticketRoom.currentText()) !== String(item.ticketHash)
-          || digest(mainRoom.currentText()) !== String(item.mainHash)) {
-          throw new AuthError('Ticket or main document changed during apply', 409, 'ticket_revision_changed');
-        }
-        return {
-          file,
-          mainRoom,
-          replacement: mainRoom.prepareReplacement(decodedText(item.textBase64, 'Applied text')),
-        };
-      });
-      this.roomRegistry.assertBatchStateBudget(prepared.map((item) => ({
-        room: item.mainRoom, stateBytes: item.replacement.stateBytes,
-      })));
-      for (const item of prepared) item.mainRoom.replacePrepared(item.replacement, actor, 'ticket-apply');
-      applied = await this.ticketStore.systemStatus(actor, id, 'applied', 'applied', {
-        files: prepared.length, baseCommit: ticket.baseCommit,
-      });
-    });
+    await this.withRoomsLocked(
+      roomPairs.flatMap(({ ticketRoom, mainRoom }) => [ticketRoom, mainRoom]),
+      async () => {
+        actor = currentDocumentActor(this.roomRegistry.authStore, actor);
+        if (isModContributorOnly(actor))
+          throw new AuthError('A translation role is required to apply tickets', 403, 'ticket_apply_forbidden');
+        assertSameMutableTicket(this.ticketStore, ticket);
+        prepared = roomPairs.map(({ file, ticketRoom, mainRoom }) => {
+          const item = supplied.get(file);
+          if (
+            digest(ticketRoom.currentText()) !== String(item.ticketHash) ||
+            digest(mainRoom.currentText()) !== String(item.mainHash)
+          ) {
+            throw new AuthError('Ticket or main document changed during apply', 409, 'ticket_revision_changed');
+          }
+          return {
+            file,
+            mainRoom,
+            replacement: mainRoom.prepareReplacement(decodedText(item.textBase64, 'Applied text')),
+          };
+        });
+        this.roomRegistry.assertBatchStateBudget(
+          prepared.map((item) => ({
+            room: item.mainRoom,
+            stateBytes: item.replacement.stateBytes,
+          })),
+        );
+        for (const item of prepared) item.mainRoom.replacePrepared(item.replacement, actor, 'ticket-apply');
+        applied = await this.ticketStore.systemStatus(actor, id, 'applied', 'applied', {
+          files: prepared.length,
+          baseCommit: ticket.baseCommit,
+        });
+      },
+    );
     await Promise.all(prepared.map((item) => item.mainRoom.flush()));
     return { ticket: applied };
   }
@@ -156,28 +168,34 @@ export class TicketService {
     }
     let prepared;
     let rebased;
-    await this.withRoomsLocked(rooms.map(({ room }) => room), async () => {
-      actor = currentDocumentActor(this.roomRegistry.authStore, actor);
-      assertCanManageTicket(actor, assertSameMutableTicket(this.ticketStore, ticket));
-      prepared = rooms.map(({ file, room }) => {
-        requireDocumentEdit(actor, file);
-        const item = supplied.get(file);
-        if (digest(room.currentText()) !== String(item.ticketHash)) {
-          throw new AuthError('Ticket changed during rebase', 409, 'ticket_revision_changed');
-        }
-        return {
-          room,
-          replacement: room.prepareReplacement(decodedText(item.textBase64, 'Rebased text')),
-        };
-      });
-      this.roomRegistry.assertBatchStateBudget(prepared.map((item) => ({
-        room: item.room, stateBytes: item.replacement.stateBytes,
-      })));
-      for (const item of prepared) item.room.replacePrepared(item.replacement, actor, 'ticket-rebase');
-      rebased = verifiedBase
-        ? await this.ticketStore.setVerifiedBase(actor, id, verifiedBase)
-        : await this.ticketStore.setBase(actor, id, body.baseBranch, body.baseCommit);
-    });
+    await this.withRoomsLocked(
+      rooms.map(({ room }) => room),
+      async () => {
+        actor = currentDocumentActor(this.roomRegistry.authStore, actor);
+        assertCanManageTicket(actor, assertSameMutableTicket(this.ticketStore, ticket));
+        prepared = rooms.map(({ file, room }) => {
+          requireDocumentEdit(actor, file);
+          const item = supplied.get(file);
+          if (digest(room.currentText()) !== String(item.ticketHash)) {
+            throw new AuthError('Ticket changed during rebase', 409, 'ticket_revision_changed');
+          }
+          return {
+            room,
+            replacement: room.prepareReplacement(decodedText(item.textBase64, 'Rebased text')),
+          };
+        });
+        this.roomRegistry.assertBatchStateBudget(
+          prepared.map((item) => ({
+            room: item.room,
+            stateBytes: item.replacement.stateBytes,
+          })),
+        );
+        for (const item of prepared) item.room.replacePrepared(item.replacement, actor, 'ticket-rebase');
+        rebased = verifiedBase
+          ? await this.ticketStore.setVerifiedBase(actor, id, verifiedBase)
+          : await this.ticketStore.setBase(actor, id, body.baseBranch, body.baseCommit);
+      },
+    );
     await Promise.all(prepared.map((item) => item.room.flush()));
     return { ticket: rebased };
   }
@@ -186,7 +204,8 @@ export class TicketService {
     actor = currentDocumentActor(this.roomRegistry.authStore, actor);
     assertCanManageTicket(actor, this.ticketStore.get(id));
     return this.ticketStore.systemStatus(actor, id, 'git_conflict', 'git_conflict', {
-      operation: String(operation).slice(0, 32), files: files.slice(0, 50),
+      operation: String(operation).slice(0, 32),
+      files: files.slice(0, 50),
     });
   }
 

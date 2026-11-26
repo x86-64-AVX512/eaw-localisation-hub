@@ -29,8 +29,11 @@ export function createAgentConnection(options: AgentConnectionOptions) {
     const deadline = performance.now() + timeoutMilliseconds;
     do {
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-    } while (activeSocket.readyState === WebSocket.OPEN
-      && activeSocket.bufferedAmount > 0 && performance.now() < deadline);
+    } while (
+      activeSocket.readyState === WebSocket.OPEN &&
+      activeSocket.bufferedAmount > 0 &&
+      performance.now() < deadline
+    );
   }
 
   function schedule() {
@@ -45,10 +48,15 @@ export function createAgentConnection(options: AgentConnectionOptions) {
 
   function connect() {
     if (disposed || socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
-    socket = new WebSocket(`ws://${location.host}/review-socket?token=${encodeURIComponent(token)}${multiplex ? '&multiplex=1' : ''}`);
+    socket = new WebSocket(
+      `ws://${location.host}/review-socket?token=${encodeURIComponent(token)}${multiplex ? '&multiplex=1' : ''}`,
+    );
     socket.addEventListener('message', (event) => {
-      try { onMessage(JSON.parse(event.data)); }
-      catch { onWaiting(0, uiText("Получено некорректное сообщение Agent.")); }
+      try {
+        onMessage(JSON.parse(event.data));
+      } catch {
+        onWaiting(0, uiText('Получено некорректное сообщение Agent.'));
+      }
     });
     socket.addEventListener('open', () => {
       retryDelay = 500;

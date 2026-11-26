@@ -1,6 +1,11 @@
 import type { ReviewComment, ReviewSuggestion } from './review-card-types.ts';
 import type { ReviewCardMessage } from './review-card-elements.ts';
-import type { ReviewPresence, ReviewReservation, ReviewReservationTarget, ReviewExternalConflict } from './review-state.ts';
+import type {
+  ReviewPresence,
+  ReviewReservation,
+  ReviewReservationTarget,
+  ReviewExternalConflict,
+} from './review-state.ts';
 import type { ActiveProjection } from './editing-mode.ts';
 import type { DocumentVariants } from './document-variants-types.ts';
 import type { HistoryEntry } from './history-panel.ts';
@@ -19,23 +24,44 @@ export interface BootstrapPayload {
   error?: string;
 }
 
-
 export function createAppState() {
   return {
-    path: '', relativePath: '', workspace: '', ticket: null as Ticket | null,
-    user: '', userId: '', roles: [] as string[], color: '#6aa9ff', avatarBase64: '', ready: false, applyingRemote: false,
-    suggestions: new Map<string, ReviewSuggestion>(), comments: new Map<string, ReviewComment>(),
-    presences: new Map<string, ReviewPresence>(), reservations: new Map<string, ReviewReservation>(),
-    reservationTargets: [] as ReviewReservationTarget[], externalConflicts: new Map<string, ReviewExternalConflict>(),
-    selectedReservation: '', selectedConflict: '',
+    path: '',
+    relativePath: '',
+    workspace: '',
+    ticket: null as Ticket | null,
+    user: '',
+    userId: '',
+    roles: [] as string[],
+    color: '#6aa9ff',
+    avatarBase64: '',
+    ready: false,
+    applyingRemote: false,
+    suggestions: new Map<string, ReviewSuggestion>(),
+    comments: new Map<string, ReviewComment>(),
+    presences: new Map<string, ReviewPresence>(),
+    reservations: new Map<string, ReviewReservation>(),
+    reservationTargets: [] as ReviewReservationTarget[],
+    externalConflicts: new Map<string, ReviewExternalConflict>(),
+    selectedReservation: '',
+    selectedConflict: '',
     reservationUpdates: false,
-    discussionUpdates: false, draftScope: '',
-    suggestionMessages: new Map<string, ReviewCardMessage[]>(), commentMessages: new Map<string, ReviewCardMessage[]>(),
-    recoveryStatus: '', temporaryPassword: false,
-    history: [] as HistoryEntry[], historyHeadId: '', editingSuggestionId: '',
+    discussionUpdates: false,
+    draftScope: '',
+    suggestionMessages: new Map<string, ReviewCardMessage[]>(),
+    commentMessages: new Map<string, ReviewCardMessage[]>(),
+    recoveryStatus: '',
+    temporaryPassword: false,
+    history: [] as HistoryEntry[],
+    historyHeadId: '',
+    editingSuggestionId: '',
     suggestionProjection: null as ActiveProjection | null,
-    documentView: 'shared', documentVariants: null as DocumentVariants | null,
+    documentView: 'shared',
+    documentVariants: null as DocumentVariants | null,
     reviewDocument: null as ReturnType<typeof createReviewDocument> | null,
-    version: '', serverVersion: '', trainingProgress: {} as Record<string, number>, trainingProgressConfirmed: false,
+    version: '',
+    serverVersion: '',
+    trainingProgress: {} as Record<string, number>,
+    trainingProgressConfirmed: false,
   };
 }

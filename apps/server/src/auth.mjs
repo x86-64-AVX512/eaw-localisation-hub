@@ -28,9 +28,7 @@ import {
   setTemporaryPassword,
 } from './auth-recovery.mjs';
 import { generateRecoveryCode, RecoveryCodeHasher } from './recovery-code.mjs';
-import {
-  authenticateBackupToken, issueBackupToken, verifyAdminPassword,
-} from './admin-auth.mjs';
+import { authenticateBackupToken, issueBackupToken, verifyAdminPassword } from './admin-auth.mjs';
 import {
   assertCanAssignRoles,
   assertCanCreateInvite,
@@ -42,7 +40,10 @@ import { updateTrainingProgress } from './training-progress.mjs';
 import { addSpellingWord, spellingWords } from './auth-spelling.mjs';
 import { scryptAsync } from './auth-scrypt.mts';
 import {
-  ADMIN_SESSION_TTL_MILLISECONDS, USER_SESSION_TTL_MILLISECONDS, issueSession, requireActiveSession,
+  ADMIN_SESSION_TTL_MILLISECONDS,
+  USER_SESSION_TTL_MILLISECONDS,
+  issueSession,
+  requireActiveSession,
 } from './auth-sessions.mjs';
 export { ACCOUNT_ROLES, AuthError };
 const SCRYPT_PARAMETERS = Object.freeze({ N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 });
@@ -119,8 +120,13 @@ export class AuthStore {
     try {
       const existing = (await fs.readFile(this.bootstrapPath, 'utf8')).trim();
       const existingHash = hashSecret(existing.toUpperCase());
-      const active = this.state.invites.some((invite) => invite.codeHash === existingHash
-        && invite.bootstrap && invite.uses < invite.maxUses && activeByExpiry(invite));
+      const active = this.state.invites.some(
+        (invite) =>
+          invite.codeHash === existingHash &&
+          invite.bootstrap &&
+          invite.uses < invite.maxUses &&
+          activeByExpiry(invite),
+      );
       if (existing && active) return existing;
       await fs.rm(this.bootstrapPath, { force: true });
     } catch (error) {
@@ -146,9 +152,7 @@ export class AuthStore {
   async persist() {
     this.onSessionChange?.();
     const snapshot = `${JSON.stringify(this.state, null, 2)}\n`;
-    const write = this.persistPromise
-      .catch(() => {})
-      .then(() => this.atomicWrite(this.statePath, snapshot));
+    const write = this.persistPromise.catch(() => {}).then(() => this.atomicWrite(this.statePath, snapshot));
     this.persistPromise = write;
     await write;
   }
@@ -198,7 +202,8 @@ export class AuthStore {
 
   consumeLoginCapacity(displayName, source) {
     const accountKey = hashSecret(displayNameKey(displayName));
-    const sourceKey = crypto.createHmac('sha256', this.loginSourceKey)
+    const sourceKey = crypto
+      .createHmac('sha256', this.loginSourceKey)
       .update(String(source || 'unknown'), 'utf8')
       .digest('hex');
     this.consumeLoginBucket(
@@ -233,23 +238,29 @@ export class AuthStore {
 
   async verifyPassword(password, verifier) {
     const value = String(password ?? '');
-    const supported = verifier?.algorithm === 'scrypt'
-      && Number(verifier.N) === SCRYPT_PARAMETERS.N
-      && Number(verifier.r) === SCRYPT_PARAMETERS.r
-      && Number(verifier.p) === SCRYPT_PARAMETERS.p
-      && typeof verifier.salt === 'string'
-      && Buffer.from(verifier.salt, 'base64url').length === 16
-      && typeof verifier.hash === 'string'
-      && Buffer.from(verifier.hash, 'base64url').length === PASSWORD_KEY_BYTES;
+    const supported =
+      verifier?.algorithm === 'scrypt' &&
+      Number(verifier.N) === SCRYPT_PARAMETERS.N &&
+      Number(verifier.r) === SCRYPT_PARAMETERS.r &&
+      Number(verifier.p) === SCRYPT_PARAMETERS.p &&
+      typeof verifier.salt === 'string' &&
+      Buffer.from(verifier.salt, 'base64url').length === 16 &&
+      typeof verifier.hash === 'string' &&
+      Buffer.from(verifier.hash, 'base64url').length === PASSWORD_KEY_BYTES;
     const selected = supported ? verifier : this.dummyPasswordVerifier;
     if (!selected) return false;
     try {
       return await this.passwordWork(async () => {
         const salt = Buffer.from(selected.salt, 'base64url');
         const expected = Buffer.from(selected.hash, 'base64url');
-        const actual = Buffer.from(await scryptAsync(value, salt, expected.length, {
-          N: Number(selected.N), r: Number(selected.r), p: Number(selected.p), maxmem: SCRYPT_PARAMETERS.maxmem,
-        }));
+        const actual = Buffer.from(
+          await scryptAsync(value, salt, expected.length, {
+            N: Number(selected.N),
+            r: Number(selected.r),
+            p: Number(selected.p),
+            maxmem: SCRYPT_PARAMETERS.maxmem,
+          }),
+        );
         return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
       });
     } catch (error) {
@@ -295,7 +306,11 @@ export class AuthStore {
     if (this.state.users.some((user) => displayNameKey(user.displayName) === key)) {
       throw new AuthError('This display name is already registered', 409, 'name_taken');
     }
-    const codeHash = hashSecret(String(code ?? '').trim().toUpperCase());
+    const codeHash = hashSecret(
+      String(code ?? '')
+        .trim()
+        .toUpperCase(),
+    );
     const invite = this.state.invites.find((item) => item.codeHash === codeHash);
     if (!invite || invite.revoked === true || invite.uses >= invite.maxUses) {
       throw new AuthError('Invitation is invalid or already used', 401, 'invalid_invite');
@@ -303,11 +318,13 @@ export class AuthStore {
     if (!activeByExpiry(invite)) throw new AuthError('Invitation has expired', 401, 'expired_invite');
 
     const passwordVerifier = await this.hashPassword(password);
-    if (this.state.users.some((user) => displayNameKey(user.displayName) === key)
-      || !this.state.invites.includes(invite)
-      || invite.revoked === true
-      || invite.uses >= invite.maxUses
-      || !activeByExpiry(invite)) {
+    if (
+      this.state.users.some((user) => displayNameKey(user.displayName) === key) ||
+      !this.state.invites.includes(invite) ||
+      invite.revoked === true ||
+      invite.uses >= invite.maxUses ||
+      !activeByExpiry(invite)
+    ) {
       throw new AuthError('Invitation or display name is no longer available', 409, 'registration_race');
     }
     const user = {
@@ -389,7 +406,7 @@ export class AuthStore {
 
   async changePassword(actor, currentPassword, newPassword) {
     const user = this.state.users.find(({ id }) => id === actor.id);
-    if (!user || !await this.verifyPassword(currentPassword, user.passwordVerifier)) {
+    if (!user || !(await this.verifyPassword(currentPassword, user.passwordVerifier))) {
       throw new AuthError('Current password is incorrect', 401, 'invalid_credentials');
     }
     const passwordVerifier = await this.hashPassword(newPassword);
@@ -404,22 +421,44 @@ export class AuthStore {
     return publicUser(user);
   }
 
-  async updateTrainingProgress(actor, segmentId, revision) { return updateTrainingProgress(this, actor, segmentId, revision); }
-  spellingWords(actor) { return spellingWords(this, actor); }
-  async addSpellingWord(actor, value) { return addSpellingWord(this, actor, value); }
-  async issueRecoveryCode(actor) { return issueRecoveryCode(this, actor); }
-  async confirmRecoveryCode(actor, code) { return confirmRecoveryCode(this, actor, code); }
-  async discardPendingRecoveryCode(actor) { return discardPendingRecoveryCode(this, actor); }
+  async updateTrainingProgress(actor, segmentId, revision) {
+    return updateTrainingProgress(this, actor, segmentId, revision);
+  }
+  spellingWords(actor) {
+    return spellingWords(this, actor);
+  }
+  async addSpellingWord(actor, value) {
+    return addSpellingWord(this, actor, value);
+  }
+  async issueRecoveryCode(actor) {
+    return issueRecoveryCode(this, actor);
+  }
+  async confirmRecoveryCode(actor, code) {
+    return confirmRecoveryCode(this, actor, code);
+  }
+  async discardPendingRecoveryCode(actor) {
+    return discardPendingRecoveryCode(this, actor);
+  }
   async recoverPassword(displayName, code, newPassword, source = '') {
     return recoverPassword(this, displayName, code, newPassword, source);
   }
-  async authorizeRecoveryCode(actor, userId) { return authorizeRecoveryCode(this, actor, userId); }
-  async setTemporaryPassword(actor, userId, password) { return setTemporaryPassword(this, actor, userId, password); }
+  async authorizeRecoveryCode(actor, userId) {
+    return authorizeRecoveryCode(this, actor, userId);
+  }
+  async setTemporaryPassword(actor, userId, password) {
+    return setTemporaryPassword(this, actor, userId, password);
+  }
 
-  async removeBootstrapInvite() { await fs.rm(this.bootstrapPath, { force: true }); }
+  async removeBootstrapInvite() {
+    await fs.rm(this.bootstrapPath, { force: true });
+  }
   requirePermanentPassword(user) {
     if (user?.temporaryPassword) {
-      throw new AuthError('A permanent password must be set before collaboration', 403, 'temporary_password_change_required');
+      throw new AuthError(
+        'A permanent password must be set before collaboration',
+        403,
+        'temporary_password_change_required',
+      );
     }
   }
   async createInvite(actor, options = {}) {
@@ -470,8 +509,7 @@ export class AuthStore {
 
   listInvites(actor) {
     this.requireManager(actor);
-    return this.state.invites.filter((invite) => !invite.bootstrap)
-      .map((invite) => publicInvite(invite, this.now()));
+    return this.state.invites.filter((invite) => !invite.bootstrap).map((invite) => publicInvite(invite, this.now()));
   }
 
   listSessions(actor) {
@@ -515,7 +553,8 @@ export class AuthStore {
   async setUserEnabled(actor, userId, enabled) {
     const user = this.state.users.find(({ id }) => id === userId);
     assertCanManageUser(actor, user);
-    if (actor.id === userId) throw new AuthError('The current account cannot be disabled', 409, 'self_disable_forbidden');
+    if (actor.id === userId)
+      throw new AuthError('The current account cannot be disabled', 409, 'self_disable_forbidden');
     user.enabled = enabled === true;
     if (!user.enabled) {
       this.state.sessions = this.state.sessions.filter((session) => session.userId !== userId);

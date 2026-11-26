@@ -16,7 +16,10 @@ test('review cards share one frame and measure every height before positioning',
   const frames = [];
   const operations = [];
   const rect = (top = 0) => ({ top, bottom: top + 500, left: 0, right: 500, height: 500 });
-  globalThis.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length; };
+  globalThis.requestAnimationFrame = (callback) => {
+    frames.push(callback);
+    return frames.length;
+  };
   globalThis.document = {
     querySelector: () => ({ getBoundingClientRect: () => rect() }),
     createDocumentFragment: () => ({ append() {} }),
@@ -25,9 +28,14 @@ test('review cards share one frame and measure every height before positioning',
   try {
     const card = (startByte) => ({
       dataset: { startByte: String(startByte) },
-      get offsetHeight() { operations.push(`measure:${startByte}`); return 40; },
+      get offsetHeight() {
+        operations.push(`measure:${startByte}`);
+        return 40;
+      },
       style: {
-        set top(value) { operations.push(`position:${startByte}:${value}`); },
+        set top(value) {
+          operations.push(`position:${startByte}:${value}`);
+        },
         getPropertyValue: () => '#fff',
       },
     });
@@ -40,7 +48,10 @@ test('review cards share one frame and measure every height before positioning',
       getScrollTop: () => 0,
     };
     const layout = createReviewCardLayout({
-      state: { path: 'file.yml' }, editor, cards, lane,
+      state: { path: 'file.yml' },
+      editor,
+      cards,
+      lane,
       rangeFromBytes: (start) => ({ getStartPosition: () => ({ lineNumber: start + 1 }) }),
       connectors: { replaceChildren() {} },
     });
@@ -48,9 +59,7 @@ test('review cards share one frame and measure every height before positioning',
     layout.layout();
     assert.equal(frames.length, 1);
     frames.shift()();
-    assert.deepEqual(operations, [
-      'measure:0', 'measure:1', 'position:0:46px', 'position:1:94px',
-    ]);
+    assert.deepEqual(operations, ['measure:0', 'measure:1', 'position:0:46px', 'position:1:94px']);
     layout.layout();
     assert.equal(frames.length, 1, 'a later event can schedule the next frame');
   } finally {

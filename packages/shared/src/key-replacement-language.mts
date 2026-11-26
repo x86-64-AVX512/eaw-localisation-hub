@@ -16,21 +16,23 @@ export interface IgnoredReplacementEntry extends ReplacementLanguageProfile {
 // Count visible letters, not identifiers in references, getters, icons or colour
 // codes. This is a script heuristic, not a dictionary or a language guarantee.
 export function replacementLanguageProfile(value: string): ReplacementLanguageProfile {
-  let visible = '', offset = 0;
+  let visible = '',
+    offset = 0;
   for (const token of technicalInsertions(value)) {
     visible += value.slice(offset, token.start);
     offset = token.end;
   }
   visible += value.slice(offset);
   visible = visible.replace(/§[^\r\n]|\\./gu, '');
-  let cyrillic = 0, latin = 0;
+  let cyrillic = 0,
+    latin = 0;
   for (const character of visible) {
     if (!/\p{L}/u.test(character)) continue;
     if (/\p{Script=Cyrillic}/u.test(character)) cyrillic += 1;
     else if (/\p{Script=Latin}/u.test(character)) latin += 1;
   }
   const total = cyrillic + latin;
-  const cyrillicPercent = total ? Math.round(cyrillic / total * 1000) / 10 : 0;
+  const cyrillicPercent = total ? Math.round((cyrillic / total) * 1000) / 10 : 0;
   return {
     language: cyrillic === latin ? 'neutral' : cyrillic > latin ? 'russian' : 'english',
     cyrillicPercent,

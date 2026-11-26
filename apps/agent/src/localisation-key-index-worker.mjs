@@ -3,7 +3,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { parseLocalisationRecords, localisationLanguage } from '../../../packages/shared/src/localisation-records.mts';
-import { collectScriptedLocalisation, documentedGetterNames, documentedGetterStamp } from './scripted-localisation-index.mjs';
+import {
+  collectScriptedLocalisation,
+  documentedGetterNames,
+  documentedGetterStamp,
+} from './scripted-localisation-index.mjs';
 
 const MAX_FILES = 10_000;
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
@@ -20,10 +24,13 @@ export async function collectLocalisationKeys(repository, fileCache = new Map(),
   const documentedGetters = await documentedGetterNames();
   const root = path.join(canonicalRepository, 'localisation');
   let canonicalRoot;
-  try { canonicalRoot = await fs.realpath(root); }
-  catch (error) {
-    if (error.code === 'ENOENT') { fileCache.clear(); return { complete: true, files: 0,
-      languages: {}, scripted, documentedGetters }; }
+  try {
+    canonicalRoot = await fs.realpath(root);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      fileCache.clear();
+      return { complete: true, files: 0, languages: {}, scripted, documentedGetters };
+    }
     throw error;
   }
   if (!inside(canonicalRepository, canonicalRoot)) throw new Error('Localisation directory is outside the repository');
@@ -32,13 +39,18 @@ export async function collectLocalisationKeys(repository, fileCache = new Map(),
   const languageKeys = new Map();
   const directories = [canonicalRoot];
   const seen = new Set();
-  let files = 0; let bytes = 0; let complete = true;
+  let files = 0;
+  let bytes = 0;
+  let complete = true;
   while (directories.length && complete) {
     const directory = directories.pop();
     for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
       const location = path.join(directory, entry.name);
       if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) { directories.push(location); continue; }
+      if (entry.isDirectory()) {
+        directories.push(location);
+        continue;
+      }
       if (!entry.isFile() || !/\.ya?ml$/iu.test(entry.name)) continue;
       const canonical = await fs.realpath(location);
       if (!inside(canonicalRepository, canonical)) continue;
@@ -51,13 +63,22 @@ export async function collectLocalisationKeys(repository, fileCache = new Map(),
       seen.add(canonical);
       const cached = fileCache.get(canonical);
       let fileKeys, language;
-      if (cached?.size === stat.size && cached.mtimeNs === stat.mtimeNs
-        && cached.ctimeNs === stat.ctimeNs) { fileKeys = cached.keys; language = cached.language; }
-      else {
+      if (cached?.size === stat.size && cached.mtimeNs === stat.mtimeNs && cached.ctimeNs === stat.ctimeNs) {
+        fileKeys = cached.keys;
+        language = cached.language;
+      } else {
         const body = await fs.readFile(canonical, 'utf8');
-        fileKeys = parseLocalisationRecords(body).filter((record) => !record.fault).map((record) => record.key);
+        fileKeys = parseLocalisationRecords(body)
+          .filter((record) => !record.fault)
+          .map((record) => record.key);
         language = localisationLanguage(path.relative(canonicalRepository, canonical), body);
-        fileCache.set(canonical, { size: stat.size, mtimeNs: stat.mtimeNs, ctimeNs: stat.ctimeNs, keys: fileKeys, language });
+        fileCache.set(canonical, {
+          size: stat.size,
+          mtimeNs: stat.mtimeNs,
+          ctimeNs: stat.ctimeNs,
+          keys: fileKeys,
+          language,
+        });
       }
       if (!language) continue;
       const target = languageKeys.get(language) ?? new Set();
@@ -66,8 +87,11 @@ export async function collectLocalisationKeys(repository, fileCache = new Map(),
     }
   }
   for (const file of fileCache.keys()) if (!seen.has(file)) fileCache.delete(file);
-  const languages = Object.fromEntries([...languageKeys].sort(([a], [b]) => a.localeCompare(b))
-    .map(([language, values]) => [language, { complete, keys: complete ? [...values].sort() : [] }]));
+  const languages = Object.fromEntries(
+    [...languageKeys]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([language, values]) => [language, { complete, keys: complete ? [...values].sort() : [] }]),
+  );
   return { complete, files, languages, scripted, documentedGetters };
 }
 
@@ -91,12 +115,14 @@ if (parentPort) {
   let previous = '';
   let queue = Promise.resolve();
   parentPort.on('message', ({ id }) => {
-    queue = queue.then(async () => {
-      const result = await collectLocalisationKeys(workerData.repository, fileCache, scriptCache);
-      const signature = keyIndexInputSignature(result, fileCache, scriptCache);
-      const unchanged = signature === previous;
-      previous = signature;
-      parentPort.postMessage(unchanged ? { id, unchanged: true } : { id, result });
-    }).catch((error) => parentPort.postMessage({ id, error: error.message }));
+    queue = queue
+      .then(async () => {
+        const result = await collectLocalisationKeys(workerData.repository, fileCache, scriptCache);
+        const signature = keyIndexInputSignature(result, fileCache, scriptCache);
+        const unchanged = signature === previous;
+        previous = signature;
+        parentPort.postMessage(unchanged ? { id, unchanged: true } : { id, result });
+      })
+      .catch((error) => parentPort.postMessage({ id, error: error.message }));
   });
 }

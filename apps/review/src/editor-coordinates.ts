@@ -10,14 +10,18 @@ interface SuggestionProjection {
   replacementLength: number;
 }
 
-export function createEditorCoordinates({ monaco, state, editor }: {
+export function createEditorCoordinates({
+  monaco,
+  state,
+  editor,
+}: {
   monaco: typeof Monaco;
   state: { suggestionProjection: SuggestionProjection | null };
   editor: Monaco.editor.IStandaloneCodeEditor;
 }) {
   function rangeFromBytes(startByte: number, endByte: number): Monaco.Range {
     const model = editor.getModel();
-    if (!model) throw new Error(uiText("Редактор не содержит документа."));
+    if (!model) throw new Error(uiText('Редактор не содержит документа.'));
     const projection = state.suggestionProjection;
     const text = projection?.baseText ?? model.getValue();
     const baseStart = byteToUtf16(text, Number(startByte));
@@ -31,7 +35,7 @@ export function createEditorCoordinates({ monaco, state, editor }: {
   function selectionBytes() {
     const model = editor.getModel();
     const selection = editor.getSelection();
-    if (!model || !selection) throw new Error(uiText("В редакторе нет активного выделения."));
+    if (!model || !selection) throw new Error(uiText('В редакторе нет активного выделения.'));
     const projection = state.suggestionProjection;
     const source = projection?.baseText ?? model.getValue();
     const start = projectedToBaseOffset(projection, model.getOffsetAt(selection.getStartPosition()));
@@ -46,7 +50,7 @@ export function createEditorCoordinates({ monaco, state, editor }: {
   }
   function positionByteAt(position: Monaco.IPosition): number {
     const model = editor.getModel();
-    if (!model) throw new Error(uiText("Редактор не содержит документа."));
+    if (!model) throw new Error(uiText('Редактор не содержит документа.'));
     return utf16ToByte(model.getValue(), model.getOffsetAt(position));
   }
   return { rangeFromBytes, selectionBytes, jumpToBytes, positionByteAt };

@@ -43,12 +43,8 @@ function reanchorReservation(text, reservation, range) {
   if (!range) {
     reservation.orphaned = true;
   } else {
-    reservation.startRelative = encodeRelativePosition(
-      Y.createRelativePositionFromTypeIndex(text, range.start, -1),
-    );
-    reservation.endRelative = encodeRelativePosition(
-      Y.createRelativePositionFromTypeIndex(text, range.end, 0),
-    );
+    reservation.startRelative = encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, range.start, -1));
+    reservation.endRelative = encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, range.end, 0));
     delete reservation.orphaned;
   }
   return previous !== `${reservation.startRelative}\0${reservation.endRelative}\0${Boolean(reservation.orphaned)}`;

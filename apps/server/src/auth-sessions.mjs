@@ -9,9 +9,7 @@ export function issueSession(state, user, now) {
   if (user.enabled === false) throw new AuthError('Account is disabled', 403, 'account_disabled');
   const token = sessionToken();
   state.sessions = state.sessions.filter((session) => activeByExpiry(session, now));
-  const ttl = user.roles.includes('admin')
-    ? ADMIN_SESSION_TTL_MILLISECONDS
-    : USER_SESSION_TTL_MILLISECONDS;
+  const ttl = user.roles.includes('admin') ? ADMIN_SESSION_TTL_MILLISECONDS : USER_SESSION_TTL_MILLISECONDS;
   const session = {
     id: crypto.randomUUID(),
     tokenHash: hashSecret(token),
@@ -20,10 +18,12 @@ export function issueSession(state, user, now) {
   };
   const existing = state.sessions.filter(({ userId }) => userId === user.id);
   if (existing.length >= MAX_SESSIONS_PER_USER) {
-    const remove = new Set(existing
-      .sort((left, right) => Date.parse(left.expiresAt) - Date.parse(right.expiresAt))
-      .slice(0, existing.length - MAX_SESSIONS_PER_USER + 1)
-      .map(({ id }) => id));
+    const remove = new Set(
+      existing
+        .sort((left, right) => Date.parse(left.expiresAt) - Date.parse(right.expiresAt))
+        .slice(0, existing.length - MAX_SESSIONS_PER_USER + 1)
+        .map(({ id }) => id),
+    );
     state.sessions = state.sessions.filter(({ id }) => !remove.has(id));
   }
   state.sessions.push(session);

@@ -1,11 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const notFound = 'Codex CLI не найден. Выберите установку Codex в инсталлере Hub или установите Codex CLI отдельно, затем перезапустите Desktop Agent.';
+const notFound =
+  'Codex CLI не найден. Выберите установку Codex в инсталлере Hub или установите Codex CLI отдельно, затем перезапустите Desktop Agent.';
 
 function isFile(file) {
-  try { return fs.statSync(file).isFile(); }
-  catch { return false; }
+  try {
+    return fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
 }
 
 export function codexExecutable(environment = process.env, platform = process.platform, architecture = process.arch) {

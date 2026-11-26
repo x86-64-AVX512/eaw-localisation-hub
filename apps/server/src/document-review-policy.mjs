@@ -43,7 +43,8 @@ export function withRoomForMessages(target, count) {
     deleted.add(next[index].id);
     next.splice(index, 1);
   }
-  if (deleted.size > MAX_DELETED_MESSAGE_IDS) throw new ProtocolLimitError('This discussion has reached its deletion history limit');
+  if (deleted.size > MAX_DELETED_MESSAGE_IDS)
+    throw new ProtocolLimitError('This discussion has reached its deletion history limit');
   return { messages: next, deletedMessageIds: [...deleted] };
 }
 
@@ -62,11 +63,11 @@ export function newCommentThread(id, actor, message, createdAt = new Date().toIS
 }
 
 export function suggestionDraft(message) {
-  const originalText = controlledText(
-    message.originalText, 'Suggestion original text', MAX_SUGGESTION_TEXT_BYTES,
-  );
+  const originalText = controlledText(message.originalText, 'Suggestion original text', MAX_SUGGESTION_TEXT_BYTES);
   const replacementText = controlledText(
-    message.replacementText, 'Suggestion replacement text', MAX_SUGGESTION_TEXT_BYTES,
+    message.replacementText,
+    'Suggestion replacement text',
+    MAX_SUGGESTION_TEXT_BYTES,
   );
   const traceJson = controlledString(message.traceJson ?? '', 'Suggestion trace', 64 * 1024);
   if (traceJson) parseSuggestionTrace(traceJson, originalText, replacementText);
@@ -95,9 +96,7 @@ export function newSuggestion(id, actor, message, createdAt = new Date().toISOSt
 }
 
 export function editableSuggestionDraft(suggestion, actor, message) {
-  const sameAuthor = suggestion.authorId
-    ? suggestion.authorId === actor.id
-    : suggestion.author === actor.displayName;
+  const sameAuthor = suggestion.authorId ? suggestion.authorId === actor.id : suggestion.author === actor.displayName;
   if (!sameAuthor) throw new ProtocolLimitError('Only the suggestion author may update its draft');
   return {
     startRelative: controlledString(message.startRelative, 'Suggestion start', 4096, { required: true }),

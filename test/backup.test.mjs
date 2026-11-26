@@ -37,10 +37,7 @@ test('server backup round-trips through authenticated encryption', async () => {
     assert.deepEqual(JSON.parse(gunzipSync(streamed)).files, bundledFiles);
     const encrypted = await encryptBackup(streamed, 'correct horse battery staple');
     assert.equal(isEncryptedBackup(encrypted), true);
-    await assert.rejects(
-      decryptBackup(encrypted, 'wrong password here'),
-      /incorrect|damaged/i,
-    );
+    await assert.rejects(decryptBackup(encrypted, 'wrong password here'), /incorrect|damaged/i);
     const restored = await restoreBackupBundle(
       await decryptBackup(encrypted, 'correct horse battery staple'),
       target,
@@ -53,10 +50,7 @@ test('server backup round-trips through authenticated encryption', async () => {
     assert.equal(await fs.readFile(path.join(target, 'tickets.json'), 'utf8'), '{"schema":1,"tickets":[]}\n');
     assert.equal(await fs.readFile(path.join(target, 'branch-merges.json'), 'utf8'), '{"schema":1,"branches":{}}\n');
     assert.equal(await fs.readFile(path.join(target, 'room-index.json'), 'utf8'), '{"schema":1,"documents":{}}\n');
-    assert.deepEqual(
-      await fs.readFile(path.join(target, 'documents', 'one.update')),
-      Buffer.from([0, 1, 2, 255]),
-    );
+    assert.deepEqual(await fs.readFile(path.join(target, 'documents', 'one.update')), Buffer.from([0, 1, 2, 255]));
     assert.deepEqual(await fs.readFile(path.join(target, 'documents', 'large.update')), largeDocument);
     assert.equal(
       await fs.readFile(path.join(target, 'documents', 'one.history.json'), 'utf8'),

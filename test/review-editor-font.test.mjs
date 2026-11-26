@@ -44,10 +44,18 @@ test('font loads before measurement and a failed display font does not block Rev
   const original = globalThis.document;
   const calls = [];
   try {
-    globalThis.document = { fonts: { load: async (...args) => { calls.push(args); } } };
+    globalThis.document = {
+      fonts: {
+        load: async (...args) => {
+          calls.push(args);
+        },
+      },
+    };
     await loadReviewDashFont();
     assert.deepEqual(calls, [['15px "EaW Em Dash"', '—']]);
-    globalThis.document.fonts.load = async () => { throw new Error('font unavailable'); };
+    globalThis.document.fonts.load = async () => {
+      throw new Error('font unavailable');
+    };
     await assert.doesNotReject(loadReviewDashFont());
   } finally {
     if (original === undefined) delete globalThis.document;

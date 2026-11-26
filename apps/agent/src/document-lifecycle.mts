@@ -62,17 +62,18 @@ export function handleMergedBranchClose(binding: LifecycleBinding, code: number)
   if (code !== 4002 || binding.ticketId) return false;
   binding.paused = true;
   binding.emitDocumentStatus('git-branch-merged');
-  for (const client of binding.clients) client.send({
-    type: 'notice', path: '',
-    message: 'Ветка влита в general-dev. Комментарии и тикеты перенесены; переключите локальный Git на general-dev.',
-  });
+  for (const client of binding.clients)
+    client.send({
+      type: 'notice',
+      path: '',
+      message: 'Ветка влита в general-dev. Комментарии и тикеты перенесены; переключите локальный Git на general-dev.',
+    });
   return true;
 }
 
-export function handleUnavailableTicketClose(binding: LifecycleBinding,
-  code: number, closeReason: string): boolean {
-  if (code !== 1001 || !binding.ticketId
-    || !['Ticket deleted', 'Ticket file removed'].includes(closeReason)) return false;
+export function handleUnavailableTicketClose(binding: LifecycleBinding, code: number, closeReason: string): boolean {
+  if (code !== 1001 || !binding.ticketId || !['Ticket deleted', 'Ticket file removed'].includes(closeReason))
+    return false;
   binding.paused = true;
   // Keep all locally changed text, even if an earlier update was sent: send()
   // does not confirm durability or cover edits made while the socket closes.
@@ -84,10 +85,13 @@ export function handleUnavailableTicketClose(binding: LifecycleBinding,
   void recoverDeletedTicket(binding);
   for (const client of binding.clients) {
     for (const [absolutePath, state] of client.documents) {
-      if (state.binding === binding && client.kind === 'review') client.send({
-        type: 'ticketUnavailable', path: absolutePath, ticketId: binding.ticketId,
-        reason: closeReason === 'Ticket deleted' ? 'deleted' : 'file-removed',
-      });
+      if (state.binding === binding && client.kind === 'review')
+        client.send({
+          type: 'ticketUnavailable',
+          path: absolutePath,
+          ticketId: binding.ticketId,
+          reason: closeReason === 'Ticket deleted' ? 'deleted' : 'file-removed',
+        });
     }
   }
   return true;
@@ -103,17 +107,22 @@ function recoverDeletedTicket(binding: LifecycleBinding): Promise<boolean> {
       let detail = error instanceof Error ? error.message : String(error);
       // Keep the latest state, not merely the older buffer that failed to unlink.
       try {
-        if (binding.localUpdatePending) binding.hub.savePendingDocumentUpdate(
-          binding.documentId, Y.encodeStateAsUpdate(binding.document));
+        if (binding.localUpdatePending)
+          binding.hub.savePendingDocumentUpdate(binding.documentId, Y.encodeStateAsUpdate(binding.document));
       } catch (checkpointError) {
         detail += `; ${checkpointError instanceof Error ? checkpointError.message : String(checkpointError)}`;
       }
       if (!binding.ticketDiscardErrorReported) {
         binding.ticketDiscardErrorReported = true;
         for (const client of binding.clients) {
-          try { client.send({ type: 'notice',
-            message: `Не удалось удалить буфер удалённого тикета: ${detail}. Буфер восстановления не удалён.` }); }
-          catch { /* A disconnected peer must not break document cleanup. */ }
+          try {
+            client.send({
+              type: 'notice',
+              message: `Не удалось удалить буфер удалённого тикета: ${detail}. Буфер восстановления не удалён.`,
+            });
+          } catch {
+            /* A disconnected peer must not break document cleanup. */
+          }
         }
       }
       return Promise.resolve(false);
@@ -125,8 +134,13 @@ function recoverDeletedTicket(binding: LifecycleBinding): Promise<boolean> {
   // An edit already in flight from Review can still land after the first
   // checkpoint; closing must not settle for the older text.
   if (previous?.text === text) return previous.attempt;
-  const recovery: TicketRecovery = { text, savedPath: '', announced: false,
-    recipients: previous?.recipients ?? [...binding.clients], attempt: Promise.resolve(false) };
+  const recovery: TicketRecovery = {
+    text,
+    savedPath: '',
+    announced: false,
+    recipients: previous?.recipients ?? [...binding.clients],
+    attempt: Promise.resolve(false),
+  };
   binding.ticketRecovery = recovery;
   recovery.attempt = preserveUnconfirmedTicketText(binding, recovery, previous);
   return recovery.attempt;
@@ -135,12 +149,18 @@ function recoverDeletedTicket(binding: LifecycleBinding): Promise<boolean> {
 // Checkpoint synchronously before notifying Review (which may detach at once).
 // Only a successfully written and synced readable copy may retire that exact
 // checkpoint. A failed copy or a newer retry buffer must remain recoverable.
-async function preserveUnconfirmedTicketText(binding: LifecycleBinding,
-  recovery: TicketRecovery, previous?: TicketRecovery): Promise<boolean> {
+async function preserveUnconfirmedTicketText(
+  binding: LifecycleBinding,
+  recovery: TicketRecovery,
+  previous?: TicketRecovery,
+): Promise<boolean> {
   const notify = (message: string) => {
     for (const client of recovery.recipients) {
-      try { client.send({ type: 'notice', message }); }
-      catch { /* A disconnected peer cannot invalidate the recovery copy. */ }
+      try {
+        client.send({ type: 'notice', message });
+      } catch {
+        /* A disconnected peer cannot invalidate the recovery copy. */
+      }
     }
   };
   let temporary = '';
@@ -158,8 +178,12 @@ async function preserveUnconfirmedTicketText(binding: LifecycleBinding,
     // Readers never see a partial copy, and a failed rewrite keeps the older one.
     temporary = `${recovery.savedPath}.${crypto.randomUUID()}.tmp`;
     const file = await fs.open(temporary, 'wx', 0o600);
-    try { await file.writeFile(recovery.text, 'utf8'); await file.sync(); }
-    finally { await file.close(); }
+    try {
+      await file.writeFile(recovery.text, 'utf8');
+      await file.sync();
+    } finally {
+      await file.close();
+    }
     await fs.rename(temporary, recovery.savedPath);
     temporary = '';
     binding.hub.clearPendingDocumentUpdate(binding.documentId, update);

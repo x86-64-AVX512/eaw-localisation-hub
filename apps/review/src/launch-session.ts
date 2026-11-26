@@ -17,11 +17,17 @@ export function reviewFragment(token: string, fields: Record<string, string>): U
   const params = new URLSearchParams(fields);
   try {
     if (sessionStorage.getItem(STORAGE_KEY) === token) return params;
-  } catch { /* The launch URL is the fallback when storage is unavailable. */ }
+  } catch {
+    /* The launch URL is the fallback when storage is unavailable. */
+  }
   params.set('token', token);
   return params;
 }
 
 export function clearLaunchToken(): void {
-  try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* Storage may be unavailable. */ }
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* Storage may be unavailable. */
+  }
 }

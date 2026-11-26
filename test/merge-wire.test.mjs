@@ -12,21 +12,34 @@ import { requestDiskMergeCheck, receiveDiskMergeResult } from '../apps/agent/src
 function wire(sharedText) {
   const room = { destroyed: false, document: { getText: () => ({ toString: () => sharedText }) } };
   const binding = { synced: true, text: { toString: () => sharedText }, diskMergeRequests: new Map() };
-  const serverSocket = { readyState: WebSocket.OPEN, bufferedAmount: 0, send(payload) {
-    assert.ok(Buffer.byteLength(payload) <= MAX_MESSAGE_BYTES);
-    receiveDiskMergeResult(binding, validateServerMessage(JSON.parse(payload)));
-  } };
-  binding.socket = { readyState: WebSocket.OPEN, send(payload, callback) {
-    assert.ok(Buffer.byteLength(payload) <= MAX_MESSAGE_BYTES);
-    DocumentRoom.prototype.applyJson.call(room, serverSocket, JSON.parse(payload));
-    callback?.();
-  } };
+  const serverSocket = {
+    readyState: WebSocket.OPEN,
+    bufferedAmount: 0,
+    send(payload) {
+      assert.ok(Buffer.byteLength(payload) <= MAX_MESSAGE_BYTES);
+      receiveDiskMergeResult(binding, validateServerMessage(JSON.parse(payload)));
+    },
+  };
+  binding.socket = {
+    readyState: WebSocket.OPEN,
+    send(payload, callback) {
+      assert.ok(Buffer.byteLength(payload) <= MAX_MESSAGE_BYTES);
+      DocumentRoom.prototype.applyJson.call(room, serverSocket, JSON.parse(payload));
+      callback?.();
+    },
+  };
   return binding;
 }
 
 test('merge patches round-trip Unicode, empty text, unchanged text and compressed insertion', () => {
-  for (const [previous, next] of [['Привет 🦄', 'Привет 🐴'], ['Привет', ''], ['', 'Привет'],
-    ['одинаково', 'одинаково'], ['x', 'x\uFEFFтекст'], ['', 'Привет 🦄\n'.repeat(10000)]]) {
+  for (const [previous, next] of [
+    ['Привет 🦄', 'Привет 🐴'],
+    ['Привет', ''],
+    ['', 'Привет'],
+    ['одинаково', 'одинаково'],
+    ['x', 'x\uFEFFтекст'],
+    ['', 'Привет 🦄\n'.repeat(10000)],
+  ]) {
     assert.equal(decodeMergeText(previous, encodeMergeText(previous, next)), next);
   }
   assert.equal(encodeMergeText('', 'А'.repeat(10000)).encoding, 'gzip');
@@ -38,8 +51,13 @@ test('patch decoder rejects invalid UTF-8, base64, byte boundaries and gzip bomb
   assert.throws(() => decodeMergeText('', { ...patch, insertBase64: '/w==' }), /encoded data/);
   assert.throws(() => decodeMergeText('', { ...patch, insertBase64: 'AA=A' }), /base64/);
   assert.throws(() => decodeMergeText('', { ...patch, deleteBytes: -1 }), /fields/);
-  assert.throws(() => decodeMergeText('', { ...patch, encoding: 'gzip',
-    insertBase64: gzipSync(Buffer.alloc(MAX_ROOM_STATE_BYTES + 1)).toString('base64') }));
+  assert.throws(() =>
+    decodeMergeText('', {
+      ...patch,
+      encoding: 'gzip',
+      insertBase64: gzipSync(Buffer.alloc(MAX_ROOM_STATE_BYTES + 1)).toString('base64'),
+    }),
+  );
 });
 
 test('large non-compressible insertion is decoded without recursive base64 regex', () => {
@@ -82,8 +100,15 @@ test('initial-state conflict previews stay bounded for a large Cyrillic document
   const result = await requestDiskMergeCheck(binding, shared, external, shared, new Map(), true);
   assert.equal(result.conflicts[0].key, '__initial_state__');
   assert.ok(Buffer.byteLength(result.conflicts[0].collaborativeLine) < 64 * 1024);
-  const resolved = await requestDiskMergeCheck(binding, shared, external, shared,
-    new Map([['__initial_state__', 'external']]), true, result.mergeRevision);
+  const resolved = await requestDiskMergeCheck(
+    binding,
+    shared,
+    external,
+    shared,
+    new Map([['__initial_state__', 'external']]),
+    true,
+    result.mergeRevision,
+  );
   assert.equal(resolved.sharedText, external);
   assert.equal(resolved.personalText, external);
 });

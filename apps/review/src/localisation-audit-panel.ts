@@ -3,8 +3,13 @@ import type * as Monaco from 'monaco-editor';
 import { createStandardDiffView } from './standard-diff-view.ts';
 import { requiredElement } from './dom-elements.ts';
 
-interface AuditOccurrence { line: number; text: string }
-interface AuditSide extends AuditOccurrence { occurrences?: AuditOccurrence[] }
+interface AuditOccurrence {
+  line: number;
+  text: string;
+}
+interface AuditSide extends AuditOccurrence {
+  occurrences?: AuditOccurrence[];
+}
 interface AuditRow {
   key: string;
   status: string;
@@ -27,7 +32,12 @@ interface AuditPayload {
   rows: AuditRow[];
 }
 
-export function createLocalisationAuditPanel({ monaco, state, token, showToast }: {
+export function createLocalisationAuditPanel({
+  monaco,
+  state,
+  token,
+  showToast,
+}: {
   monaco: typeof Monaco;
   state: { path: string };
   token: string;
@@ -43,32 +53,44 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
   const structureHost = requiredElement<HTMLElement>('#localisation-structure-diff');
   const button = requiredElement<HTMLButtonElement>('#localisation-audit-open');
   const structureDiff = createStandardDiffView({
-    monaco, container: structureHost, language: 'eaw-yaml',
+    monaco,
+    container: structureHost,
+    language: 'eaw-yaml',
     editorOptions: { renderOverviewRuler: true },
   });
   const originalComments = structureDiff.diff.getOriginalEditor().createDecorationsCollection();
   const modifiedComments = structureDiff.diff.getModifiedEditor().createDecorationsCollection();
   let payload: AuditPayload | null = null;
 
-  function showInlineComments(collection: Monaco.editor.IEditorDecorationsCollection,
-    model: Monaco.editor.ITextModel, comments: AuditOccurrence[] | undefined): void {
-    collection.set((comments ?? []).flatMap((item) => {
-      const line = Number(item.line);
-      if (!Number.isInteger(line) || line < 1 || line > model.getLineCount()) return [];
-      const column = model.getLineMaxColumn(line);
-      return [{
-        range: new monaco.Range(line, column, line, column),
-        options: {
-          after: { content: ` ${item.text}`, inlineClassName: 'audit-inline-comment' },
-        },
-      }];
-    }));
+  function showInlineComments(
+    collection: Monaco.editor.IEditorDecorationsCollection,
+    model: Monaco.editor.ITextModel,
+    comments: AuditOccurrence[] | undefined,
+  ): void {
+    collection.set(
+      (comments ?? []).flatMap((item) => {
+        const line = Number(item.line);
+        if (!Number.isInteger(line) || line < 1 || line > model.getLineCount()) return [];
+        const column = model.getLineMaxColumn(line);
+        return [
+          {
+            range: new monaco.Range(line, column, line, column),
+            options: {
+              after: { content: ` ${item.text}`, inlineClassName: 'audit-inline-comment' },
+            },
+          },
+        ];
+      }),
+    );
   }
 
   function sideCell(side: AuditSide | null, missingLabel: string): HTMLDivElement {
     const cell = document.createElement('div');
     cell.className = `audit-side${side ? '' : ' missing'}`;
-    if (!side) { cell.textContent = missingLabel; return cell; }
+    if (!side) {
+      cell.textContent = missingLabel;
+      return cell;
+    }
     for (const occurrence of side.occurrences ?? [side]) {
       const line = document.createElement('span');
       line.className = 'audit-line-number';
@@ -99,26 +121,38 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
     filterLabel.hidden = structural;
     structureHost.hidden = !structural;
     if (payload) {
-      const counts = uiText("Русский файл – {0} строк; английский – {1} строк.", payload.russianLineCount, payload.englishLineCount);
+      const counts = uiText(
+        'Русский файл – {0} строк; английский – {1} строк.',
+        payload.russianLineCount,
+        payload.englishLineCount,
+      );
       if (structural) {
         summary.classList.remove('warning');
-        summary.textContent = uiText("Слева русский файл, справа английский. {0} {1}", counts, payload.structureMatches
-          ? uiText("Физические строки, пустые места и порядок ключей совпадают.")
-          : uiText("Структура не совпадает. Красным отмечены удалённые или смещённые строки, зелёным – добавленные."));
+        summary.textContent = uiText(
+          'Слева русский файл, справа английский. {0} {1}',
+          counts,
+          payload.structureMatches
+            ? uiText('Физические строки, пустые места и порядок ключей совпадают.')
+            : uiText('Структура не совпадает. Красным отмечены удалённые или смещённые строки, зелёным – добавленные.'),
+        );
         summary.classList.toggle('error', !payload.structureMatches);
         summary.classList.toggle('ok', payload.structureMatches);
         requestAnimationFrame(structureDiff.layout);
         return;
       }
-      summary.textContent = uiText("Русский: {0}. Английский: {1}. ", payload.russianPath, payload.englishPath)
-        + uiText("Русский файл – {0} ключей / {1} строк; ", payload.russianKeyCount, payload.russianLineCount)
-        + uiText("английский – {0} ключей / {1} строк.", payload.englishKeyCount, payload.englishLineCount);
+      summary.textContent =
+        uiText('Русский: {0}. Английский: {1}. ', payload.russianPath, payload.englishPath) +
+        uiText('Русский файл – {0} ключей / {1} строк; ', payload.russianKeyCount, payload.russianLineCount) +
+        uiText('английский – {0} ключей / {1} строк.', payload.englishKeyCount, payload.englishLineCount);
       const keysMatch = payload.rows.every((row) => row.status === 'ok');
       summary.classList.toggle('error', !keysMatch);
       const technicalCount = payload.rows.filter((row) => row.technicalIssues?.length).length;
       summary.classList.toggle('ok', keysMatch && technicalCount === 0);
       summary.classList.toggle('warning', keysMatch && technicalCount > 0);
-      summary.textContent += uiText(" Технические вставки отличаются в {0} ключах. Это подсказки, а не запрет: getters и параметры могут зависеть от контекста.", technicalCount);
+      summary.textContent += uiText(
+        ' Технические вставки отличаются в {0} ключах. Это подсказки, а не запрет: getters и параметры могут зависеть от контекста.',
+        technicalCount,
+      );
     }
     results.replaceChildren();
     if (!payload) return;
@@ -129,22 +163,34 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
       const key = document.createElement('strong');
       key.className = 'audit-key';
       key.textContent = row.key;
-      item.append(key, sideCell(row.russian, uiText("Нет в русском файле")), sideCell(row.english, uiText("Нет в английском файле")));
+      item.append(
+        key,
+        sideCell(row.russian, uiText('Нет в русском файле')),
+        sideCell(row.english, uiText('Нет в английском файле')),
+      );
       if (row.technicalIssues?.length) {
-        const notes = document.createElement('div'); notes.className = 'audit-technical-notes';
+        const notes = document.createElement('div');
+        notes.className = 'audit-technical-notes';
         for (const issue of row.technicalIssues) {
           const note = document.createElement('div');
-          const label = issue.kind === 'formatter' ? uiText("Отличается формат")
-            : issue.kind === 'missing' ? uiText("Меньше вставок в RU") : uiText("Больше вставок в RU");
-          note.textContent = `${label}: ${issue.token} (${issue.detail})`; notes.append(note);
+          const label =
+            issue.kind === 'formatter'
+              ? uiText('Отличается формат')
+              : issue.kind === 'missing'
+                ? uiText('Меньше вставок в RU')
+                : uiText('Больше вставок в RU');
+          note.textContent = `${label}: ${issue.token} (${issue.detail})`;
+          notes.append(note);
         }
         item.append(notes);
       }
       results.append(item);
     }
     if (!rows.length) {
-      const empty = document.createElement('p'); empty.className = 'dialog-hint';
-      empty.textContent = uiText("Для выбранного фильтра расхождений нет."); results.append(empty);
+      const empty = document.createElement('p');
+      empty.className = 'dialog-hint';
+      empty.textContent = uiText('Для выбранного фильтра расхождений нет.');
+      results.append(empty);
     }
   }
 
@@ -153,13 +199,16 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
     try {
       const query = new URLSearchParams({ path: state.path });
       const response = await fetch(`/api/localisation-audit?${query}`, {
-        headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
       });
       const responsePayload: unknown = await response.json();
       if (!response.ok) {
-        const error = responsePayload && typeof responsePayload === 'object'
-          ? (responsePayload as Record<string, unknown>).error : null;
-        throw new Error(typeof error === 'string' ? error : uiText("Не удалось выполнить сверку."));
+        const error =
+          responsePayload && typeof responsePayload === 'object'
+            ? (responsePayload as Record<string, unknown>).error
+            : null;
+        throw new Error(typeof error === 'string' ? error : uiText('Не удалось выполнить сверку.'));
       }
       payload = responsePayload as AuditPayload;
       structureDiff.setTexts(payload.russianDiffText ?? '', payload.englishDiffText ?? '');
@@ -170,7 +219,11 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
       render();
       dialog.showModal();
       requestAnimationFrame(structureDiff.layout);
-    } catch (error) { showToast(error instanceof Error ? error.message : String(error), true); } finally { button.disabled = false; }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      button.disabled = false;
+    }
   }
   button.addEventListener('click', open);
   filter.addEventListener('change', render);
@@ -179,8 +232,16 @@ export function createLocalisationAuditPanel({ monaco, state, token, showToast }
   const fullscreen = requiredElement<HTMLButtonElement>('#localisation-audit-fullscreen');
   fullscreen.addEventListener('click', () => {
     dialog.classList.toggle('fullscreen');
-    fullscreen.textContent = dialog.classList.contains('fullscreen') ? uiText("Обычный размер") : uiText("На весь экран");
+    fullscreen.textContent = dialog.classList.contains('fullscreen')
+      ? uiText('Обычный размер')
+      : uiText('На весь экран');
     requestAnimationFrame(structureDiff.layout);
   });
-  return { dispose() { originalComments.clear(); modifiedComments.clear(); structureDiff.dispose(); } };
+  return {
+    dispose() {
+      originalComments.clear();
+      modifiedComments.clear();
+      structureDiff.dispose();
+    },
+  };
 }

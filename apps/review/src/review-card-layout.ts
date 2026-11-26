@@ -10,7 +10,14 @@ export interface ReviewCardLayoutOptions {
   lane: HTMLElement;
 }
 
-export function createReviewCardLayout({ state, editor, rangeFromBytes, cards, connectors, lane }: ReviewCardLayoutOptions) {
+export function createReviewCardLayout({
+  state,
+  editor,
+  rangeFromBytes,
+  cards,
+  connectors,
+  lane,
+}: ReviewCardLayoutOptions) {
   let pendingFrame = 0;
   function performLayout() {
     pendingFrame = 0;
@@ -21,18 +28,30 @@ export function createReviewCardLayout({ state, editor, rangeFromBytes, cards, c
     const cardsRect = cards.getBoundingClientRect();
     // Read all heights before changing any top position. Mixing reads and
     // writes per card forces the browser to lay out the whole lane repeatedly.
-    const entries: { card: HTMLElement; position: Monaco.IPosition; height: number;
-      desiredTop: number; visible: { top: number; height: number } | null;
-      color: string }[] = [];
+    const entries: {
+      card: HTMLElement;
+      position: Monaco.IPosition;
+      height: number;
+      desiredTop: number;
+      visible: { top: number; height: number } | null;
+      color: string;
+    }[] = [];
     for (const child of cards.children) {
       const card = child as HTMLElement;
       let position;
-      try { position = rangeFromBytes(Number(card.dataset.startByte), Number(card.dataset.startByte)).getStartPosition(); }
-      catch { continue; }
-      entries.push({ card, position, height: card.offsetHeight,
+      try {
+        position = rangeFromBytes(Number(card.dataset.startByte), Number(card.dataset.startByte)).getStartPosition();
+      } catch {
+        continue;
+      }
+      entries.push({
+        card,
+        position,
+        height: card.offsetHeight,
         desiredTop: editor.getTopForLineNumber(position.lineNumber) + 46,
         visible: editor.getScrolledVisiblePosition(position),
-        color: card.style.getPropertyValue('--author-color') });
+        color: card.style.getPropertyValue('--author-color'),
+      });
     }
     const paths = document.createDocumentFragment();
     let nextTop = 46;
@@ -51,7 +70,9 @@ export function createReviewCardLayout({ state, editor, rangeFromBytes, cards, c
       line.setAttribute('d', `M ${startX} ${startY} C ${startX + 28} ${startY}, ${endX - 28} ${endY}, ${endX} ${endY}`);
       line.setAttribute('fill', 'none');
       line.setAttribute('stroke', color);
-      line.setAttribute('stroke-width', '1.5'); line.setAttribute('opacity', '.8'); paths.append(line);
+      line.setAttribute('stroke-width', '1.5');
+      line.setAttribute('opacity', '.8');
+      paths.append(line);
     }
     connectors.replaceChildren(paths);
     const height = `${Math.max(editor.getContentHeight() + 46, nextTop + 12)}px`;

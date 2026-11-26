@@ -12,19 +12,20 @@ import { DocumentRoom, closeDocumentRoomValidator } from './document-room.mjs';
 import { validDocumentId } from './protocol-limits.mts';
 import { minimisePersistedDocumentMetadata } from './room-metadata.mjs';
 import { RoomRegistry } from './room-registry.mjs';
-import { TicketStore } from './ticket-store.mjs'; import { handleTicketHttp } from './ticket-http.mjs';
-import { TicketService } from './ticket-service.mjs'; import { GitCommitVerifier } from './git-commit-verifier.mjs';
-import { GitBranchCache } from './git-branch-cache.mjs'; import { branchRepositoriesFor } from './branch-repositories.mjs';
+import { TicketStore } from './ticket-store.mjs';
+import { handleTicketHttp } from './ticket-http.mjs';
+import { TicketService } from './ticket-service.mjs';
+import { GitCommitVerifier } from './git-commit-verifier.mjs';
+import { GitBranchCache } from './git-branch-cache.mjs';
+import { branchRepositoriesFor } from './branch-repositories.mjs';
 import { BranchMergeService } from './branch-merge-service.mjs';
-import { DeletedBranchArchive } from './deleted-branch-archive.mjs'; import { handleDeletedBranchHttp } from './deleted-branch-http.mjs';
+import { DeletedBranchArchive } from './deleted-branch-archive.mjs';
+import { handleDeletedBranchHttp } from './deleted-branch-http.mjs';
 import { EventJournal } from './event-journal.mjs';
 import { watchTicketCatalog } from './ticket-catalog.mjs';
 import { AuditLog } from './audit-log.mjs';
 import { handleSpellingHttp } from './spelling-http.mjs';
-import {
-  DISPLAY_VERSION,
-  PROTOCOL_METADATA,
-} from '../../../packages/shared/src/constants.mts';
+import { DISPLAY_VERSION, PROTOCOL_METADATA } from '../../../packages/shared/src/constants.mts';
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(sourceDirectory, '../../..');
 function parseArguments(argv) {
@@ -90,20 +91,23 @@ const authStore = new AuthStore(options.data, atomicWrite, options.auth);
 const bootstrapInvite = await authStore.initialise();
 const eventJournal = new EventJournal(options.data, atomicWrite);
 await eventJournal.initialise();
-const auditLog = new AuditLog(options.data); await auditLog.initialise();
+const auditLog = new AuditLog(options.data);
+await auditLog.initialise();
 const adminSessions = new AdminSessionStore(authStore);
 const configuredGitRefresh = Number(process.env.EAW_HUB_GIT_REFRESH_MILLISECONDS ?? 60_000);
-const gitRefreshMilliseconds = Number.isFinite(configuredGitRefresh) && configuredGitRefresh >= 250 ? configuredGitRefresh : 60_000;
+const gitRefreshMilliseconds =
+  Number.isFinite(configuredGitRefresh) && configuredGitRefresh >= 250 ? configuredGitRefresh : 60_000;
 const canonicalRepository = process.env.EAW_HUB_CANONICAL_REPOSITORY || process.env.EAW_HUB_GITHUB_REPOSITORY;
 const branchRepositories = branchRepositoriesFor(canonicalRepository);
-const canonicalSource = new GitBranchCache(options.data, canonicalRepository,
-  { refreshMilliseconds: gitRefreshMilliseconds, branchRepositories });
+const canonicalSource = new GitBranchCache(options.data, canonicalRepository, {
+  refreshMilliseconds: gitRefreshMilliseconds,
+  branchRepositories,
+});
 const roomRegistry = new RoomRegistry(
   options.data,
   authStore,
-  (dataDirectory, documentId, store, registry, snapshot) => DocumentRoom.load(
-    dataDirectory, documentId, store, registry, canonicalSource, snapshot,
-  ),
+  (dataDirectory, documentId, store, registry, snapshot) =>
+    DocumentRoom.load(dataDirectory, documentId, store, registry, canonicalSource, snapshot),
   atomicWrite,
   canonicalSource,
 );
@@ -111,8 +115,11 @@ await roomRegistry.initialise();
 roomRegistry.eventJournal = eventJournal;
 roomRegistry.auditLog = auditLog;
 const rooms = roomRegistry.rooms;
-const ticketStore = new TicketStore(options.data, atomicWrite,
-  new GitCommitVerifier(process.env.EAW_HUB_GITHUB_REPOSITORY, undefined, branchRepositories));
+const ticketStore = new TicketStore(
+  options.data,
+  atomicWrite,
+  new GitCommitVerifier(process.env.EAW_HUB_GITHUB_REPOSITORY, undefined, branchRepositories),
+);
 ticketStore.eventJournal = eventJournal;
 roomRegistry.ticketStore = ticketStore;
 await ticketStore.initialise();
@@ -184,7 +191,9 @@ async function authenticatedBackup(request) {
 }
 
 function privateProxyAddress(value) {
-  const address = String(value ?? '').toLowerCase().replace(/^::ffff:/u, '');
+  const address = String(value ?? '')
+    .toLowerCase()
+    .replace(/^::ffff:/u, '');
   if (address === '::1' || address === '127.0.0.1') return true;
   if (/^10\./u.test(address) || /^192\.168\./u.test(address)) return true;
   const match = /^172\.(\d{1,2})\./u.exec(address);
@@ -194,7 +203,9 @@ function privateProxyAddress(value) {
 
 function transientLoginSource(request) {
   const remote = String(request.socket.remoteAddress ?? 'unknown').slice(0, 128);
-  const forwarded = String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+  const forwarded = String(request.headers['x-forwarded-for'] ?? '')
+    .split(',')[0]
+    .trim();
   if (privateProxyAddress(remote) && forwarded && forwarded.length <= 128) return forwarded;
   return remote;
 }
@@ -232,41 +243,62 @@ async function handleHttp(request, response) {
     sendJson(response, 200, await canonicalSource.head(branch));
     return;
   }
-  if (await handleDeletedBranchHttp({
-    request, response, url, archive: deletedBranchArchive, authenticatedUser, sendJson,
-  })) return;
+  if (
+    await handleDeletedBranchHttp({
+      request,
+      response,
+      url,
+      archive: deletedBranchArchive,
+      authenticatedUser,
+      sendJson,
+    })
+  )
+    return;
   if (request.method === 'GET' && url.pathname === '/api/events') {
     const actor = await authenticatedUser(request);
-    sendJson(response, 200, eventJournal.list(actor.id,
-      Number(url.searchParams.get('after')), Number(url.searchParams.get('limit'))));
+    sendJson(
+      response,
+      200,
+      eventJournal.list(actor.id, Number(url.searchParams.get('after')), Number(url.searchParams.get('limit'))),
+    );
     return;
   }
-  if (await handleSpellingHttp({
-    request, response, url, authStore, authenticatedUser, readJsonBody, sendJson,
-  })) return;
-  if (await handleTicketHttp({
-    request, response, url, auditLog,
-    readJsonBody: (incoming) => readJsonBody(incoming, 12 * 1024 * 1024),
-    authenticatedUser, sendJson, ticketStore, ticketService,
-  })) return;
+  if (
+    await handleSpellingHttp({
+      request,
+      response,
+      url,
+      authStore,
+      authenticatedUser,
+      readJsonBody,
+      sendJson,
+    })
+  )
+    return;
+  if (
+    await handleTicketHttp({
+      request,
+      response,
+      url,
+      auditLog,
+      readJsonBody: (incoming) => readJsonBody(incoming, 12 * 1024 * 1024),
+      authenticatedUser,
+      sendJson,
+      ticketStore,
+      ticketService,
+    })
+  )
+    return;
   if (request.method === 'POST' && url.pathname === '/api/auth/redeem') {
     const body = await readJsonBody(request);
-    const result = await authStore.redeem(
-      body.inviteCode,
-      body.displayName,
-      body.password,
-    );
+    const result = await authStore.redeem(body.inviteCode, body.displayName, body.password);
     await broadcastDirectories();
     sendJson(response, 201, result);
     return;
   }
   if (request.method === 'POST' && url.pathname === '/api/auth/login') {
     const body = await readJsonBody(request);
-    sendJson(response, 200, await authStore.login(
-      body.displayName,
-      body.password,
-      transientLoginSource(request),
-    ));
+    sendJson(response, 200, await authStore.login(body.displayName, body.password, transientLoginSource(request)));
     return;
   }
   if (request.method === 'GET' && url.pathname === '/api/auth/me') {
@@ -311,9 +343,8 @@ async function handleHttp(request, response) {
       if (!(error instanceof AuthError)) throw error;
     }
     await authStore.logout(token);
-    if (sessionId) await disconnectAuthenticatedSockets(
-      (identity) => identity?.sessionId === sessionId, 'Session logged out',
-    );
+    if (sessionId)
+      await disconnectAuthenticatedSockets((identity) => identity?.sessionId === sessionId, 'Session logged out');
     sendJson(response, 200, { ok: true });
     return;
   }
@@ -356,12 +387,29 @@ async function handleHttp(request, response) {
     sendJson(response, 200, { user: await authStore.discardPendingRecoveryCode(actor) });
     return;
   }
-  if (await handleAdminHttp({
-    request, response, url, authStore, adminSessions, authenticatedUser,
-    authenticatedAdmin, authenticatedBackup, readJsonBody, transientLoginSource,
-    sendJson, disconnectAuthenticatedSockets, rooms, dataDirectory: options.data,
-    atomicWrite, broadcastDirectories, flushRooms, auditLog,
-  })) return;
+  if (
+    await handleAdminHttp({
+      request,
+      response,
+      url,
+      authStore,
+      adminSessions,
+      authenticatedUser,
+      authenticatedAdmin,
+      authenticatedBackup,
+      readJsonBody,
+      transientLoginSource,
+      sendJson,
+      disconnectAuthenticatedSockets,
+      rooms,
+      dataDirectory: options.data,
+      atomicWrite,
+      broadcastDirectories,
+      flushRooms,
+      auditLog,
+    })
+  )
+    return;
   sendJson(response, 404, { error: 'Not found', code: 'not_found' });
 }
 
@@ -380,7 +428,12 @@ const httpServer = http.createServer((request, response) => {
 
 let shuttingDown = false;
 const { websocketServer, disconnectAuthenticatedSockets } = attachServerWebSockets({
-  httpServer, authStore, ticketStore, roomRegistry, canonicalSource, getRoom,
+  httpServer,
+  authStore,
+  ticketStore,
+  roomRegistry,
+  canonicalSource,
+  getRoom,
   isShuttingDown: () => shuttingDown,
 });
 

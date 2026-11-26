@@ -10,7 +10,10 @@ import * as personalDocument from './personal-document.mjs';
 // Applies one validated server control message to a DocumentBinding. Kept apart
 // from the binding lifecycle so new message types do not grow the coordinator.
 export function receiveServerMessage(binding, message) {
-  if (message.type === 'discussion-result') { receiveDiscussionResult(binding, message); return; }
+  if (message.type === 'discussion-result') {
+    receiveDiscussionResult(binding, message);
+    return;
+  }
   if (message.type === 'reservation-update-result') {
     actions.receiveReservationUpdateResult(binding, message);
     return;
@@ -30,8 +33,11 @@ export function receiveServerMessage(binding, message) {
     if (message.protocol !== PROTOCOL_VERSION) {
       binding.paused = true;
       binding.gitWritable = false;
-      for (const client of binding.clients) client.send({ type: 'notice',
-        message: `Несовместимый протокол: сервер ${message.protocol}, Agent ${PROTOCOL_VERSION}. Обновите клиент и сервер.` });
+      for (const client of binding.clients)
+        client.send({
+          type: 'notice',
+          message: `Несовместимый протокол: сервер ${message.protocol}, Agent ${PROTOCOL_VERSION}. Обновите клиент и сервер.`,
+        });
       binding.socket?.close(1002, 'Protocol version mismatch');
       return;
     }
@@ -73,9 +79,13 @@ export function receiveServerMessage(binding, message) {
     for (const client of binding.clients) {
       if (client.kind !== 'review') continue;
       for (const [absolutePath, state] of client.documents) {
-        if (state.binding === binding) client.send({
-          type: 'historyVersion', path: absolutePath, id: message.id, textBase64: message.textBase64,
-        });
+        if (state.binding === binding)
+          client.send({
+            type: 'historyVersion',
+            path: absolutePath,
+            id: message.id,
+            textBase64: message.textBase64,
+          });
       }
     }
     return;
