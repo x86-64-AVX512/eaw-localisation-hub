@@ -14,6 +14,8 @@ interface DocumentSocket {
   inboundBudget: InboundBudget;
   messageQueue?: Promise<void>;
   queuedInboundBytes?: number;
+  automation?: boolean;
+  automationWrites?: boolean;
   on(event: 'message', listener: (data: Buffer, isBinary: boolean) => void): void;
   send(value: string | Uint8Array, options?: unknown): void;
   close(code: number, reason: string): void;
@@ -27,6 +29,7 @@ interface DocumentRoomPort {
     socket: DocumentSocket,
     control: Record<string, unknown>,
     recheckWritable: () => void,
+    afterSave?: () => Promise<unknown> | unknown,
   ): Promise<unknown> | unknown;
 }
 
@@ -37,6 +40,7 @@ interface DocumentSocketOptions {
   ticketStore: { documentWritable(documentId: string): boolean };
   isShuttingDown(): boolean;
   authoriseSession(): void;
+  noteParticipant?(): Promise<unknown> | unknown;
 }
 
 let totalQueuedInboundBytes = 0;
@@ -52,9 +56,26 @@ export function attachDocumentSocket({
   ticketStore,
   isShuttingDown,
   authoriseSession,
+  noteParticipant,
 }: DocumentSocketOptions): void {
   const writableError = (isBinary: boolean, control: Record<string, unknown> | null): string => {
     const controlType = typeof control?.type === 'string' ? control.type : '';
+    if (
+      socket.automation &&
+      (isBinary ||
+        (controlType !== 'history-get' &&
+          (!socket.automationWrites ||
+            ![
+              'suggestion-create',
+              'comment-create',
+              'comment-reply',
+              'suggestion-reply',
+              'reservation-create',
+            ].includes(controlType) ||
+            typeof control?.requestId !== 'string' ||
+            !/^[0-9a-f-]{36}$/u.test(control.requestId))))
+    )
+      return 'Command is not available on this automation connection';
     if (
       !ticketStore.documentWritable(documentId) &&
       (isBinary ||
@@ -89,6 +110,8 @@ export function attachDocumentSocket({
       control.requestId.length <= 128 &&
       [
         'comment-create',
+        'suggestion-create',
+        'reservation-create',
         'comment-reply',
         'suggestion-reply',
         'discussion-message-update',
@@ -97,7 +120,14 @@ export function attachDocumentSocket({
     ) {
       sendWithBackpressure(
         socket,
-        JSON.stringify({ type: 'discussion-result', requestId: control.requestId, id, status: 'error', message }),
+        JSON.stringify({
+          type: 'discussion-result',
+          requestId: control.requestId,
+          id,
+          status: 'error',
+          ...(socket.automationWrites ? { code: 'WRITE_REJECTED' } : {}),
+          message,
+        }),
       );
     } else if (
       control?.type === 'reservation-update' &&
@@ -159,7 +189,13 @@ export function attachDocumentSocket({
             await room.flush();
             sendWithBackpressure(socket, JSON.stringify({ type: 'sync-flushed', requestId: control.requestId }));
           } else if (isBinary) await room.receiveBinary(socket, data, recheckWritable);
-          else if (control) await room.receiveJson(socket, control, recheckWritable);
+          else if (control)
+            await room.receiveJson(
+              socket,
+              control,
+              recheckWritable,
+              socket.automationWrites ? noteParticipant : undefined,
+            );
         } catch (error) {
           console.error('[server] rejected a document message');
           try {

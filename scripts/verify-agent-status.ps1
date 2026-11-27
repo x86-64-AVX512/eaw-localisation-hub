@@ -4,7 +4,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 
 $metadata = Get-EawHubClientStatusMetadata -ProjectRoot $projectRoot
 if ($metadata.Protocol -ne 21) { throw "Unexpected protocol: $($metadata.Protocol)" }
-if ($metadata.Version -ne '0.8.9-beta.4') { throw "Unexpected version: $($metadata.Version)" }
+if ($metadata.Version -ne '0.8.9-beta.5') { throw "Unexpected version: $($metadata.Version)" }
 if ((Compare-EawHubDisplayVersion -Installed '0.8.9F3' -Recommended '0.8.9-beta.4') -ne -1 -or
     (Compare-EawHubDisplayVersion -Installed '0.8.9-beta.4' -Recommended '0.8.9F4') -ne 0) {
     throw 'Legacy and beta version comparisons disagree.'

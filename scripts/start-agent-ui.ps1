@@ -8,6 +8,7 @@ Add-Type -AssemblyName System.Windows.Forms
 . (Join-Path $PSScriptRoot 'credential-store.ps1')
 . (Join-Path $PSScriptRoot 'repository-sync-ui.ps1')
 . (Join-Path $PSScriptRoot 'agent-network.ps1')
+. (Join-Path $PSScriptRoot 'cli-access-ui.ps1')
 $uiNetwork = @{Checking=$false;Account=$null;AccountServer='';StartIntent=$null}
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -363,6 +364,16 @@ $languageButton.Location = [Drawing.Point]::new(585, 17)
 $languageButton.Size = [Drawing.Size]::new(80, 27)
 $languageButton.Add_Click({ Show-EawUiLanguageSettings -Owner $form })
 $form.Controls.Add($languageButton)
+
+$cliAccessButton = [Windows.Forms.Button]::new()
+$cliAccessButton.Text = Get-EawUiText -Text 'Доступ CLI'
+$cliAccessButton.Location = [Drawing.Point]::new(449, 17)
+$cliAccessButton.Size = [Drawing.Size]::new(125, 27)
+$cliAccessButton.Add_Click({
+    try { Show-EawCliAccess -Owner $form -StateDirectory $stateDirectory -Server $serverBox.Text.Trim() }
+    catch { $status.Text = $_.Exception.Message }
+})
+$form.Controls.Add($cliAccessButton)
 
 $title = New-Label (Get-EawUiText -Text 'Настройка Desktop Agent') 24 18
 $title.Font = [System.Drawing.Font]::new('Segoe UI', 14, [System.Drawing.FontStyle]::Bold)

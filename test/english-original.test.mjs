@@ -27,6 +27,7 @@ test('English original lookup resolves an exact key from the ticket base commit'
         'l_english:',
         ' TEST_KEY:0 "The original line"',
         ' VERSIONLESS_EVENT.20.t: "Versionless title"',
+        ' QUOTED_KEY:0 "He said "hello" twice." # trailing "comment"',
         ' TEST_KEY_LONG:0 "Different key"',
         '',
       ].join('\n'),
@@ -57,6 +58,14 @@ test('English original lookup resolves an exact key from the ticket base commit'
         line: 3,
         key: 'VERSIONLESS_EVENT.20.t',
         text: 'Versionless title',
+      },
+    ]);
+    assert.deepEqual((await englishOriginal(hub, 'QUOTED_KEY', 'ticket-id')).matches, [
+      {
+        file: relative,
+        line: 4,
+        key: 'QUOTED_KEY',
+        text: 'He said "hello" twice.',
       },
     ]);
     await assert.rejects(englishOriginal(hub, 'BAD KEY', ''), /ключ/u);

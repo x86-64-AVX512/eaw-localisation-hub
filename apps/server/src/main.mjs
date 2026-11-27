@@ -225,6 +225,7 @@ async function handleHttp(request, response) {
       ok: true,
       version: DISPLAY_VERSION,
       ...PROTOCOL_METADATA,
+      cliAutomation: true,
       auth: options.auth,
       rooms: rooms.size,
     });

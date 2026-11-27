@@ -1,4 +1,4 @@
-import { controlledString, controlledText, sendWithBackpressure } from './protocol-limits.mts';
+import { ProtocolLimitError, controlledString, controlledText, sendWithBackpressure } from './protocol-limits.mts';
 import { currentDocumentActor } from './document-actor.mjs';
 import { newCommentThread } from './document-review-policy.mjs';
 import { captureReviewAnchor } from './review-anchors.mjs';
@@ -27,8 +27,13 @@ const USER_ERRORS = new Map([
   ['Account access was revoked', 'Доступ к аккаунту отозван.'],
   ['Mod contributors may edit English localisation files only', 'Недостаточно прав для изменения обсуждения.'],
 ]);
+const ROOM_CAPACITY_ERRORS = new Set([
+  'This document has reached its reservation limit',
+  'This document has reached its suggestion limit',
+]);
 const WRITES = new Set([
   'comment-create',
+  'suggestion-create',
   'comment-reply',
   'suggestion-reply',
   'discussion-message-update',
@@ -36,26 +41,48 @@ const WRITES = new Set([
 ]);
 export const isDiscussionWrite = (message) => WRITES.has(message?.type);
 
-export async function receiveDiscussionWrite(room, socket, message, authorise) {
+export async function receiveDiscussionWrite(room, socket, message, authorise, afterSave) {
   const requestId = controlledString(message.requestId, 'Discussion request id', 128, { required: true });
   const id = controlledString(message.id, 'Discussion id', 128, { required: true });
   let result;
+  let applied;
   try {
     authorise();
     result = await auditDocumentControl(room, socket, message, () => {
       authorise();
-      return room.applyJson(socket, message);
+      return (applied = room.applyJson(socket, message));
     });
     if (!result) throw new Error('Discussion is unavailable');
-    // Already inside the room queue: flush() would wait for this very request.
-    await room.persist();
+    if (result.status === 'saved') {
+      // Already inside the room queue: flush() would wait for this very request.
+      await room.persist();
+      await afterSave?.();
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error(`[server] discussion write rejected for ${room.documentId}: ${detail}`);
-    result = {
-      status: 'error',
-      message: USER_ERRORS.get(detail) ?? 'Не удалось сохранить сообщение. Черновик сохранён.',
-    };
+    if (socket.automationWrites) {
+      const knownRejection = ROOM_CAPACITY_ERRORS.has(detail) || USER_ERRORS.has(detail);
+      if (applied?.status === 'saved') {
+        result = {
+          status: 'error',
+          code: 'WRITE_UNCONFIRMED',
+          message: 'The change could not be confirmed on disk. Retry with the same ID.',
+        };
+      } else {
+        if (error instanceof ProtocolLimitError && !knownRejection) throw error;
+        result = {
+          status: 'error',
+          code: 'WRITE_REJECTED',
+          message: knownRejection ? detail : 'The server rejected the change.',
+        };
+      }
+    } else {
+      result = {
+        status: 'error',
+        message: USER_ERRORS.get(detail) ?? 'Не удалось сохранить сообщение. Черновик сохранён.',
+      };
+    }
   }
   sendWithBackpressure(socket, JSON.stringify({ type: 'discussion-result', requestId, id, ...result }));
 }
@@ -125,6 +152,10 @@ export function applyDiscussionControl(room, socket, message) {
   let thread = collection.find((item) => item.id === id);
   if (message.type === 'comment-create') {
     if (!thread) {
+      if (message.requestId && room.deletedCommentIds?.includes(id)) return { status: 'deleted' };
+      if (socket.automation && message.expectedRevision !== room.automationRevision()) {
+        return { status: 'stale' };
+      }
       if (collection.length >= MAX_COMMENT_THREADS_PER_ROOM)
         throw new Error('This document has reached its comment limit');
       thread = newCommentThread(id, actor, message);
@@ -186,6 +217,7 @@ export function applyDiscussionControl(room, socket, message) {
     }
   } else if (thread) {
     room.commentThreads = collection.filter((item) => item.id !== id);
+    room.recordDeletedObject?.('deletedCommentIds', id);
     room.schedulePersist();
   }
   room.broadcastReview();

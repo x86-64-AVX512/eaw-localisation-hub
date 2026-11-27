@@ -2,7 +2,11 @@
 
 All notable public changes to EaW Localisation Hub are recorded here. The Windows UI and packages use the same beta version format starting with `0.8.9-beta.4`.
 
-## 0.8.9-beta.4 – Unreleased
+## 0.8.9-beta.5 – Unreleased
+
+- Add a CLI for AI agents with disabled, read-only and read/write modes in Desktop Agent settings. Agents can read documents, discussions, history, tickets and reservations within account permissions. Read/write mode also supports comments, replies, edit proposals and reservations.
+
+## 0.8.9-beta.4
 
 - Close Review when a Hub session expires or is revoked. Keep local editing available when Hub is unreachable and the session has not been rejected. Reject expired or revoked sessions on the server and reload Windows credentials after signing in again.
 - Add DeepSeek and Kimi as opt-in spelling and grammar providers. Provider API keys stay in Desktop Agent memory until it exits.

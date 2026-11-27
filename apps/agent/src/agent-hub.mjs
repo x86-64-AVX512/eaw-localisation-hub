@@ -67,6 +67,7 @@ export class AgentHub {
     this.documents = new Map();
     this.identity = null;
     this.reviewAccess = 'unknown';
+    this.serverSupportsCli = null;
     this.sessionRevision = 0;
     this.sessionSocket = null;
     this.sessionExpiryTimer = null;
@@ -566,8 +567,8 @@ export class AgentHub {
     return ticketContext.ticketBootstrap(this, ticketId, relativePath);
   }
 
-  async englishOriginal(key, ticketId = '') {
-    return ticketContext.englishOriginal(this, key, ticketId);
+  async englishOriginal(key, ticketId = '', signal) {
+    return ticketContext.englishOriginal(this, key, ticketId, signal);
   }
 
   gitOperationInProgress() {
@@ -1063,6 +1064,7 @@ export class AgentHub {
       const health = this.authRequest('/health', { method: 'GET' })
         .then((payload) => {
           this.serverVersion = String(payload.version ?? '');
+          this.serverSupportsCli = payload.cliAutomation === true;
         })
         .catch(() => {});
       try {
@@ -1083,6 +1085,14 @@ export class AgentHub {
       this.accountRefreshPromise = null;
     });
     return this.accountRefreshPromise;
+  }
+
+  async ensureCliServerSupport(signal) {
+    if (this.serverSupportsCli === true) return true;
+    const payload = await this.authRequest('/health', { method: 'GET', signal });
+    this.serverVersion = String(payload.version ?? '');
+    this.serverSupportsCli = payload.cliAutomation === true;
+    return this.serverSupportsCli;
   }
 
   async issueRecoveryCode(client) {

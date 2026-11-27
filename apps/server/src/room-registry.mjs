@@ -197,6 +197,17 @@ export class RoomRegistry {
     this.indexedDocuments = new Set(Object.keys(documents));
   }
 
+  async hasSavedState(documentId) {
+    const hash = crypto.createHash('sha256').update(documentId).digest('hex');
+    if (!this.persisted.has(hash)) return false;
+    try {
+      return (await fs.stat(path.join(this.dataDirectory, 'documents', hash + '.update'))).isFile();
+    } catch (error) {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    }
+  }
+
   persistedBytesFor(hash) {
     return this.persisted.get(hash) ?? 0;
   }

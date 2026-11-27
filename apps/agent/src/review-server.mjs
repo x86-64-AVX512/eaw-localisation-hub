@@ -6,6 +6,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
+import { createCliApi } from './cli-api.mjs';
+import { CLI_ROUTE } from './cli-protocol.mjs';
 import { MAX_MESSAGE_BYTES, MAX_KEY_REPLACEMENT_REQUEST_BYTES } from '../../../packages/shared/src/constants.mts';
 import {
   normaliseTrackedPath,
@@ -358,6 +360,7 @@ function requestIsLoopback(request, port) {
 export async function startReviewServer(hub, options) {
   const endpoint = await loadReviewEndpoint(options);
   const reviewHost = createReviewHostLauncher();
+  const cli = await createCliApi(hub, options.state);
   const diffCache = hub.diffCache ?? new DiffCache(path.join(options.state, 'diff-cache'));
   await diffCache.initialise();
   let spellingDictionaryPromise = null;
@@ -383,6 +386,17 @@ export async function startReviewServer(hub, options) {
       return;
     }
     if (respondToReviewOwnerProbe(request, response, requestUrl, token)) return;
+    if (requestUrl.pathname.startsWith(CLI_ROUTE)) {
+      const bearer = bearerToken(request);
+      await cli.handle(request, response, requestUrl, {
+        port,
+        reviewAuthorised: () => tokenMatches(bearer, token),
+        bearer,
+        readJsonBody,
+        secureHeaders,
+      });
+      return;
+    }
     if (requestUrl.pathname === '/api/review-access' && ['GET', 'POST'].includes(request.method)) {
       if (
         (request.headers.origin && request.headers.origin !== `http://127.0.0.1:${port}`) ||
@@ -916,6 +930,7 @@ export async function startReviewServer(hub, options) {
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
   const closeForSession = (websocket) => websocket.close(REVIEW_SESSION_CLOSED, 'Hub session ended');
   const onReviewAccessLost = () => {
+    cli.clear();
     for (const websocket of websocketServer.clients) closeForSession(websocket);
   };
   hub.onReviewAccessLost = onReviewAccessLost;
@@ -956,6 +971,7 @@ export async function startReviewServer(hub, options) {
     });
   });
   const closeServer = async () => {
+    cli.close();
     reviewHost.close();
     if (hub.onReviewAccessLost === onReviewAccessLost) hub.onReviewAccessLost = null;
     localisationAssistant.close();

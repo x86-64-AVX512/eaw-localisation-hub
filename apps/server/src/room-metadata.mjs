@@ -6,6 +6,24 @@ import { MAX_DELETED_MESSAGE_IDS } from './document-review-policy.mjs';
 export const MAX_COMMENT_THREADS_PER_ROOM = 500;
 const MAX_SUGGESTIONS_PER_ROOM = 500;
 const MAX_DISCUSSION_MESSAGES = 100;
+export const MAX_DELETED_OBJECT_IDS = 1024;
+
+export function minimalDeletedIds(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = [...new Set(value.filter((id) => typeof id === 'string' && id && Buffer.byteLength(id, 'utf8') <= 128))];
+  return ids.slice(-MAX_DELETED_OBJECT_IDS);
+}
+
+export function minimalDeletedObjects(metadata) {
+  const deletedCommentIds = minimalDeletedIds(metadata?.deletedCommentIds);
+  const deletedSuggestionIds = minimalDeletedIds(metadata?.deletedSuggestionIds);
+  const deletedReservationIds = minimalDeletedIds(metadata?.deletedReservationIds);
+  return {
+    ...(deletedCommentIds.length ? { deletedCommentIds } : {}),
+    ...(deletedSuggestionIds.length ? { deletedSuggestionIds } : {}),
+    ...(deletedReservationIds.length ? { deletedReservationIds } : {}),
+  };
+}
 
 // Like the other minimal* readers, drop malformed entries instead of refusing the
 // whole metadata file: a throw here would stop the server at startup.
@@ -179,9 +197,13 @@ async function metadataFiles(dataDirectory) {
   }
 }
 
-function serialiseMetadata(reservations, commentThreads, suggestions, gitBase = null) {
+function serialiseMetadata(reservations, commentThreads, suggestions, gitBase = null, deletedObjects = {}) {
   // Byte-identical to DocumentRoom.metadataJson(), whose size the room budget checks.
-  return JSON.stringify({ schema: 3, reservations, commentThreads, suggestions, gitBase }, null, 2);
+  return JSON.stringify(
+    { schema: 3, reservations, commentThreads, suggestions, gitBase, ...minimalDeletedObjects(deletedObjects) },
+    null,
+    2,
+  );
 }
 
 export function parseRoomMetadata(text) {
@@ -224,7 +246,7 @@ export async function minimisePersistedDocumentMetadata(dataDirectory, atomicWri
     const suggestions = (Array.isArray(metadata.suggestions) ? metadata.suggestions : [])
       .slice(0, MAX_SUGGESTIONS_PER_ROOM)
       .map(minimalSuggestion);
-    return serialiseMetadata(reservations, commentThreads, suggestions, metadata.gitBase ?? null);
+    return serialiseMetadata(reservations, commentThreads, suggestions, metadata.gitBase ?? null, metadata);
   });
 }
 
@@ -273,6 +295,8 @@ export async function anonymisePersistedReservationUser(dataDirectory, userId, a
     const suggestions = (Array.isArray(metadata.suggestions) ? metadata.suggestions : [])
       .map(minimalSuggestion)
       .map(anonymiseDiscussion);
-    return changed ? serialiseMetadata(reservations, commentThreads, suggestions, metadata.gitBase ?? null) : null;
+    return changed
+      ? serialiseMetadata(reservations, commentThreads, suggestions, metadata.gitBase ?? null, metadata)
+      : null;
   });
 }

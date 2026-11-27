@@ -453,6 +453,7 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
       throw new TypeError('Invalid discussion result');
     if (message.revision !== undefined) serverInteger(message.revision, 'Discussion revision', Number.MAX_SAFE_INTEGER);
     serverString(message.message ?? '', 'Discussion error', 2048);
+    serverString(message.code, 'Discussion error code', 128, { optional: true });
     return message;
   }
   if (type === 'review') {
@@ -527,6 +528,7 @@ export function validateServerMessage(message: Record<string, unknown>): Record<
   }
   if (type === 'error') {
     serverString(message.message ?? '', 'Server error', 64 * 1024);
+    serverString(message.code, 'Server error code', 128, { optional: true });
     return message;
   }
   if (type === 'sync-flushed') {

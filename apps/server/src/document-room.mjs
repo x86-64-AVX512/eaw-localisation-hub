@@ -30,7 +30,10 @@ import {
   sendWithBackpressure,
 } from './protocol-limits.mts';
 import {
+  MAX_DELETED_OBJECT_IDS,
   minimalCommentThread,
+  minimalDeletedIds,
+  minimalDeletedObjects,
   minimalDiscussionMessage,
   minimalReservation,
   minimalSuggestion,
@@ -39,7 +42,7 @@ import {
 } from './room-metadata.mjs';
 import { expiredPresenceIds } from '../../../packages/shared/src/presence.mts';
 import { mergeLocalisationThreeWay } from '../../../packages/shared/src/merge.mts';
-import { computeSingleReplace } from '../../../packages/shared/src/text.mts';
+import { computeSingleReplace, keysInsideRange } from '../../../packages/shared/src/text.mts';
 import { textChangeSummary } from './notification-summary.mjs';
 import { auditDocumentControl, auditDocumentEdit } from './document-audit.mjs';
 import { applyDiscussionControl, isDiscussionWrite, receiveDiscussionWrite } from './discussion-control.mjs';
@@ -86,16 +89,24 @@ export async function closeDocumentRoomValidator() {
 }
 
 export class DocumentRoom {
-  static async load(dataDirectory, documentId, authStore, registry, canonicalSource = null, canonicalSnapshot = null) {
+  static async load(
+    dataDirectory,
+    documentId,
+    authStore,
+    registry,
+    canonicalSource = null,
+    canonicalSnapshot = null,
+    readOnly = false,
+  ) {
     const hash = crypto.createHash('sha256').update(documentId).digest('hex');
-    const room = new DocumentRoom(dataDirectory, documentId, hash, authStore, registry, canonicalSource);
+    const room = new DocumentRoom(dataDirectory, documentId, hash, authStore, registry, canonicalSource, readOnly);
     try {
       await room.loadFromDisk();
     } catch (error) {
       room.destroy();
       throw error;
     }
-    if (canonicalSource?.enabled) {
+    if (!readOnly && canonicalSource?.enabled) {
       try {
         await room.applyCanonicalSnapshot(canonicalSnapshot ?? (await canonicalSource.snapshot(documentId)));
       } catch (error) {
@@ -111,8 +122,9 @@ export class DocumentRoom {
     return room;
   }
 
-  constructor(dataDirectory, documentId, hash, authStore, registry, canonicalSource = null) {
+  constructor(dataDirectory, documentId, hash, authStore, registry, canonicalSource = null, readOnly = false) {
     this.documentId = documentId;
+    this.readOnly = readOnly;
     this.hash = hash;
     this.document = new Y.Doc();
     this.clients = new Set();
@@ -121,6 +133,9 @@ export class DocumentRoom {
     this.reservations = [];
     this.commentThreads = [];
     this.suggestions = [];
+    this.deletedCommentIds = [];
+    this.deletedSuggestionIds = [];
+    this.deletedReservationIds = [];
     this.gitBase = null;
     this.gitConflict = false;
     this.gitConflicts = [];
@@ -210,9 +225,9 @@ export class DocumentRoom {
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
-    await this.history.load();
+    await this.history.load({ readOnly: this.readOnly });
     this.eventText = this.document.getText('content').toString();
-    this.history.ensureBaseline(this.document.getText('content').toString());
+    if (!this.readOnly) this.history.ensureBaseline(this.eventText);
     try {
       const stats = await fs.stat(this.metadataPath);
       if (stats.size > MAX_ROOM_METADATA_BYTES) {
@@ -229,6 +244,9 @@ export class DocumentRoom {
       this.suggestions = (Array.isArray(metadata.suggestions) ? metadata.suggestions : [])
         .slice(0, MAX_SUGGESTIONS_PER_ROOM)
         .map(minimalSuggestion);
+      this.deletedCommentIds = minimalDeletedIds(metadata.deletedCommentIds);
+      this.deletedSuggestionIds = minimalDeletedIds(metadata.deletedSuggestionIds);
+      this.deletedReservationIds = minimalDeletedIds(metadata.deletedReservationIds);
       if (this.history.reconcileSuggestionAttribution(this.suggestions)) this.schedulePersist();
       if (metadata.gitBase && typeof metadata.gitBase === 'object') {
         this.gitBase = {
@@ -267,6 +285,7 @@ export class DocumentRoom {
   }
 
   addClient(socket) {
+    if (this.destroyed) throw new ProtocolLimitError('The document room has closed', 1013);
     if (this.registry.isUnavailableBranch(this.documentId)) {
       const branch = this.documentId.split(':', 1)[0];
       throw new ProtocolLimitError(
@@ -285,6 +304,7 @@ export class DocumentRoom {
       !this.gitBase ||
       (!this.gitBase.stale && !this.gitConflict && Boolean(socket.localBlob && socket.localBlob === this.gitBase.blob));
     const canSeed =
+      !socket.automation &&
       canEditDocument(currentDocumentActor(this.authStore, socket.identity), this.documentId) &&
       !this.gitBase &&
       content.length === 0 &&
@@ -310,6 +330,13 @@ export class DocumentRoom {
         reservations: this.activeReservations(),
         reservationUpdates: true,
         discussionUpdates: true,
+        ...(socket.automation
+          ? {
+              automationReadOnly: !socket.automationWrites,
+              automationWrites: socket.automationWrites === true,
+              initialised: this.hasStoredState,
+            }
+          : {}),
         commentThreads: publicDiscussionItems(this.commentThreads),
         suggestions: publicDiscussionItems(this.suggestions),
         history: this.history.summaries(),
@@ -512,6 +539,18 @@ export class DocumentRoom {
     return this.document.getText('content').toString();
   }
 
+  automationRevision(source = this.currentText()) {
+    return crypto.createHash('sha256').update(`${this.documentId}\0${source}`).digest('hex');
+  }
+
+  recordDeletedObject(field, id) {
+    const list = (this[field] ??= []);
+    const index = list.indexOf(id);
+    if (index >= 0) list.splice(index, 1);
+    list.push(id);
+    if (list.length > MAX_DELETED_OBJECT_IDS) list.splice(0, list.length - MAX_DELETED_OBJECT_IDS);
+  }
+
   hasAuthoritativeState() {
     return this.hasStoredState || this.seedClaimed || this.document.getText('content').length > 0;
   }
@@ -687,6 +726,7 @@ export class DocumentRoom {
         commentThreads: this.commentThreads,
         suggestions: this.suggestions,
         gitBase: this.gitBase,
+        ...minimalDeletedObjects(this),
       },
       null,
       2,
@@ -757,7 +797,7 @@ export class DocumentRoom {
     this.lastAccessAt = Date.now();
   }
 
-  receiveJson(socket, message, authorise = () => {}) {
+  receiveJson(socket, message, authorise = () => {}, afterSave) {
     return this.enqueueMessage(async () => {
       if (this.registry.isUnavailableBranch(this.documentId)) {
         const branch = this.documentId.split(':', 1)[0];
@@ -766,8 +806,11 @@ export class DocumentRoom {
           this.registry.mergedBranches.has(branch) ? 4002 : 1013,
         );
       }
-      if (isDiscussionWrite(message) && message.requestId)
-        return receiveDiscussionWrite(this, socket, message, authorise);
+      if (
+        (isDiscussionWrite(message) || (socket.automationWrites && message.type === 'reservation-create')) &&
+        message.requestId
+      )
+        return receiveDiscussionWrite(this, socket, message, authorise, afterSave);
       if (message?.type === 'reservation-update') {
         const requestId = controlledString(message.requestId, 'Reservation request id', 128, { required: true });
         const id = controlledString(message.id, 'Reservation id', 128, { required: true });
@@ -976,6 +1019,27 @@ export class DocumentRoom {
       const initialKeys = Array.isArray(message.initialKeys) ? message.initialKeys : [];
       if (initialKeys.length > 1000) throw new ProtocolLimitError('Reservation contains too many keys');
       const existing = this.reservations.find((reservation) => reservation.id === id);
+      if (socket.automationWrites) {
+        if (existing) {
+          return {
+            status:
+              existing.createdById === socket.identity?.id &&
+              existing.comment === (message.comment ?? '') &&
+              JSON.stringify(existing.initialKeys) === JSON.stringify(initialKeys)
+                ? 'saved'
+                : 'stale',
+          };
+        }
+        if (this.deletedReservationIds.includes(id)) return { status: 'deleted' };
+        const source = this.currentText();
+        const range = resolveReviewRange(this.document, { startRelative, endRelative });
+        if (!range || range.start === range.end || message.expectedRevision !== this.automationRevision(source)) {
+          return { status: 'stale' };
+        }
+        const anchored = keysInsideRange(source, range.start, range.end);
+        if (anchored.length !== 1 || initialKeys.length !== 1 || anchored[0] !== initialKeys[0])
+          return { status: 'stale' };
+      }
       if (!existing) {
         if (this.reservations.length >= MAX_RESERVATIONS_PER_ROOM) {
           throw new ProtocolLimitError('This document has reached its reservation limit');
@@ -1031,7 +1095,7 @@ export class DocumentRoom {
         this.schedulePersist();
       }
       this.broadcastReservations();
-      return;
+      return socket.automationWrites ? { status: 'saved' } : undefined;
     }
 
     if (message.type === 'reservation-delete') {
@@ -1039,6 +1103,7 @@ export class DocumentRoom {
       const previousLength = this.reservations.length;
       this.reservations = this.reservations.filter((reservation) => reservation.id !== id);
       if (this.reservations.length !== previousLength) {
+        this.recordDeletedObject('deletedReservationIds', id);
         this.schedulePersist();
       }
       this.broadcastReservations();
@@ -1050,7 +1115,26 @@ export class DocumentRoom {
 
     if (message.type === 'suggestion-create') {
       const id = controlledString(message.id, 'Suggestion id', 128, { required: true });
-      if (!this.suggestions.some((suggestion) => suggestion.id === id)) {
+      const existing = this.suggestions.find((suggestion) => suggestion.id === id);
+      if (message.requestId) {
+        const actor = this.actorFor(socket, message, 'Suggestion');
+        if (existing) {
+          return {
+            status:
+              existing.authorId === actor.id &&
+              existing.originalText === message.originalText &&
+              existing.replacementText === message.replacementText
+                ? 'saved'
+                : 'stale',
+          };
+        }
+        if (this.deletedSuggestionIds.includes(id)) return { status: 'deleted' };
+        const source = this.currentText();
+        if (message.expectedRevision !== this.automationRevision(source)) return { status: 'stale' };
+        const range = resolveReviewRange(this.document, message);
+        if (!range || source.slice(range.start, range.end) !== message.originalText) return { status: 'stale' };
+      }
+      if (!existing) {
         if (this.suggestions.length >= MAX_SUGGESTIONS_PER_ROOM) {
           throw new ProtocolLimitError('This document has reached its suggestion limit');
         }
@@ -1068,7 +1152,7 @@ export class DocumentRoom {
         this.notifyTicketOwner('suggestion-created', actor, { suggestionId: id });
       }
       this.broadcastReview();
-      return;
+      return message.requestId ? { status: 'saved' } : undefined;
     }
 
     if (message.type === 'suggestion-update') {
@@ -1298,7 +1382,7 @@ export class DocumentRoom {
     if (message.type === 'history-get') {
       const id = controlledString(message.id, 'History version id', 128, { required: true });
       const text = this.history.text(id);
-      if (text === null) throw new ProtocolLimitError('History version no longer exists');
+      if (text === null) throw new Error('History version no longer exists');
       // Base64 grows the text by a third; a frame over the limit would close the socket.
       // A plain Error reports the problem and keeps the connection.
       if (Math.ceil(Buffer.byteLength(text, 'utf8') / 3) * 4 + 1024 > MAX_MESSAGE_BYTES) {
@@ -1359,7 +1443,10 @@ export class DocumentRoom {
       const id = controlledString(message.id, 'Suggestion id', 128, { required: true });
       const previousLength = this.suggestions.length;
       this.suggestions = this.suggestions.filter((item) => item.id !== id);
-      if (this.suggestions.length !== previousLength) this.schedulePersist();
+      if (this.suggestions.length !== previousLength) {
+        this.recordDeletedObject('deletedSuggestionIds', id);
+        this.schedulePersist();
+      }
       this.broadcastReview();
       return;
     }
@@ -1448,7 +1535,7 @@ export class DocumentRoom {
   }
 
   schedulePersist() {
-    if (this.destroyed || this.queuedPersist || this.persistRetryTimer) return;
+    if (this.readOnly || this.destroyed || this.queuedPersist || this.persistRetryTimer) return;
     const write = () => this.persistInBackground();
     this.persistDeadlineTimer ??= setTimeout(write, PERSIST_DEADLINE_MILLISECONDS);
     clearTimeout(this.persistTimer);

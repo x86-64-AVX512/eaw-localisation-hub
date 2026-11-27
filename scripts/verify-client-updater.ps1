@@ -76,6 +76,14 @@ if ((Find-NewClientRelease -InstalledVersion '0.8.9F1').Version -cne '0.8.9-beta
 if (Find-NewClientRelease -InstalledVersion '0.8.9-beta.4') {
     throw 'An up-to-date beta installation must not select itself.'
 }
+$script:mockReleases += New-TestRelease '0.8.9-beta.5'
+if ((Find-NewClientRelease -InstalledVersion '0.8.9F1').Version -cne '0.8.9-beta.5' -or
+    (Find-NewClientRelease -InstalledVersion '0.8.9-beta.4').Version -cne '0.8.9-beta.5') {
+    throw 'An older client must select beta.5 directly when it is available.'
+}
+if (Find-NewClientRelease -InstalledVersion '0.8.9-beta.5') {
+    throw 'An up-to-date beta installation must not select itself.'
+}
 Remove-Item Function:Get-ClientReleaseList
 . (Join-Path $PSScriptRoot 'client-update-transfer.ps1')
 

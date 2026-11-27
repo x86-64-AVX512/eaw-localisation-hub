@@ -90,7 +90,11 @@ export function runGitAsync(args: string[], options: Omit<ExecFileOptionsWithStr
     const execOptions = { windowsHide: true, ...options } as ExecFileOptionsWithStringEncoding;
     execOptions.encoding ??= 'utf8';
     execFile(gitExecutable(), args, execOptions, (error, stdout, stderr) => {
-      resolve({ status: error ? (error.code ?? 1) : 0, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
+      resolve({
+        status: error ? (error.code ?? error.signal ?? 'GIT_FAILED') : 0,
+        stdout: String(stdout ?? ''),
+        stderr: String(stderr ?? ''),
+      });
     });
   });
 }

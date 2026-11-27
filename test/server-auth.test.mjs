@@ -6,7 +6,8 @@ import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import { AuthStore } from '../apps/server/src/auth.mjs';
@@ -273,6 +274,300 @@ async function connectReviewClient(stateDirectory, filePath, initialText) {
   );
   return { socket, messages, waitFor, send: (message) => socket.send(JSON.stringify(message)) };
 }
+
+test(
+  'the CLI shares account permissions and confirms saved proposals without editing the worktree',
+  { timeout: 45000 },
+  async (t) => {
+    const temp = await fs.realpath(os.tmpdir());
+    const root = await fs.mkdtemp(path.join(temp, 'eaw-cli-'));
+    const repo = path.join(root, 'repo');
+    const state = path.join(root, 'agent');
+    const data = path.join(root, 'server');
+    const relative = 'localisation/russian/cli_l_russian.yml';
+    const file = path.join(repo, relative);
+    const oldRelative = 'localisation/russian/old_l_russian.yml';
+    const source = 'l_russian:\n CLI_KEY:0 "Исходный текст"\n';
+    let server, agent, review;
+    t.after(async () => {
+      review?.socket.terminate();
+      await stop(agent);
+      await stop(server);
+      assert.equal(path.dirname(await fs.realpath(root)), temp);
+      await fs.rm(root, { recursive: true, force: true });
+    });
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, source);
+    await fs.writeFile(path.join(repo, oldRelative), source);
+    const git = (...args) => execFileSync('git', args, { cwd: repo, windowsHide: true, stdio: 'pipe' });
+    git('init', '-b', 'general-dev');
+    git('add', '.');
+    git('-c', 'user.name=CLI Test', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture');
+    const baseCommit = git('rev-parse', 'HEAD').toString().trim();
+    git('rm', oldRelative);
+    git('-c', 'user.name=CLI Test', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'remove old file');
+    let port;
+    ({ server, port } = await startAuthenticatedServer(data));
+    const inviteCode = (await fs.readFile(path.join(data, 'bootstrap-invite.txt'), 'utf8')).trim();
+    const identity = await api(port, 'POST', '/api/auth/redeem', {
+      body: { inviteCode, displayName: 'CLI Tester', password: 'CLI-test-password-184!' },
+    });
+    assert.equal(identity.status, 201);
+    agent = spawn(
+      process.execPath,
+      ['apps/agent/src/main.mjs', '--server', `ws://127.0.0.1:${port}`, '--repo', repo, '--state', state],
+      { cwd: projectRoot, env: { ...process.env, EAW_HUB_TOKEN: identity.value.token }, windowsHide: true },
+    );
+    agent.output = '';
+    for (const stream of [agent.stdout, agent.stderr])
+      stream.on('data', (chunk) => {
+        agent.output += chunk;
+      });
+    await waitForOutput(agent, /review application: ready/u);
+    review = await connectReviewClient(state, file, source);
+    await review.waitFor((message) => message.type === 'documentReady');
+
+    const session = JSON.parse(await fs.readFile(path.join(state, 'review-session.json'), 'utf8'));
+    const local = (method, route, body, token = session.token) =>
+      api(new URL(session.origin).port, method, `/api/cli/v1/${route}`, { token, body });
+    const grantRequest = () => local('POST', 'grants', { minutes: 15, label: 'Integration' });
+    const grant = async () => {
+      const reply = await grantRequest();
+      assert.equal(reply.status, 200, JSON.stringify(reply.value));
+      return reply.value.data;
+    };
+    const setMode = async (mode) => {
+      const result = await local('PUT', 'settings', { mode });
+      assert.equal(result.value.data.mode, mode);
+    };
+    const run = async (capability, ...args) => {
+      const result = await promisify(execFile)(process.execPath, ['apps/agent/src/cli.mjs', ...args, '--json'], {
+        cwd: projectRoot,
+        env: { ...process.env, EAW_HUB_CLI_TOKEN: capability },
+        timeout: 10000,
+        windowsHide: true,
+      }).catch((error) => {
+        if (!error.stdout) throw error;
+        return { stdout: error.stdout };
+      });
+      return JSON.parse(result.stdout);
+    };
+    assert.equal((await local('GET', 'settings')).value.data.mode, 'off');
+    assert.equal((await grantRequest()).value.error.code, 'CLI_DISABLED');
+    await setMode('read');
+    const reader = await grant();
+    await setMode('write');
+    const writer = await grant();
+    const ticket = await api(port, 'POST', '/api/tickets', {
+      token: identity.value.token,
+      body: {
+        title: 'CLI ticket',
+        baseBranch: 'general-dev',
+        baseCommit,
+        files: [relative, oldRelative],
+      },
+    });
+    assert.equal(ticket.status, 201, JSON.stringify(ticket.value));
+    const ticketId = ticket.value.ticket.id;
+    assert.equal((await run(reader.token, 'status')).data.user, 'CLI Tester');
+    assert.equal(
+      (await run(reader.token, 'ticket', 'list')).data.items.some(({ id }) => id === ticketId),
+      true,
+    );
+    assert.equal((await run(reader.token, 'ticket', 'read', '--id', ticketId)).data.ticket.id, ticketId);
+    assert.equal((await run(reader.token, 'search', '--lang', 'ru', '--key', 'CLI_KEY')).data.items[0].file, relative);
+    const keyArgs = ['--file', relative, '--key', 'CLI_KEY'];
+    const original = await run(reader.token, 'read', ...keyArgs);
+    assert.equal(original.data.text, 'Исходный текст');
+    const ticketBaseline = (await run(reader.token, 'read', ...keyArgs, '--ticket', ticketId)).data;
+    assert.equal(ticketBaseline.source, 'ticket-baseline');
+    assert.equal(ticketBaseline.text, 'Исходный текст');
+    const historical = await run(reader.token, 'read', '--file', oldRelative, '--key', 'CLI_KEY', '--ticket', ticketId);
+    assert.equal(historical.data.source, 'ticket-baseline');
+    assert.equal(historical.data.text, 'Исходный текст');
+    const emptyHistory = (await run(reader.token, 'history', 'list', '--file', relative, '--ticket', ticketId)).data;
+    assert.equal(emptyHistory.total, 0);
+    assert.equal(emptyHistory.revision, null);
+    assert.equal(emptyHistory.source, 'ticket-baseline');
+    for (const command of ['discussion', 'reservation']) {
+      const empty = (await run(reader.token, command, 'list', ...keyArgs, '--ticket', ticketId)).data;
+      assert.deepEqual(empty.items, []);
+      assert.equal(empty.revision, null);
+    }
+    const ticketHash = crypto.createHash('sha256').update(`ticket-${ticketId}:${relative}`).digest('hex');
+    await assert.rejects(fs.access(path.join(data, 'documents', `${ticketHash}.json`)), { code: 'ENOENT' });
+
+    const replacement = path.join(root, 'replacement.txt');
+    await fs.writeFile(replacement, 'Новый текст');
+    const preview = ['suggestion', 'preview', ...keyArgs, '--text-file', replacement];
+    const coldReply = await run(
+      writer.token,
+      'discussion',
+      'reply',
+      '--file',
+      relative,
+      '--kind',
+      'comment',
+      '--id',
+      crypto.randomUUID(),
+      '--text-file',
+      replacement,
+      '--ticket',
+      ticketId,
+    );
+    assert.equal(coldReply.error.code, 'DOCUMENT_NOT_INITIALISED');
+    const historyAfterReply = (await run(reader.token, 'history', 'list', '--file', relative, '--ticket', ticketId))
+      .data;
+    assert.equal(historyAfterReply.total, 0);
+    await assert.rejects(fs.access(path.join(data, 'documents', `${ticketHash}.json`)), { code: 'ENOENT' });
+    assert.equal((await run(writer.token, ...preview, '--ticket', ticketId)).error.code, 'DOCUMENT_NOT_INITIALISED');
+    assert.equal((await run(reader.token, ...preview)).error.code, 'READ_ONLY');
+    const proposed = await run(writer.token, ...preview);
+    assert.deepEqual(proposed.data.diff, { before: 'Исходный текст', after: 'Новый текст' });
+    const submit = ['suggestion', 'submit', '--plan', proposed.data.planId];
+    const first = await run(writer.token, ...submit);
+    assert.equal(first.data.status, 'saved');
+    assert.equal((await run(writer.token, ...submit)).data.id, first.data.id);
+    const replyId = crypto.randomUUID();
+    const reply = [
+      'discussion',
+      'reply',
+      '--file',
+      relative,
+      '--kind',
+      'suggestion',
+      '--id',
+      first.data.id,
+      '--text-file',
+      replacement,
+      '--request-id',
+      replyId,
+    ];
+    assert.equal((await run(writer.token, ...reply)).data.messageId, replyId);
+    assert.equal((await run(writer.token, ...reply)).data.messageId, replyId);
+    const items = (await run(reader.token, 'discussion', 'list', ...keyArgs)).data.items;
+    assert.equal(items.length, 1);
+    assert.equal(items[0].author, 'CLI Tester');
+    assert.equal(items[0].messageCount, 1);
+    const onDisk = JSON.parse(
+      await fs.readFile(
+        path.join(
+          data,
+          'documents',
+          `${crypto.createHash('sha256').update(`general-dev:${relative}`).digest('hex')}.json`,
+        ),
+        'utf8',
+      ),
+    );
+    assert.equal(onDisk.suggestions.length, 1);
+    assert.match(await fs.readFile(file, 'utf8'), /Исходный текст/u);
+
+    const stale = await run(writer.token, ...preview);
+    const nextSource = source.replace('Исходный текст', 'Текст обновлён человеком');
+    review.send({ type: 'snapshot', path: file, textBase64: Buffer.from(nextSource).toString('base64') });
+    const deadline = Date.now() + 5000;
+    let next;
+    do {
+      next = await run(reader.token, 'read', ...keyArgs);
+      if (next.data?.text === 'Текст обновлён человеком') break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } while (Date.now() < deadline);
+    assert.equal(next.data?.text, 'Текст обновлён человеком');
+    assert.equal(
+      (await run(writer.token, 'suggestion', 'submit', '--plan', stale.data.planId)).error.code,
+      'STALE_REVISION',
+    );
+    const comment = await run(
+      writer.token,
+      'discussion',
+      'create',
+      ...keyArgs,
+      '--revision',
+      next.data.revision,
+      '--text-file',
+      replacement,
+    );
+    assert.equal(comment.data.status, 'saved');
+    const keyComment = crypto.randomUUID();
+    const keyOffset = Buffer.byteLength(nextSource.slice(0, nextSource.indexOf('CLI_KEY')));
+    review.send({
+      type: 'commentCreate',
+      path: file,
+      id: keyComment,
+      requestId: keyComment,
+      messageId: keyComment,
+      startByte: keyOffset,
+      endByte: keyOffset + 'CLI_KEY'.length,
+      bodyBase64: Buffer.from('Comment on a key name').toString('base64'),
+    });
+    const savedKeyComment = await review.waitFor(
+      (message) => message.type === 'discussionResult' && message.id === keyComment,
+    );
+    assert.equal(savedKeyComment.status, 'saved');
+    const keyDiscussion = await run(reader.token, 'discussion', 'list', ...keyArgs, '--id', keyComment);
+    assert.equal(keyDiscussion.data.items[0].id, keyComment);
+
+    const reservationId = crypto.randomUUID();
+    const reserve = [
+      'reservation',
+      'create',
+      ...keyArgs,
+      '--revision',
+      next.data.revision,
+      '--request-id',
+      reservationId,
+    ];
+    assert.equal((await run(reader.token, ...reserve)).error.code, 'READ_ONLY');
+    const note = path.join(root, 'note.txt');
+    assert.equal((await run(writer.token, ...reserve, '--text-file', note)).error.code, 'INVALID_ARGUMENT');
+    await fs.writeFile(note, 'Invalid\t note\n');
+    assert.equal((await run(writer.token, ...reserve, '--text-file', note)).error.code, 'INVALID_ARGUMENT');
+    await fs.writeFile(note, 'A reservation note\r\n');
+    reserve.push('--text-file', note);
+    assert.equal((await run(writer.token, ...reserve)).data.id, reservationId);
+    assert.equal((await run(writer.token, ...reserve)).data.id, reservationId);
+    const reservations = (await run(reader.token, 'reservation', 'list', ...keyArgs)).data.items;
+    assert.equal(reservations.length, 1);
+    assert.equal(reservations[0].assignee, 'CLI Tester');
+    assert.equal(reservations[0].comment, 'A reservation note');
+    assert.equal(reservations[0].startRelative, undefined);
+    const history = (await run(reader.token, 'history', 'list', '--file', relative)).data;
+    const version = (await run(reader.token, 'history', 'read', '--file', relative, '--id', history.headId)).data;
+    assert.match(version.text, /Текст обновлён человеком/u);
+    assert.equal(version.file, relative);
+    assert.equal(version.ticket, null);
+    const missingVersion = await run(reader.token, 'history', 'read', '--file', relative, '--id', crypto.randomUUID());
+    assert.equal(missingVersion.error.code, 'HISTORY_UNAVAILABLE');
+
+    const maximumValue = 'a'.repeat(16 * 1024);
+    await fs.writeFile(replacement, maximumValue + '\r\n');
+    const largePreview = await run(writer.token, ...preview);
+    assert.equal(largePreview.data.diff.after, maximumValue);
+    for (let index = 0; index < 126; index++) {
+      const pending = await local(
+        'POST',
+        'command',
+        { command: 'preview', file: relative, key: 'CLI_KEY', text: 'Next value' },
+        writer.token,
+      );
+      assert.equal(pending.status, 200);
+    }
+    assert.equal((await run(writer.token, ...submit)).error.code, 'PLAN_EXPIRED');
+    assert.equal((await run(writer.token, ...preview)).error.code, 'BUSY');
+
+    await setMode('read');
+    assert.equal((await run(writer.token, ...reserve)).error.code, 'READ_ONLY');
+    assert.equal((await run(writer.token, 'status')).data.access, 'read');
+    await setMode('write');
+    assert.equal((await run(writer.token, ...preview)).error.code, 'READ_ONLY');
+    assert.equal((await run(reader.token, 'status')).ok, true);
+    await setMode('off');
+    assert.equal((await run(reader.token, 'status')).error.code, 'CLI_DISABLED');
+    assert.equal(JSON.parse(await fs.readFile(path.join(state, 'cli-access.json'), 'utf8')).mode, 'off');
+    await setMode('read');
+    assert.equal((await run(reader.token, 'status')).error.code, 'GRANT_REQUIRED');
+  },
+);
 
 test(
   'an idle authenticated socket closes at session expiry and HTTP access is denied',

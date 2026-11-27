@@ -118,7 +118,7 @@ export class DocumentHistory {
     this.packedGitBaseValue = null;
   }
 
-  async load() {
+  async load({ readOnly = false } = {}) {
     try {
       let value;
       try {
@@ -127,6 +127,7 @@ export class DocumentHistory {
         value = JSON.parse(await fs.readFile(this.target, 'utf8'));
       } catch (error) {
         if (!(error instanceof SyntaxError)) throw error;
+        if (readOnly) return;
         // The document text lives in its own file; an unreadable history must not
         // make the room unopenable. Keep the old file aside for inspection.
         const aside = `${this.target}.unreadable-${Date.now()}`;

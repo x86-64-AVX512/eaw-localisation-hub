@@ -1,7 +1,7 @@
 {
   "name": "eaw-localisation-hub",
   "private": true,
-  "version": "0.8.9-beta.4",
+  "version": "0.8.9-beta.5",
   "description": "EaW collaborative localisation early beta",
   "license": "GPL-2.0-only",
   "author": "EaW Localisation Hub contributors",
@@ -59,8 +59,8 @@
     "yjs": "^13.6.27"
   },
   "eawHub": {
-    "displayVersion": "0.8.9-beta.4",
-    "windowsFileVersion": "0.8.9.4"
+    "displayVersion": "0.8.9-beta.5",
+    "windowsFileVersion": "0.8.9.5"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",

@@ -1,4 +1,5 @@
-import { gitExecutable, runGitSync } from './git-executable.mts';
+import { gitExecutable, runGitAsync, runGitSync } from './git-executable.mts';
+import { readLocalisationLine } from '../../../packages/shared/src/localisation-records.mts';
 import { withoutUtf8Bom } from '../../../packages/shared/src/text.mts';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -13,7 +14,7 @@ interface TicketSnapshotFile {
 
 interface TicketContextHub {
   options: { repo: string };
-  ticketRequest(route: string, options: { method: 'GET' }): Promise<Record<string, unknown>>;
+  ticketRequest(route: string, options: { method: 'GET'; signal?: AbortSignal }): Promise<Record<string, unknown>>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -45,7 +46,7 @@ export function currentGitCommit(repository: string): string {
   return commit.stdout.trim().toLowerCase();
 }
 
-export async function currentGitCommitAsync(repository: string): Promise<string> {
+export async function currentGitCommitAsync(repository: string, signal?: AbortSignal): Promise<string> {
   let stdout: string;
   try {
     ({ stdout } = await execFileAsync(gitExecutable(), ['rev-parse', 'HEAD'], {
@@ -53,8 +54,10 @@ export async function currentGitCommitAsync(repository: string): Promise<string>
       encoding: 'utf8',
       windowsHide: true,
       timeout: 10_000,
+      signal,
     }));
   } catch {
+    signal?.throwIfAborted();
     throw new Error('Не удалось определить текущий Git-коммит.');
   }
   if (!/^[0-9a-f]{40,64}$/iu.test(stdout.trim())) {
@@ -84,7 +87,11 @@ function checkedGitFilePath(relativePath: string): string {
   return normalised;
 }
 
-export async function currentGitFileBlobAsync(repository: string, relativePath: string): Promise<string> {
+export async function currentGitFileBlobAsync(
+  repository: string,
+  relativePath: string,
+  signal?: AbortSignal,
+): Promise<string> {
   const normalised = checkedGitFilePath(relativePath);
   let stdout: string;
   try {
@@ -93,8 +100,10 @@ export async function currentGitFileBlobAsync(repository: string, relativePath: 
       encoding: 'utf8',
       windowsHide: true,
       timeout: 10_000,
+      signal,
     }));
   } catch {
+    signal?.throwIfAborted();
     throw new Error('Не удалось определить Git-версию файла. Обновите репозиторий через GitHub Desktop.');
   }
   if (!/^[0-9a-f]{40,64}$/iu.test(stdout.trim())) {
@@ -133,20 +142,26 @@ export async function ticketBootstrap(hub: TicketContextHub, ticketId: string, r
   };
 }
 
-export async function englishOriginal(hub: TicketContextHub, key: string, ticketId = '') {
+export async function englishOriginal(hub: TicketContextHub, key: string, ticketId = '', signal?: AbortSignal) {
   const localisationKey = String(key ?? '').trim();
   if (!localisationKey || localisationKey.length > 512 || /[\u0000-\u0020\u007f:]/u.test(localisationKey)) {
     throw new Error('Не удалось определить ключ локализации под курсором.');
   }
-  let commit = currentGitCommit(hub.options.repo);
+  let commit;
   if (ticketId) {
-    const payload = await hub.ticketRequest(`/api/tickets/${encodeURIComponent(ticketId)}`, { method: 'GET' });
-    if (!isRecord(payload.ticket) || typeof payload.ticket.baseCommit !== 'string') {
+    const payload = await hub.ticketRequest(`/api/tickets/${encodeURIComponent(ticketId)}`, { method: 'GET', signal });
+    if (
+      !isRecord(payload.ticket) ||
+      typeof payload.ticket.baseCommit !== 'string' ||
+      !/^[0-9a-f]{40,64}$/iu.test(payload.ticket.baseCommit)
+    ) {
       throw new Error('Не удалось определить базовый коммит тикета.');
     }
     commit = payload.ticket.baseCommit;
+  } else {
+    commit = await currentGitCommitAsync(hub.options.repo, signal);
   }
-  const searched = runGitSync(
+  const searched = await runGitAsync(
     [
       'grep',
       '-n',
@@ -160,11 +175,12 @@ export async function englishOriginal(hub: TicketContextHub, key: string, ticket
     ],
     {
       cwd: hub.options.repo,
-      encoding: 'utf8',
-      windowsHide: true,
       maxBuffer: 8 * 1024 * 1024,
+      timeout: 8000,
+      signal,
     },
   );
+  signal?.throwIfAborted();
   if (searched.status !== 0 && searched.status !== 1)
     throw new Error('Не удалось прочитать английскую локализацию из Git.');
   const prefix = `${commit}:`;
@@ -173,9 +189,10 @@ export async function englishOriginal(hub: TicketContextHub, key: string, ticket
     const value = line.startsWith(prefix) ? line.slice(prefix.length) : line;
     const match = /^(localisation\/(?:english|replace\/english)\/[^:]+):(\d+):(.*)$/u.exec(value);
     if (!match) continue;
-    const entry = /^\s*([^#\s][^:]*?):(?:\d+)?\s+"((?:[^"\\]|\\.)*)"/u.exec(match[3]);
-    if (!entry || entry[1].trim() !== localisationKey) continue;
-    matches.push({ file: match[1], line: Number(match[2]), key: localisationKey, text: entry[2] });
+    const lineNumber = Number(match[2]);
+    const record = readLocalisationLine(match[3], lineNumber);
+    if (!record || record.key !== localisationKey || record.fault !== null) continue;
+    matches.push({ file: match[1], line: lineNumber, key: localisationKey, text: record.value });
     if (matches.length >= 20) break;
   }
   return { key: localisationKey, commit, matches };

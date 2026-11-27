@@ -155,9 +155,15 @@ test('queued replies confirm only after durable persistence, return stale revisi
   release();
   await pending;
   assert.equal(messages[0].status, 'saved');
-  room.persist = async () => {};
+  let unexpectedWrites = 0;
+  room.persist = async () => {
+    unexpectedWrites++;
+  };
   await room.receiveJson(socket, command({ requestId: 'two', body: 'Stale' }));
   assert.equal(messages.at(-1).status, 'stale');
+  await room.receiveJson(socket, command({ requestId: 'deleted', messageId: 'missing' }));
+  assert.equal(messages.at(-1).status, 'deleted');
+  assert.equal(unexpectedWrites, 0);
   room.persist = async () => {
     throw new Error('disk unavailable');
   };
@@ -167,6 +173,20 @@ test('queued replies confirm only after durable persistence, return stale revisi
   room.persist = async () => {};
   await room.receiveJson(socket, command({ requestId: 'three', expectedRevision: 1, body: 'Safe draft' }));
   assert.equal(messages.at(-1).status, 'saved');
+});
+test('automation distinguishes a refused discussion change from a failed save', async () => {
+  const { room, socket, messages } = harness();
+  socket.automationWrites = true;
+  socket.identity = { id: 'bob', displayName: 'Bob', roles: ['translator'] };
+  await room.receiveJson(socket, command());
+  assert.equal(messages.at(-1).code, 'WRITE_REJECTED');
+
+  socket.identity = { id: 'alice', displayName: 'Alice', roles: ['translator'] };
+  room.persist = async () => {
+    throw new Error('disk unavailable');
+  };
+  await room.receiveJson(socket, command());
+  assert.equal(messages.at(-1).code, 'WRITE_UNCONFIRMED');
 });
 test('discussion write errors reach Review in the Russian source language', async () => {
   const { room, socket, messages } = harness();

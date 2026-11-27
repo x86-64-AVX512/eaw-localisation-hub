@@ -87,6 +87,8 @@ export class TicketStore {
     this.atomicWrite = atomicWrite;
     this.tickets = [];
     this.persistence = Promise.resolve();
+    this.mutationRevision = 0;
+    this.persistedRevision = 0;
     this.commitVerifier = commitVerifier;
     this.revision = crypto.randomUUID();
     this.eventJournal = null;
@@ -114,11 +116,13 @@ export class TicketStore {
   }
 
   persist() {
+    const targetRevision = ++this.mutationRevision;
     const data = `${JSON.stringify({ schema: 2, tickets: this.tickets }, null, 2)}\n`;
     this.persistence = this.persistence
       .catch(() => {})
       .then(async () => {
         await this.atomicWrite(this.target, data);
+        if (targetRevision > this.persistedRevision) this.persistedRevision = targetRevision;
         this.revision = crypto.randomUUID();
         await this.onChanged?.(this.revision);
       });
@@ -353,7 +357,11 @@ export class TicketStore {
     const namespace = documentId.slice(0, documentId.indexOf(':'));
     if (!namespace.startsWith('ticket-') || !actor?.id) return;
     const ticket = this.tickets.find((item) => item.id === namespace.slice('ticket-'.length));
-    if (!ticket || ticket.participantIds.includes(actor.id)) return;
+    if (!ticket) return;
+    if (ticket.participantIds.includes(actor.id)) {
+      if (this.persistedRevision < this.mutationRevision) await this.persist();
+      return;
+    }
     ticket.participantIds.push(actor.id);
     ticket.updatedAt = new Date().toISOString();
     await this.persist();

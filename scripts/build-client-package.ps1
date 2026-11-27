@@ -44,6 +44,7 @@ foreach ($scriptName in @(
     'start-hub.ps1',
     'agent-status.ps1',
     'agent-network.ps1',
+    'cli-access-ui.ps1',
     'hash-utils.ps1',
     'check-node-runtime.mjs',
     'update-client.ps1',
@@ -71,6 +72,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'dist\EawReview') `
 Copy-Item -LiteralPath (Join-Path $projectRoot 'VERSION') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'Launch EaW Hub Agent.cmd') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'Launch EaW Hub Review.cmd') -Destination $packageRoot
+Copy-Item -LiteralPath (Join-Path $projectRoot 'eaw-hub.cmd') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'Launch EaW Hub Admin.cmd') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'Launch EaW Hub Team Management.cmd') -Destination $packageRoot
 [System.IO.File]::WriteAllText(

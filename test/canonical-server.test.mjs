@@ -144,6 +144,26 @@ test('server seeds rooms from Git and blocks only an outdated file blob', async 
       },
     );
     await waitForOutput(server, 'listening on');
+    const document = encodeURIComponent('general-dev:localisation/replace/russian/test.yml');
+    const cli = new WebSocket(`ws://127.0.0.1:${port}/?document=${document}&automation=write`);
+    const cliClosed = once(cli, 'close');
+    const [reply, binary] = await once(cli, 'message');
+    assert.equal(binary, false);
+    assert.equal(JSON.parse(reply.toString('utf8')).code, 'DOCUMENT_NOT_INITIALISED');
+    await cliClosed;
+    const reader = new WebSocket(`ws://127.0.0.1:${port}/?document=${document}&automation=1`);
+    const messages = [];
+    reader.on('message', (data, isBinary) => {
+      if (!isBinary) messages.push(JSON.parse(data.toString('utf8')));
+    });
+    try {
+      const snapshot = await waitForRecordedMessage(messages, ({ type }) => type === 'synced', 'CLI snapshot', 5000);
+      assert.equal(snapshot.initialised, false);
+      assert.deepEqual(snapshot.history, []);
+    } finally {
+      reader.terminate();
+    }
+
     const stale = await connect(port, '0'.repeat(40), '1'.repeat(40));
     assert.equal(stale.synced.git.status, 'file-outdated');
     assert.equal(stale.ydoc.getText('content').toString().replaceAll('\r\n', '\n'), 'l_russian:\n canonical: "Git"\n');

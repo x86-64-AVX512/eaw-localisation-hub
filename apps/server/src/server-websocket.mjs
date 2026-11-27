@@ -2,7 +2,8 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { AuthError, bearerToken } from './auth.mjs';
 import { sendStartupChangedFiles } from './document-startup.mjs';
 import { attachDocumentSocket } from './document-socket.mts';
-import { ProtocolLimitError, createInboundBudget, validDocumentId } from './protocol-limits.mts';
+import { DocumentRoom } from './document-room.mjs';
+import { ProtocolLimitError, createInboundBudget, sendWithBackpressure, validDocumentId } from './protocol-limits.mts';
 import {
   MAX_CONNECTIONS_PER_USER,
   MAX_CONNECTIONS_TOTAL,
@@ -19,6 +20,68 @@ export function attachServerWebSockets({
   isShuttingDown,
 }) {
   const websocketServer = new WebSocketServer({ server: httpServer, maxPayload: MAX_MESSAGE_BYTES });
+  let cliReaders = 0;
+
+  async function openReadOnlyDocument(socket, documentId) {
+    if (cliReaders >= 4) throw new ProtocolLimitError('Too many CLI document readers', 1013);
+    cliReaders++;
+    let room;
+    let transient = false;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      if (room?.clients.has(socket)) room.removeClient(socket);
+      if (transient) room?.destroy();
+      cliReaders--;
+    };
+    try {
+      const existing = roomRegistry.rooms.get(documentId);
+      transient = !existing;
+      room = existing
+        ? await existing
+        : await DocumentRoom.load(roomRegistry.dataDirectory, documentId, authStore, roomRegistry, null, null, true);
+      if (socket.readyState !== WebSocket.OPEN) {
+        release();
+        return;
+      }
+      authoriseSocket(socket);
+      ticketStore.assertDocumentAccess(documentId);
+      socket.inboundBudget = createInboundBudget();
+      room.addClient(socket);
+      attachDocumentSocket({
+        socket,
+        documentId,
+        room,
+        ticketStore,
+        isShuttingDown,
+        authoriseSession: () => {
+          authoriseSocket(socket);
+          ticketStore.assertDocumentAccess(documentId);
+        },
+      });
+      socket.once('close', release);
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+  function rejectUninitialisedDocument(socket) {
+    const code = 'DOCUMENT_NOT_INITIALISED';
+    const message = 'Open the document in Review to initialise its shared text first.';
+    sendWithBackpressure(socket, JSON.stringify({ type: 'error', code, message }));
+    socket.close(1008, code);
+  }
+
+  async function hasInitialisedDocument(documentId) {
+    const existing = roomRegistry.rooms.get(documentId);
+    if (existing) {
+      const room = await existing;
+      return room.hasStoredState && !room.destroyed;
+    }
+    return roomRegistry.hasSavedState(documentId);
+  }
+
   async function disconnectAuthenticatedSockets(predicate, reason, closeCode = 1008) {
     for (const socket of websocketServer.clients) {
       if (predicate(socket.identity) && socket.readyState === WebSocket.OPEN) {
@@ -97,14 +160,36 @@ export function attachServerWebSockets({
         );
       }
       ticketStore.assertDocumentAccess(documentId);
-      await ticketStore.noteParticipant(documentId, socket.identity);
+      const automation = url.searchParams.get('automation');
+      socket.automationWrites = automation === 'write';
+      socket.automation = automation === '1' || socket.automationWrites;
+      if (socket.automation && !socket.automationWrites) {
+        await openReadOnlyDocument(socket, documentId);
+        return;
+      }
+      if (socket.automationWrites) {
+        if (!(await hasInitialisedDocument(documentId))) {
+          rejectUninitialisedDocument(socket);
+          return;
+        }
+      } else {
+        await ticketStore.noteParticipant(documentId, socket.identity);
+      }
       socket.localHead = String(url.searchParams.get('head') ?? '').toLowerCase();
       socket.localBlob = String(url.searchParams.get('blob') ?? '').toLowerCase();
       const canonicalSnapshot = canonicalSource.enabled
         ? await canonicalSource.snapshot(documentId, { force: true })
         : null;
+      if (canonicalSource.enabled && socket.automationWrites && !(await hasInitialisedDocument(documentId))) {
+        rejectUninitialisedDocument(socket);
+        return;
+      }
+      if (socket.readyState !== WebSocket.OPEN) return;
+      authoriseSocket(socket);
+      ticketStore.assertDocumentAccess(documentId);
       socket.changedFiles = [];
       const room = await getRoom(documentId, canonicalSnapshot);
+      if (room.destroyed) throw new ProtocolLimitError('The document room has closed', 1013);
       if (canonicalSnapshot) await room.applyCanonicalSnapshot(canonicalSnapshot);
       if (socket.readyState !== WebSocket.OPEN) return;
       authoriseSocket(socket);
@@ -117,13 +202,16 @@ export function attachServerWebSockets({
         documentId,
         room,
         ticketStore,
+        noteParticipant: () => ticketStore.noteParticipant(documentId, socket.identity),
         isShuttingDown,
         authoriseSession: () => {
           authoriseSocket(socket);
+          if (socket.automationWrites) ticketStore.assertDocumentAccess(documentId);
         },
       });
       socket.on('close', () => room.removeClient(socket));
-      void sendStartupChangedFiles(canonicalSource, documentId, socket, room, canonicalSnapshot);
+      if (!socket.automation)
+        void sendStartupChangedFiles(canonicalSource, documentId, socket, room, canonicalSnapshot);
     } catch (error) {
       if (!(error instanceof AuthError)) console.error('[server] connection failed');
       const closeCode =

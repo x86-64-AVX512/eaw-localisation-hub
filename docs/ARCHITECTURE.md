@@ -1,4 +1,4 @@
-# Архитектура EaW Localisation Hub 0.8.9-beta.4
+# Архитектура EaW Localisation Hub 0.8.9-beta.5
 
 Документ описывает текущее устройство системы по подсистемам. Порядок появления изменений и их версии записаны в [CHANGELOG.md](../CHANGELOG.md), правила сетевого обмена – в [PROTOCOL.md](PROTOCOL.md).
 

@@ -24,7 +24,7 @@ if (-not (Test-Path -LiteralPath $paths.ReviewHost -PathType Leaf)) {
 }
 
 [pscustomobject]@{
-    Version = '0.8.9-beta.4'
+    Version = '0.8.9-beta.5'
     ReviewHost = $paths.ReviewHost
     WorkspaceA = $paths.WorkspaceA
     WorkspaceB = $paths.WorkspaceB
